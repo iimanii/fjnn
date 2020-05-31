@@ -40,9 +40,9 @@ import org.fjnn.base.Network;
 import org.fjnn.genetic.GeneticConfig.mutation;
 import org.fjnn.genetic.GeneticNode.NodeType;
 import org.fjnn.network.NeuralNetwork;
+import org.fjnn.serializer.GeneticConnectionStub;
 import org.fjnn.serializer.GeneticStub;
 import org.fjnn.util.Rng;
-import org.fjnn.util.intrinsic;
 
 /**
  *
@@ -140,33 +140,44 @@ public class GeneticNetwork extends Network {
         
         for(int i=0; i < output; i++) {
             GeneticNode o = new GeneticNode(nodeCounter.incrementAndGet(), "O"+i, NodeType.OUTPUT);
-            addNode(o);
+            insertNode(o);
         }
         
         for(int i=0; i < input; i++) {
             GeneticNode n = new GeneticNode(nodeCounter.incrementAndGet(), "I"+i, NodeType.INPUT);
-            addNode(n);
+            insertNode(n);
         }
         
         /* Bias Node */
         BIAS_ID = nodeCounter.incrementAndGet();
         GeneticNode bias = new GeneticNode(BIAS_ID, BIAS_NAME, NodeType.INPUT);
-        addNode(bias);
+        insertNode(bias);
     }
 
     public GeneticNetwork(GeneticStub stub) {
-        this(stub.inputSize, stub.outputSize, stub.outputActivation, stub.hiddenActivation);
+        this(stub.inputSize, stub.outputSize, Activation.fromName(stub.outputActivation), Activation.fromName(stub.hiddenActivation));
         
         for(Innovation i : stub.innovations)
             applyInnovation(i);
         
-        for(GeneticConnection c : stub.connections)
-            setWeight(c.from.name, c.to.name, c.weight);
-        
-        outputActivation = stub.outputActivation;
-        hiddenActivation = stub.hiddenActivation;
+        for(GeneticConnectionStub c : stub.connections) {
+            setWeight(c.from, c.to, c.weight);
+            if(c.disabled && !isDisabled(c.from, c.to))
+                throw new RuntimeException();
+        }
         
         properties.putAll(stub.properties);
+    }
+    
+    public GeneticStub getStub() {
+        List<GeneticConnectionStub> connectionStubs = new ArrayList<>();
+
+        for(GeneticConnection c : connections) {
+            connectionStubs.add(new GeneticConnectionStub(c.from.name, c.to.name, c.weight, c.disabled));
+        }
+        return new GeneticStub(getInputSize(), getOutputSize(), 
+                               innovations, connectionStubs, properties, 
+                               Activation.toName(outputActivation), Activation.toName(hiddenActivation));
     }
     
     /**
@@ -223,7 +234,7 @@ public class GeneticNetwork extends Network {
         for(int i=0; i < count; i++) {
             ids[i] = getInputNodeID(getInputSize());
             GeneticNode n = new GeneticNode(nodeCounter.incrementAndGet(), ids[i], NodeType.INPUT);
-            addNode(n);
+            insertNode(n);
         }
         
         return ids;
@@ -275,7 +286,7 @@ public class GeneticNetwork extends Network {
         enabled.remove(c);
         
         GeneticNode n = new GeneticNode(nodeCounter.incrementAndGet(), "H"+hidden.size(), NodeType.HIDDEN);
-        addNode(n);
+        insertNode(n);
         
         connect(from, n, c.weight);
         connect(n, to);
@@ -412,6 +423,14 @@ public class GeneticNetwork extends Network {
     }
     
     
+    public Activation getActivationHidden() {
+        return hiddenActivation;
+    }
+    
+    public Activation getActivationOutput() {
+        return outputActivation;
+    }
+    
     /**
      * Compute result for a certain input
      * @param input
@@ -434,7 +453,7 @@ public class GeneticNetwork extends Network {
         float[] result = new float[outputs.size()];
         
         for(int i=0; i < outputs.size(); i++)
-            result[i] = compute(outputs.get(i), values, computed);
+            result[i] = _compute(outputs.get(i), values, computed);
         
         if(outputActivation != null)
             outputActivation.compute(result);
@@ -442,6 +461,9 @@ public class GeneticNetwork extends Network {
         return result;
     }
 
+    /*
+     *  Uses topsort instead of recursion which is alot faster
+    */
     public float[] compute(float[] input) {
         float[] values = new float[nodeCounter.get()+1];
         
@@ -453,7 +475,7 @@ public class GeneticNetwork extends Network {
         values[BIAS_ID] = 1.0f;
         
         for(GeneticNode n : topSort())
-            values[n.id] = compute0(n, values);
+            values[n.id] = compute(n, values);
         
         float[] result = new float[outputs.size()];
         
@@ -465,8 +487,6 @@ public class GeneticNetwork extends Network {
         
         return result;
     }
-    
-    public native float[] compute1(float[] input);
     
     /**
      * Converts the genetic network to a feed forward network
@@ -784,8 +804,8 @@ public class GeneticNetwork extends Network {
     /**
      * Private functions
      */
-    
-    private float compute(GeneticNode n, float[] values, boolean[] computed) {
+    @Deprecated
+    private float _compute(GeneticNode n, float[] values, boolean[] computed) {
         float sum = 0;
         
         for(GeneticConnection c : n.in) {
@@ -795,7 +815,7 @@ public class GeneticNetwork extends Network {
                 continue;
             
             if(!computed[from.id]) {
-                values[from.id] = compute(from, values, computed);
+                values[from.id] = _compute(from, values, computed);
                 computed[from.id] = true;
             }
             
@@ -808,33 +828,17 @@ public class GeneticNetwork extends Network {
         return sum;
     }
         
-    private float compute0(GeneticNode n, float[] values) {
-//        int len = n.in.size();
-//        
-//        float[] weights = new float[n._in.length];
-//        float[] inputs  = new float[n._in.length];
+    private float compute(GeneticNode n, float[] values) {
         float sum = 0;
         
-        for(GeneticConnection c : n._in) {//int i=0; i < len; i++) {
-//            GeneticConnection c = n.in.get(i);
+        for(GeneticConnection c : n._in) {
             GeneticNode from = c.from;
             
             if(c.disabled)
                 continue;
-//            
-//            if(!computed[from.id]) {
-//                for(GeneticNode q : topSort())
-//                    System.out.println(q.name);
-//                
-//                throw new RuntimeException("Should not happen " + from.name + " " + n.name);
-//            }
             
             sum += c.weight * values[from.id];
-//            weights[i] = c.weight;
-//            inputs[i]  = values[from.id];
         }
-                
-//        float sum = len == 0 ? 0 : intrinsic.dotProduct(weights, inputs);
         
         if(hiddenActivation != null && n.type == NodeType.HIDDEN)
             sum = hiddenActivation.compute(sum);
@@ -980,7 +984,7 @@ public class GeneticNetwork extends Network {
         from.disable(to);
         
         GeneticNode n = new GeneticNode(nodeCounter.incrementAndGet(), "H"+hidden.size(), NodeType.HIDDEN);
-        addNode(n);
+        insertNode(n);
 
         connect(from, n, c.weight);
         connect(n, to);
@@ -1065,6 +1069,15 @@ public class GeneticNetwork extends Network {
         enabled.add(c);
     }
 
+    private boolean isDisabled(String fromName, String toName) {
+        GeneticNode from = fastAccessIndex.get(fromName);
+        GeneticNode to = fastAccessIndex.get(toName);
+        
+        GeneticConnection c = from.to(to);
+        
+        return c.disabled;
+    }
+    
     @Override
     public int getInputSize() {
         return inputs.size() - 1;
@@ -1073,10 +1086,6 @@ public class GeneticNetwork extends Network {
     @Override
     public int getOutputSize() {
         return outputs.size();
-    }
-    
-    public GeneticStub getStub() {
-        return new GeneticStub(getInputSize(), getOutputSize(), innovations, connections, properties, outputActivation, hiddenActivation);
     }
     
     public int getInnovationCount() {
@@ -1112,7 +1121,7 @@ public class GeneticNetwork extends Network {
         }
     }
     
-    private void addNode(GeneticNode n) {
+    private void insertNode(GeneticNode n) {
         fastAccessNodes.put(n.id, n);
         fastAccessIndex.put(n.name, n);
         

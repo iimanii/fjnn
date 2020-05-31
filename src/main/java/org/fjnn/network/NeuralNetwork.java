@@ -150,6 +150,7 @@ public class NeuralNetwork extends LayeredNetwork {
      * 
      * @return 
      */
+    @Override
     public float[][][] getWeights() {
         float[][][] result = new float[layers.length][][];
         
@@ -216,6 +217,7 @@ public class NeuralNetwork extends LayeredNetwork {
     }
     
     
+    @Override
     public float[][] getBiases() {
         float[][] result = new float[layers.length][];
         
@@ -488,6 +490,7 @@ public class NeuralNetwork extends LayeredNetwork {
         gpuReady = false;
     }
 
+    @Override
     public NetworkStub getStub() {
         LayerStub[] stubs = new LayerStub[layers.length];
         for(int i=0; i < layers.length; i++)

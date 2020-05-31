@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 ahmed.
+ * Copyright 2018 Ahmed Tarek.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,6 @@ import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
 import org.fjnn.activation.Activation;
-import org.fjnn.genetic.GeneticConnection;
 import org.fjnn.genetic.Innovation;
 
 /**
@@ -38,12 +37,16 @@ public class GeneticStub implements Serializable {
     public final int inputSize;
     public final int outputSize;
     public final List<Innovation> innovations;
-    public final List<GeneticConnection> connections;
+    public final List<GeneticConnectionStub> connections;
     public final Map<String, Object> properties;
-    public final Activation outputActivation;
-    public final Activation hiddenActivation;
+    public final String outputActivation;
+    public final String hiddenActivation;
 
-    public GeneticStub(int inputSize, int outputSize, List<Innovation> innovations, List<GeneticConnection> connections, Map<String, Object> properties, Activation outputActivation, Activation hiddenActivation) {
+    public GeneticStub(int inputSize, int outputSize, 
+                       List<Innovation> innovations, 
+                       List<GeneticConnectionStub> connections, 
+                       Map<String, Object> properties, 
+                       String outputActivation, String hiddenActivation) {
         this.inputSize = inputSize;
         this.outputSize = outputSize;
         this.innovations = innovations;

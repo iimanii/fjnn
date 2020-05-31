@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 ahmed.
+ * Copyright 2018 Ahmed Tarek.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,12 +32,12 @@ import java.io.Serializable;
 public class GeneticConnection implements Serializable {
     private static final long serialVersionUID = -7782604400128420487l;
     
-    float weight;
-    boolean disabled;
+    public float weight;
+    public boolean disabled;
 
-    final String id;
-    final GeneticNode from;
-    final GeneticNode to;
+    public final String id;
+    public final GeneticNode from;
+    public final GeneticNode to;
 
     public GeneticConnection(GeneticNode from, GeneticNode to, float weight) {
         this.id = from.name + "-" + to.name;

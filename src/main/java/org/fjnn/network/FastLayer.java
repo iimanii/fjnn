@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 ahmed.
+ * Copyright 2018 Ahmed Tarek.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,7 +35,6 @@ import org.fjnn.cuda.CudaModule;
 import org.fjnn.cuda.CudaThread;
 import org.fjnn.serializer.LayerStub;
 import org.fjnn.util.Rng;
-import org.fjnn.util.util;
 
 /**
  *

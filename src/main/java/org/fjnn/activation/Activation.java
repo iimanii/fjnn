@@ -50,6 +50,35 @@ public abstract class Activation implements Serializable {
     
     public abstract void computeMultiGPUConditional(CUdeviceptr2D ptr, CUdeviceptr compute, int width, int height, CUstream stream);
 
+    public static String toName(Activation activation) {
+        if(activation == null)
+            return null;
+        
+        return activation.getClass().getSimpleName();
+    }
+    
+    public static Activation fromName(String name) {
+        if(name == null)
+            return null;
+        
+        switch(name.toLowerCase()) {
+            case "relu":
+                return new ReLU();
+            case "sigmoid":
+                return new Sigmoid();
+            case "sin":
+                return new Sin();
+            case "softmax":
+                return new SoftMax();
+            case "step":
+                return new Step();
+            case "tanh":
+                return new Tanh();
+        }
+        
+        return null;
+    }
+    
 // TODO
 //    ActivationBiPolar,
 //    ActivationBipolarSteepenedSigmoid,

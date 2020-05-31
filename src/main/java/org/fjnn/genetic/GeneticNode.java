@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 ahmed.
+ * Copyright 2018 Ahmed Tarek.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -34,12 +34,12 @@ import org.fjnn.util.Rng;
  *
  * @author ahmed
  */
-class GeneticNode implements Serializable {
+public class GeneticNode implements Serializable {
     private static final long serialVersionUID = 441567370194619765l;
     
-    final int id;
-    final String name;
-    final NodeType type;
+    public final int id;
+    public final String name;
+    public final NodeType type;
     
     List<GeneticConnection> in;
     List<GeneticConnection> out;
@@ -48,7 +48,7 @@ class GeneticNode implements Serializable {
     /* list of all connection out nodes */
     List<GeneticNode> to;
 
-    /* list of non disabled links */
+    /* list of non disabled output links */
     private List<GeneticNode> enabled;
     
     private Map<Integer, GeneticConnection> fastAccessIn;
@@ -140,5 +140,9 @@ class GeneticNode implements Serializable {
         
         int n = enabled.get(Rng.nextInt(enabled.size())).id;
         return fastAccessOut.get(n);
+    }
+    
+    public int getConnectionsCount(boolean in) {
+        return in ? this.in.size() : this.out.size();
     }
 }

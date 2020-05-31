@@ -21,29 +21,30 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.cuda;
+package org.fjnn.serializer;
 
-import jcuda.driver.CUdeviceptr;
+import org.fjnn.genetic.*;
+import java.io.Serializable;
 
 /**
  *
  * @author ahmed
  */
-public class CudaResource {
-    public final String name;
+public class GeneticConnectionStub implements Serializable {
+    private static final long serialVersionUID = -7982604400188420487l;
     
-    public final int deviceId;
-    
-    public final CUdeviceptr ptr;
-    
-    public final int length;
-    public final int size_t;
-    
-    CudaResource(String name, int deviceId, CUdeviceptr ptr, int length, int size_t) {
-        this.deviceId = deviceId;
-        this.ptr = ptr;
-        this.length = length;
-        this.name = name;
-        this.size_t = size_t;
+    public final float weight;
+    public final boolean disabled;
+
+    public final String id;
+    public final String from;
+    public final String to;
+
+    public GeneticConnectionStub(String from, String to, float weight, boolean disabled) {
+        this.id = from + "-" + to;
+        this.weight = weight;
+        this.disabled = disabled;
+        this.from = from;
+        this.to = to;
     }
 }

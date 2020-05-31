@@ -465,7 +465,7 @@ public class MultiNetwork extends BaseNetwork {
             throw new RuntimeException("Network is not loaded to the GPU, please call prepareGPU first");
         
         if(threadSafe)
-            throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.        
+            throw new UnsupportedOperationException("Thread safe MultiNetworks not supported yet.");
         
         CudaThread.prepareThread(deviceId);
     

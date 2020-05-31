@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 ahmed.
+ * Copyright 2018 Ahmed Tarek.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -39,7 +39,21 @@ public class NetworkPool {
 
     int size;
     
-    Map<Integer, LayeredNetwork> indexing;
+    private static class NetworkIndex {
+        int index;
+        int parent;
+        int subindex;               /* index of this network inside the multinetwork */
+        LayeredNetwork network;
+
+        public NetworkIndex(int index, int parent, int subindex, LayeredNetwork network) {
+            this.index = index;
+            this.parent = parent;
+            this.subindex = subindex;
+            this.network = network;
+        }
+    }
+    
+    Map<Integer, NetworkIndex> indexing;
             
     public NetworkPool(int size, boolean threadSafe) {
         this.size = size;
@@ -91,11 +105,12 @@ public class NetworkPool {
     public NetworkPool build() {
         int index = 0;
         
-        for(MultiNetwork n : pool) {
+        for(int i=0; i < pool.length; i++) {
+            MultiNetwork n = pool[i];
             n.build();
             
-            for(int i=0; i < n.size; i++)
-                indexing.put(index++, n.getNetwork(i));
+            for(int j=0; j < n.size; j++, index++)
+                indexing.put(index, new NetworkIndex(index, i, j, n.getNetwork(j)));
         }
         
         if(index != size)
@@ -103,20 +118,69 @@ public class NetworkPool {
         
         return this;
     }
-    
-    public MultiNetwork getMultiNetwork(int index) {
-        return pool[index];
-    }
+//    
+//    public MultiNetwork getMultiNetwork(int index) {
+//        return pool[index];
+//    }
     
     public LayeredNetwork getNetwork(int index) {
-        return indexing.get(index);
+        return indexing.get(index).network;
     }
     
-    public int multiSize() {
-        return pool.length;
+//    public int multiSize() {
+//        return pool.length;
+//    }
+    
+    
+    /**
+     * 
+     * @return true on success
+     */
+    public boolean prepareGPU() {
+        for(MultiNetwork m : pool)
+            if(!m.prepareGPU())
+                return false;
+        
+        return true;
+    }
+        
+    public float[][] computeGPU(float[][] input) {
+        float[][][] prepared = prepareInput(input);
+        float[][][] output = new float[pool.length][][];
+        
+        for(int i=0; i < pool.length; i++)
+            output[i] = pool[i].computeGPU(prepared[i]);
+        
+        return prepareOutput(output);
+        
     }
     
     public int size() {
         return size;
+    }
+    
+    private float[][][] prepareInput(float[][] input) {
+        float[][][] result = new float[pool.length][][];
+        
+        for(int i=0; i < pool.length; i++)
+            result[i] = new float[pool[i].size][];
+        
+        for(int i=0; i < input.length; i++) {
+            NetworkIndex index = indexing.get(i);
+            result[index.parent][index.subindex] = input[i];
+        }
+        
+        return result;
+    }
+
+    private float[][] prepareOutput(float[][][] output) {
+        float[][] result = new float[size][];
+        
+        for(int i=0; i < size; i++) {
+            NetworkIndex index = indexing.get(i);
+            result[i] = output[index.parent][index.subindex];
+        }
+
+        return result;
     }
 }
