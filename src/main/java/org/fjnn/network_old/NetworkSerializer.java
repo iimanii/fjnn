@@ -21,8 +21,9 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.serializer;
+package org.fjnn.network_old;
 
+import org.fjnn.genetic.GeneticStub;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -33,7 +34,7 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 import org.fjnn.base.LayeredNetwork;
 import org.fjnn.genetic.GeneticNetwork;
-import org.fjnn.network.NeuralNetwork;
+import org.fjnn.network_old.NeuralNetwork;
 
 /**
  *

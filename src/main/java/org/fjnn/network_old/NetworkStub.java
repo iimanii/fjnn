@@ -21,21 +21,26 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.util;
+package org.fjnn.network_old;
+
+import java.io.Serializable;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  *
  * @author ahmed
  */
-public class SafeMath {
-    static float FLT_MAX = 1.0e20f;
+public class NetworkStub implements Serializable {
+    public final boolean threadSafe;
     
-    public static float exp(float a) {
-        return (float) Math.min(Math.exp(a), FLT_MAX);
+    public final LayerStub[] layers;    
+    
+    public final Map<String, Object> properties;
+    
+    public NetworkStub(LayerStub[] layers, Map<String, Object> properties, boolean threadSafe) {
+        this.layers = layers;
+        this.properties = new LinkedHashMap<>(properties);
+        this.threadSafe = threadSafe;
     }
-    
-    public static double exp(double a) {
-        return Math.min(Math.exp(a), Double.MAX_VALUE);
-    }
-    
 }

@@ -21,30 +21,47 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.serializer;
+package org.fjnn.network_old;
 
-import org.fjnn.genetic.*;
-import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
+import org.fjnn.activation.Activation;
+import org.fjnn.base.BaseLayer;
 
 /**
  *
  * @author ahmed
  */
-public class GeneticConnectionStub implements Serializable {
-    private static final long serialVersionUID = -7982604400188420487l;
+public class NetworkBuilder {
+    List<LayerBuilder> layerBuilders;
+    boolean threadSafe;
     
-    public final float weight;
-    public final boolean disabled;
+    public NetworkBuilder(boolean threadSafe) {
+        this.layerBuilders = new ArrayList<>();
+        this.threadSafe = threadSafe;
+    }
 
-    public final String id;
-    public final String from;
-    public final String to;
+    public Layer[] buildLayers() {
+        Layer[] layers = new Layer[layerBuilders.size()];
+        
+        int io = layers.length - 1;
+        
+        for(int i=0; i < io; i++) {
+            LayerBuilder l = layerBuilders.get(i);
+            LayerBuilder n = layerBuilders.get(i+1);
+            layers[i] = l.build(n.size(), threadSafe);
+        }
+        
+        layers[io] = layerBuilders.get(io).buildOutput(threadSafe);
+        
+        return layers;
+    }
 
-    public GeneticConnectionStub(String from, String to, float weight, boolean disabled) {
-        this.id = from + "-" + to;
-        this.weight = weight;
-        this.disabled = disabled;
-        this.from = from;
-        this.to = to;
+    public void addLayer(int neurons, Activation activation, boolean hasBias, boolean[] condition) {
+        layerBuilders.add(new LayerBuilder(neurons, activation, hasBias, condition));
+    }
+    
+    public void addLayer(LayerStub stub) {
+        layerBuilders.add(new LayerBuilder(stub));
     }
 }

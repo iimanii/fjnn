@@ -32,22 +32,6 @@ import org.fjnn.activation.Activation;
 public abstract class BaseNetwork extends Network {    
 
     /**
-     * Randomize the network in the range -1[inclusive], 1[exclusive]
-     * @return 
-     */
-    public BaseNetwork randomize() {
-        return randomize(-1, 1);
-    }
-
-    /**
-     * Randomize the network in the range min[inclusive] to max[exclusive]
-     * @param min
-     * @param max
-     * @return 
-     */
-    public abstract BaseNetwork randomize(float min, float max);
-    
-    /**
      * Does this layer has a bias
      * @param layer
      * @return 

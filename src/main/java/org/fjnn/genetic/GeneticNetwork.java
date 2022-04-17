@@ -39,9 +39,7 @@ import org.fjnn.activation.Activation;
 import org.fjnn.base.Network;
 import org.fjnn.genetic.GeneticConfig.mutation;
 import org.fjnn.genetic.GeneticNode.NodeType;
-import org.fjnn.network.NeuralNetwork;
-import org.fjnn.serializer.GeneticConnectionStub;
-import org.fjnn.serializer.GeneticStub;
+import org.fjnn.network_old.NeuralNetwork;
 import org.fjnn.util.Rng;
 
 /**
@@ -54,27 +52,34 @@ public class GeneticNetwork extends Network {
     public List<GeneticNode> outputs;
     public List<GeneticNode> all;
 
-    public List<GeneticConnection> connections;
-    public List<GeneticConnection> enabled;
-    public List<GeneticConnection> disabled;
+    public GeneticConnectionMap connectionMap;
     
     protected List<Innovation> innovations;
     
-    private Set<String> paths;
+    private AtomicInteger inputCounter;
+    private AtomicInteger outputCounter;
+    private AtomicInteger hiddenCounter;
+    private AtomicInteger nodeCounter;
     
-    private Map<Integer, GeneticNode> fastAccessNodes;
-    private Map<String, GeneticNode> fastAccessIndex;
-    private Map<String, Innovation> fastAccessInnovation;
-    private Map<String, GeneticConnection> fastAccessConnections;
+    private Map<String, GeneticNode> fastAccessNodes;
+    
+    /**
+     * Innovations can duplicate on the same ID in some circumstances
+     * 1- Adding a node on the same connection multiple times (multiple ADD_NODE)
+     * 2- Enabling a connection after a node is added (multiple ENABLE_CONNECTION)
+     * this list contains the last innovation per ID
+     */
+    Map<String, Innovation> fastAccessInnovation;
+    Map<String, AtomicInteger> fastAccessInnovationCount;
     
     private GeneticNode[] topSort;
+    
     /* nodes and connections are never removed .. 
        we can use their count as test if topSort field is valid */
     private int lastTopSortNodeCount;
     private int lastTopSortConnectionCount;
     
     private static final String BIAS_NAME = "Bias";
-    
     private final int BIAS_ID;
     
     private Activation outputActivation;
@@ -83,9 +88,7 @@ public class GeneticNetwork extends Network {
     private NeuralNetwork network;
     private Map<String, mapping> networkMapping;
     
-    private AtomicInteger nodeCounter;
-    
-    class mapping {
+    static class mapping {
         final int layer;
         final int from;
         final int to;
@@ -119,41 +122,38 @@ public class GeneticNetwork extends Network {
         outputs = new ArrayList<>();
         all = new ArrayList<>();
         
-        connections = new ArrayList<>();
-        enabled = new ArrayList<>();
-        disabled = new ArrayList<>();
-        
         innovations = new ArrayList<>();
         
-        paths = new HashSet<>();
         networkMapping = new HashMap<>();
         
         fastAccessNodes = new HashMap<>();
-        fastAccessIndex = new HashMap<>();
         fastAccessInnovation = new HashMap<>();
-        fastAccessConnections = new HashMap<>();
+        fastAccessInnovationCount = new HashMap<>();
         
         this.outputActivation = outputActivation;
         this.hiddenActivation = hiddenActivation;
         
-        nodeCounter = new AtomicInteger();
+        inputCounter  = new AtomicInteger();
+        outputCounter = new AtomicInteger();
+        hiddenCounter = new AtomicInteger();
+        nodeCounter   = new AtomicInteger();
         
-        for(int i=0; i < output; i++) {
-            GeneticNode o = new GeneticNode(nodeCounter.incrementAndGet(), "O"+i, NodeType.OUTPUT);
-            insertNode(o);
-        }
+        for(int i=0; i < input; i++)
+            createNode(inputCounter.getAndIncrement(), NodeType.INPUT);
         
-        for(int i=0; i < input; i++) {
-            GeneticNode n = new GeneticNode(nodeCounter.incrementAndGet(), "I"+i, NodeType.INPUT);
-            insertNode(n);
-        }
+        for(int i=0; i < output; i++)
+            createNode(outputCounter.getAndIncrement(), NodeType.OUTPUT);
         
         /* Bias Node */
-        BIAS_ID = nodeCounter.incrementAndGet();
-        GeneticNode bias = new GeneticNode(BIAS_ID, BIAS_NAME, NodeType.INPUT);
-        insertNode(bias);
+        BIAS_ID = createNode(BIAS_NAME, NodeType.INPUT).index;
+        
+        connectionMap = new GeneticConnectionMap(nodeCounter.get());
     }
 
+    /**
+     * 
+     * @param stub 
+     */
     public GeneticNetwork(GeneticStub stub) {
         this(stub.inputSize, stub.outputSize, Activation.fromName(stub.outputActivation), Activation.fromName(stub.hiddenActivation));
         
@@ -162,18 +162,26 @@ public class GeneticNetwork extends Network {
         
         for(GeneticConnectionStub c : stub.connections) {
             setWeight(c.from, c.to, c.weight);
-            if(c.disabled && !isDisabled(c.from, c.to))
+            
+            /* TODO: remove this after testing */
+            GeneticNode from = fastAccessNodes.get(c.from);
+            GeneticNode to = fastAccessNodes.get(c.to);
+            if(c.disabled != connectionMap.get(from, to).disabled)
                 throw new RuntimeException();
         }
         
         properties.putAll(stub.properties);
     }
     
+    /**
+     * Returns network stub
+     * @return 
+     */
     public GeneticStub getStub() {
         List<GeneticConnectionStub> connectionStubs = new ArrayList<>();
 
-        for(GeneticConnection c : connections) {
-            connectionStubs.add(new GeneticConnectionStub(c.from.name, c.to.name, c.weight, c.disabled));
+        for(GeneticConnection c : connectionMap.all()) {
+            connectionStubs.add(new GeneticConnectionStub(c.from.id, c.to.id, c.weight, c.disabled));
         }
         return new GeneticStub(getInputSize(), getOutputSize(), 
                                innovations, connectionStubs, properties, 
@@ -185,13 +193,13 @@ public class GeneticNetwork extends Network {
      * @return 
      */
     public GeneticNetwork copy() {
-        GeneticNetwork result = new GeneticNetwork(inputs.size()-1, outputs.size());
+        GeneticNetwork result = new GeneticNetwork(inputCounter.get(), outputCounter.get());
         
         for(Innovation i : innovations)
             result.applyInnovation(i);
         
-        for(GeneticConnection c : connections)
-            result.setWeight(c.from.name, c.to.name, c.weight);
+        for(GeneticConnection c : connectionMap.all())
+            result.setWeight(c.from.id, c.to.id, c.weight);
         
         result.outputActivation = outputActivation;
         result.hiddenActivation = hiddenActivation;
@@ -202,204 +210,204 @@ public class GeneticNetwork extends Network {
     }
     
     /**
-     * Connect all unconnected inputs to outputs
+     * Randomize all weights between [-1 1]
+     * @param min
+     * @param max
      */
-    public void connectInputs(float value) {
+    @Override
+    public void randomize(float min, float max) {
+        for(GeneticConnection c : connectionMap.all())
+            c.weight = Rng.nextFloat(min, max);
+    }
+    
+    /**
+     * adds more inputs
+     * @param count
+     */
+    public void addInputs(int count) {
+        for(int i=0; i < count; i++)
+            createNode(inputCounter.getAndIncrement(), NodeType.INPUT);
+    }
+    
+    /**
+     * Connect all unconnected inputs to outputs
+     * @param weight
+     */
+    public void connectAllInputs(float weight) {
         for(GeneticNode n : inputs) {
             for(GeneticNode o : outputs) {
-                if(n.to(o) == null) {
-                    connect(n, o, value);
-                    updateInnovationList(mutation.ADD_CONNECTION, n.id, o.id);
+                if(connectionMap.get(n, o) == null) {
+                    createConnection(n, o, weight);
+                    createInnovation(mutation.ADD_CONNECTION, n, o);
                 }
             }
         }
     }
     
     /**
-     * Randomize all weights between [-1 1]
-     */
-    public void randomize() {
-        for(GeneticConnection c : connections)
-            c.weight = Rng.nextFloat(-1, 1);
-    }
-    
-    /**
-     * adds an input
-     * @param count
-     * @return 
-     */
-    public String[] addInput(int count) {
-        String[] ids = new String[count];
-        
-        for(int i=0; i < count; i++) {
-            ids[i] = getInputNodeID(getInputSize());
-            GeneticNode n = new GeneticNode(nodeCounter.incrementAndGet(), ids[i], NodeType.INPUT);
-            insertNode(n);
-        }
-        
-        return ids;
-    }
-    
-    /**
      * Randomly selects a mutation and apply it
      * @return 
      */
-    public mutation mutate() {
+    public Innovation mutate() {
         return mutate(false);
     }
-    
-    
-    public mutation mutate(boolean smart) {
+    public Innovation mutate(boolean smart) {
         mutation m = GeneticConfig.getRandomMutation();
-        
+
         switch(m) {
             case ADD_NODE:
-                return addNode() ? m : null;
+                return addHiddenNode();
             case ADD_CONNECTION:
-                return (smart ? addConnectionSmart() : addConnection()) ? m : null;
+                return smart ? addConnectionSmart() : addConnection();
             case ENABLE_CONNECTION:
-                return enableConnection() ? m : null;
+                return enableConnection();
             case DISABLE_CONNECTION:
-                return (smart ? disableConnectionSmart() : disableConnection()) ? m : null;
+                return smart ? disableConnectionSmart() : disableConnection();
         }
-        
+
         return null;
     }
     
     /**
-     * Randomly selects a connection and adds a node in between
+     * Randomly adds a hidden node between a connection
+     * return true on success
      * @return 
      */
-    public boolean addNode() {
-        GeneticNode from = selectRandom(outputs);        
-        GeneticConnection c = from.getRandom();
+    public Innovation addHiddenNode() {
+        List<GeneticConnection> enabled = connectionMap.enabled();
         
-        if(c == null) {
-            System.out.println("Failed to add node: " + from.id);
-            return false;
-        }
+        if(enabled.isEmpty())
+            return null;
         
-        GeneticNode to = c.to;
+        GeneticConnection c = enabled.get(Rng.nextInt(enabled.size()));
+        return addHiddenNode(c);
+    }
+    public Innovation addHiddenNode(String from, String to) {
+        GeneticConnection c = connectionMap.get(from, to);
         
-        from.disable(to);
-        disabled.add(c);
-        enabled.remove(c);
+        if(c == null || c.disabled)
+            return null;
         
-        GeneticNode n = new GeneticNode(nodeCounter.incrementAndGet(), "H"+hidden.size(), NodeType.HIDDEN);
-        insertNode(n);
-        
-        connect(from, n, c.weight);
-        connect(n, to);
-        
-        updateInnovationList(mutation.ADD_NODE, from.id, to.id);
-        
-        return true;
+        return addHiddenNode(c);
     }
     
     /**
      * Randomly adds a connection between unconnected nodes
      * @return 
      */
-    public boolean addConnection() {
-        GeneticNode from = selectRandom(outputs);
-        GeneticNode to = selectRandom(inputs, from.to);
+    public Innovation addConnection() {
+        GeneticNode from = selectRandomExcept(outputs);
+        GeneticNode to = selectRandomExcept(inputs, connectionMap.next(from));
         
-        if(to == null || from == to)
-            return false;
+        GeneticConnection c = createConnection(from, to, 1.0f);
         
-        if(!pathExists(to, from)) {
-            connect(from, to, 1.0f);
-            updateInnovationList(mutation.ADD_CONNECTION, from.id, to.id);
-            return true;
-        }
+        if(c == null)
+            return null;
         
-        return false;
+        return createInnovation(mutation.ADD_CONNECTION, from, to);
     }
-
+    
     /**
      * Selects least connected node and adds a connection
      * @return 
-     */    
-    public boolean addConnectionSmart() {
+     */
+    public Innovation addConnectionSmart() {
         List<GeneticNode> l = new ArrayList<>();
-        int c = Integer.MAX_VALUE;
+        int s = Integer.MAX_VALUE;
         
         for(GeneticNode n : fastAccessNodes.values()) {
             if(n.type == NodeType.OUTPUT)
                 continue;
             
-            if(n.out.size() < c) {
+            int size = connectionMap.from(n).size();
+            if(size < s) {
                 l.clear();
                 l.add(n);
-                c = n.out.size();
-            } else if(n.out.size() == c) {
+                s = size;
+            } else if(size == s) {
                 l.add(n);
             }
         }
         
         GeneticNode from = l.get(Rng.nextInt(l.size()));
-        GeneticNode to = selectRandom(inputs, from.to);
-        
-        if(to == null || from == to)
-            return false;
-        
-        if(!pathExists(to, from)) {
-            connect(from, to, 1.0f);
-            updateInnovationList(mutation.ADD_CONNECTION, from.id, to.id);
-            return true;
-        }
-        
-        return false;        
-    }
+        GeneticNode to = selectRandomExcept(inputs, connectionMap.next(from));
 
+        GeneticConnection c = createConnection(from, to, 1.0f);
+        
+        if(c == null)
+            return null;
+
+        return createInnovation(mutation.ADD_CONNECTION, from, to);
+    }
+    public Innovation addConnection(String from, String to, float weight) {
+        GeneticNode fromNode = fastAccessNodes.get(from);
+        GeneticNode toNode = fastAccessNodes.get(to);
+                
+        GeneticConnection c = createConnection(fromNode, toNode, weight);
+        
+        if(c == null)
+            return null;
+
+        return createInnovation(mutation.ADD_CONNECTION, fromNode, toNode);
+    }
+    
     /**
-     * Makes a connection enabled
+     * Makes a random connection enabled
      * @return 
      */
-    public synchronized boolean enableConnection() {
+    public Innovation enableConnection() {
+        List<GeneticConnection> disabled = connectionMap.disabled();
+
         if(disabled.isEmpty())
-            return false;
+            return null;
 
         int rand = Rng.nextInt(disabled.size());
         
         GeneticConnection c = disabled.get(rand);
-        c.enable();
+        c.disabled = false;
+        connectionMap.update(c);
         
-        enabled.add(disabled.remove(rand));
+        return createInnovation(mutation.ENABLE_CONNECTION, c.from, c.to);
+    }
+    public Innovation enableConnection(String from, String to) {
+        GeneticConnection c = connectionMap.get(from, to);
         
-        /* make sure innovations dont repeat */
-        updateInnovationList(mutation.ENABLE_CONNECTION, c.from.id, c.to.id);
-                    
-        return true;
+        if(!c.disabled)
+            return null;
+        
+        c.disabled = false;
+        connectionMap.update(c);
+        
+        return createInnovation(mutation.ENABLE_CONNECTION, c.from, c.to);
     }
     
     /**
      * Disables a connection randomly
      * @return 
      */
-    public synchronized boolean disableConnection() {
+    public Innovation disableConnection() {
+        List<GeneticConnection> enabled = connectionMap.enabled();
+
         if(enabled.isEmpty())
-            return false;
+            return null;
 
         int rand = Rng.nextInt(enabled.size());
         
         GeneticConnection c = enabled.get(rand);
-        c.disable();
+        c.disabled = true;
+        connectionMap.update(c);
         
-        disabled.add(enabled.remove(rand));
-
-        updateInnovationList(mutation.DISABLE_CONNECTION, c.from.id, c.to.id);
-
-        return true;
+        return createInnovation(mutation.DISABLE_CONNECTION, c.from, c.to);
     }
-    
     /**
      * Disables least valuable connection (closest to zero)
      * @return 
      */
-    public synchronized boolean disableConnectionSmart() {
+    public Innovation disableConnectionSmart() {
+        List<GeneticConnection> enabled = connectionMap.enabled();
+        
         if(enabled.isEmpty())
-            return false;
+            return null;
         
         double min = Integer.MAX_VALUE;
         int selection = -1;
@@ -413,74 +421,45 @@ public class GeneticNetwork extends Network {
         }
         
         GeneticConnection c = enabled.get(selection);
-        c.disable();
+        c.disabled = true;
+        connectionMap.update(c);
         
-        disabled.add(enabled.remove(selection));
-
-        updateInnovationList(mutation.DISABLE_CONNECTION, c.from.id, c.to.id);
-
-        return true;
+        return createInnovation(mutation.DISABLE_CONNECTION, c.from, c.to);
     }
-    
-    
-    public Activation getActivationHidden() {
-        return hiddenActivation;
-    }
-    
-    public Activation getActivationOutput() {
-        return outputActivation;
+    public Innovation disableConnection(String from, String to) {
+        GeneticConnection c = connectionMap.get(from, to);
+        
+        if(c.disabled)
+            return null;
+        
+        c.disabled = true;
+        connectionMap.update(c);
+        
+        return createInnovation(mutation.DISABLE_CONNECTION, c.from, c.to);
     }
     
     /**
-     * Compute result for a certain input
+     *  Uses topsort instead of recursion which is alot faster
      * @param input
      * @return 
-     */
-    @Deprecated
-    public float[] _compute(float[] input) {
-        float[] values = new float[nodeCounter.get()+1];
-        boolean[] computed = new boolean[nodeCounter.get()+1];
-        
-        for(int i=0; i < input.length; i++) {
-            int id = inputs.get(i).id;
-            values[id] = input[i];
-            computed[id] = true;
-        }
-        
-        values[BIAS_ID] = 1.0f;
-        computed[BIAS_ID] = true;
-        
-        float[] result = new float[outputs.size()];
-        
-        for(int i=0; i < outputs.size(); i++)
-            result[i] = _compute(outputs.get(i), values, computed);
-        
-        if(outputActivation != null)
-            outputActivation.compute(result);
-        
-        return result;
-    }
-
-    /*
-     *  Uses topsort instead of recursion which is alot faster
     */
     public float[] compute(float[] input) {
         float[] values = new float[nodeCounter.get()+1];
         
         for(int i=0; i < input.length; i++) {
-            int id = inputs.get(i).id;
-            values[id] = input[i];
+            int index = inputs.get(i).index;
+            values[index] = input[i];
         }
         
         values[BIAS_ID] = 1.0f;
         
         for(GeneticNode n : topSort())
-            values[n.id] = compute(n, values);
+            values[n.index] = compute(n, values);
         
         float[] result = new float[outputs.size()];
         
         for(int i=0; i < outputs.size(); i++)
-            result[i] = values[outputs.get(i).id];
+            result[i] = values[outputs.get(i).index];
         
         if(outputActivation != null)
             outputActivation.compute(result);
@@ -499,27 +478,27 @@ public class GeneticNetwork extends Network {
         
         networkMapping.clear();
         
-        List<List<Integer>> layers = new ArrayList<>();
+        List<List<GeneticNode>> layers = new ArrayList<>();
         List<Set<GeneticConnection>> layerLinks = new ArrayList<>();
         
-        Set<Integer> from = new HashSet<>();
-        Set<Integer> to = new HashSet<>();
-        Set<Integer> processed = new HashSet<>();
-        Set<Integer> unconnected = new HashSet<>();
+        Set<GeneticNode> from = new HashSet<>();
+        Set<GeneticNode> to = new HashSet<>();
+        Set<GeneticNode> processed = new HashSet<>();
+        Set<GeneticNode> unconnected = new HashSet<>();
         
         for(GeneticNode n : inputs) {
-            from.add(n.id);
-            processed.add(n.id);
+            from.add(n);
+            processed.add(n);
 
-            for(GeneticConnection e : n.out)
+            for(GeneticConnection e : connectionMap.from(n))
                 if(!e.disabled)
-                    to.add(e.to.id);
+                    to.add(e.to);
         }
         
         for(GeneticNode n : hidden) {
             boolean connected = false;
             
-            for(GeneticConnection c : n.in) {
+            for(GeneticConnection c : connectionMap.to(n)) {
                 if(!c.disabled) {
                     connected = true;
                     break;
@@ -527,41 +506,38 @@ public class GeneticNetwork extends Network {
             }
             
             if(!connected)
-                unconnected.add(n.id);
+                unconnected.add(n);
         }
         
         do {
-            Set<Integer> temp = new HashSet<>();
+            Set<GeneticNode> temp = new HashSet<>();
 
-            List<Integer> layer = new ArrayList<>();
+            List<GeneticNode> layer = new ArrayList<>();
             layers.add(layer);
             
             Set<GeneticConnection> links = new HashSet<>();
             layerLinks.add(links);
 
             /* Process "to" nodes and add to temp */
-            for(Iterator<Integer> it = to.iterator(); it.hasNext();) {
-                int s = it.next();
-                
-                GeneticNode n = fastAccessNodes.get(s);
+            for(Iterator<GeneticNode> it = to.iterator(); it.hasNext();) {
+                GeneticNode n = it.next();
                 
                 boolean p = true;
                 
-                for(GeneticConnection e : n.in) {
+                for(GeneticConnection e : connectionMap.to(n)) {
                     if(e.disabled)
                         continue;
                     
-                    int f = e.from.id;
-                    if(!unconnected.contains(f))
-                        p &= from.contains(f);
+                    if(!unconnected.contains(e.from))
+                        p &= from.contains(e.from);
                 }
                 
                 if(p) {
                     it.remove();
-                    processed.add(s);
-                    temp.add(s);
+                    processed.add(n);
+                    temp.add(n);
                     
-                    for(GeneticConnection e : n.in) {
+                    for(GeneticConnection e : connectionMap.to(n)) {
                         if(!e.disabled)
                             links.add(e);
                     }
@@ -569,18 +545,16 @@ public class GeneticNetwork extends Network {
             }
 
             /* remove nodes that are no longer needed as input */
-            for(Iterator<Integer> it = from.iterator(); it.hasNext();) {
-                int s = it.next();
-                layer.add(s);
-                
-                GeneticNode n = fastAccessNodes.get(s);
+            for(Iterator<GeneticNode> it = from.iterator(); it.hasNext();) {
+                GeneticNode n = it.next();
+                layer.add(n);
                 
                 if(n.type != NodeType.OUTPUT) {
                     boolean d = true;
 
-                    for(GeneticConnection e : n.out) {
+                    for(GeneticConnection e : connectionMap.from(n)) {
                         if(!e.disabled)
-                            d &= processed.contains(e.to.id);
+                            d &= processed.contains(e.to);
                     }
 
                     if(d)
@@ -591,43 +565,41 @@ public class GeneticNetwork extends Network {
             /* update from and to with temp */
             from.addAll(temp);
             
-            for(int s : temp) {
-                GeneticNode n = fastAccessNodes.get(s);
-
-                for(GeneticConnection t : n.out) {
+            for(GeneticNode n : temp) {
+                for(GeneticConnection t : connectionMap.from(n)) {
                     if(!t.disabled)
 //                        System.out.println("Processed: " + t.to.id + " " + to.contains(t.to.id));
 //                    else
-                        to.add(t.to.id);
+                        to.add(t.to);
                 }
             }
         } while(!to.isEmpty());
         
         /* output layer */
-        List<Integer> output = new ArrayList<>();
+        List<GeneticNode> output = new ArrayList<>();
         layers.add(output);
         
         for(GeneticNode o : outputs)
-            output.add(o.id);
+            output.add(o);
         
         /* compute activation conditions */
         List<boolean[]> conditions = new ArrayList<>();
         
         for(int i=0; i < layers.size() - 2; i++) {
-            List<Integer> current = layers.get(i);
-            List<Integer> next = layers.get(i+1);
+            List<GeneticNode> current = layers.get(i);
+            List<GeneticNode> next = layers.get(i+1);
             Set<GeneticConnection> currentLinks = layerLinks.get(i);
             
             boolean[] b = new boolean[next.size()];
 
             for(int j=0; j < next.size(); j++) {
-                GeneticNode nodeNext = fastAccessNodes.get(next.get(j));
+                GeneticNode nodeNext = next.get(j);
                 b[j] = false;
 
                 for(int k=0; k < current.size(); k++) {
-                    GeneticNode nodeCurrent = fastAccessNodes.get(current.get(k));
+                    GeneticNode nodeCurrent = current.get(k);
                     
-                    GeneticConnection c = nodeCurrent.to(nodeNext);
+                    GeneticConnection c = connectionMap.get(nodeCurrent, nodeNext);
 
                     if(currentLinks.contains(c) && nodeCurrent != nodeNext && nodeNext.type != NodeType.OUTPUT) {
                         b[j] = true;
@@ -657,16 +629,16 @@ public class GeneticNetwork extends Network {
         n.build();
         
         /* build input layer in order I0 - Bias */
-        List<Integer> next = layers.get(1);
+        List<GeneticNode> next = layers.get(1);
         Set<GeneticConnection> currentLinks = layerLinks.get(0);
         
         for(int j=0; j < inputs.size()-1; j++) {
             GeneticNode nodeCurrent = inputs.get(j);
 
             for(int k=0; k < next.size(); k++) {
-                GeneticNode nodeNext = fastAccessNodes.get(next.get(k));
+                GeneticNode nodeNext = next.get(k);
 
-                GeneticConnection c = nodeCurrent.to(nodeNext);
+                GeneticConnection c = connectionMap.get(nodeCurrent, nodeNext);
 
                 if(currentLinks.contains(c)) {
                    n.setWeight(0, j, k, c.weight);
@@ -678,12 +650,12 @@ public class GeneticNetwork extends Network {
             }
         }
              
-        GeneticNode biasNode = fastAccessNodes.get(BIAS_ID);
+        GeneticNode biasNode = fastAccessNodes.get(BIAS_NAME);
 
         for (int k = 0; k < next.size(); k++) {
-            GeneticNode nodeNext = fastAccessNodes.get(next.get(k));
+            GeneticNode nodeNext = next.get(k);
 
-            GeneticConnection c = biasNode.to(nodeNext);
+            GeneticConnection c = connectionMap.get(biasNode, nodeNext);
 
             if (c != null && !c.disabled) {
                 n.setBias(0, k, c.weight);
@@ -696,17 +668,17 @@ public class GeneticNetwork extends Network {
         }
         
         for(int i=1; i < layers.size() - 1; i++) {
-            List<Integer> current = layers.get(i);
+            List<GeneticNode> current = layers.get(i);
             next = layers.get(i+1);
             currentLinks = layerLinks.get(i);
                     
             for(int j=0; j < current.size(); j++) {
-                GeneticNode nodeCurrent = fastAccessNodes.get(current.get(j));
+                GeneticNode nodeCurrent = current.get(j);
 
                 for(int k=0; k < next.size(); k++) {
-                    GeneticNode nodeNext = fastAccessNodes.get(next.get(k));
+                    GeneticNode nodeNext = next.get(k);
 
-                    GeneticConnection c = nodeCurrent.to(nodeNext);
+                    GeneticConnection c = connectionMap.get(nodeCurrent, nodeNext);
 
                     if(currentLinks.contains(c)) {
                        n.setWeight(i, j, k, c.weight);
@@ -723,19 +695,19 @@ public class GeneticNetwork extends Network {
         
         return n;
     }
-    
         
     /**
-     * 
-     * @param fromName
-     * @param toName
+     *
+     * @param from
+     * @param to
      * @param weight 
+     * @return  
      */
-    public void setWeight(String fromName, String toName, float weight) {
-        GeneticNode from = fastAccessIndex.get(fromName);
-        GeneticNode to = fastAccessIndex.get(toName);
+    public boolean setWeight(String from, String to, float weight) {
+        GeneticConnection c = connectionMap.get(from, to);
         
-        GeneticConnection c = from.to(to);
+        if(c == null)
+            return false;
         
         c.weight = weight;
 
@@ -747,97 +719,25 @@ public class GeneticNetwork extends Network {
             else
                 network.setWeight(m.layer, m.from, m.to, weight);
         }
+        
+        return true;
+    }
+   
+    public float getWeight(String from, String to) {
+        return connectionMap.get(from, to).weight;
     }
     
-    /**
-     * 
-     * @param fromID
-     * @param toID
-     * @param weight 
-     */
-    public void setWeight(int fromID, int toID, float weight) {
-        GeneticNode from = fastAccessNodes.get(fromID);
-        GeneticNode to = fastAccessNodes.get(toID);
-        
-        GeneticConnection c = from.to(to);
-
-        c.weight = weight;
-
-        if(network != null && !c.disabled) {
-            mapping m = networkMapping.get(c.id);
-            
-            if(m.from == -1)
-                network.setBias(m.layer, m.to, weight);
-            else
-                network.setWeight(m.layer, m.from, m.to, weight);
-        }
-    }
     
-    /**
-     * 
-     * @param connectionID
-     * @param weight 
-     */
-    public void setWeight(String connectionID, float weight) {
-        GeneticConnection c = fastAccessConnections.get(connectionID);
-        c.weight = weight;
-        
-        if(network != null && !c.disabled) {
-            mapping m = networkMapping.get(connectionID);
-            
-            if(m.from == -1)
-                network.setBias(m.layer, m.to, weight);
-            else
-                network.setWeight(m.layer, m.from, m.to, weight);
-        }
-    }
-    
-    /**
-     * 
-     * @param connectionID
-     * @return 
-     */
-    public float getWeight(String connectionID) {
-        return fastAccessConnections.get(connectionID).weight;
-    }
-
-    /**
-     * Private functions
-     */
-    @Deprecated
-    private float _compute(GeneticNode n, float[] values, boolean[] computed) {
-        float sum = 0;
-        
-        for(GeneticConnection c : n.in) {
-            GeneticNode from = c.from;
-            
-            if(c.disabled)
-                continue;
-            
-            if(!computed[from.id]) {
-                values[from.id] = _compute(from, values, computed);
-                computed[from.id] = true;
-            }
-            
-            sum += values[from.id] * c.weight;
-        }
-        
-        if(hiddenActivation != null && n.type == NodeType.HIDDEN)
-            sum = hiddenActivation.compute(sum);
-        
-        return sum;
-    }
-        
     private float compute(GeneticNode n, float[] values) {
         float sum = 0;
         
-        for(GeneticConnection c : n._in) {
+        for(GeneticConnection c : connectionMap.to0(n)) {
             GeneticNode from = c.from;
             
             if(c.disabled)
                 continue;
             
-            sum += c.weight * values[from.id];
+            sum += c.weight * values[from.index];
         }
         
         if(hiddenActivation != null && n.type == NodeType.HIDDEN)
@@ -845,62 +745,9 @@ public class GeneticNetwork extends Network {
         
         return sum;
     }
-        
-    private GeneticNode selectRandom(Collection<GeneticNode>... exclude) {
-        Set<Integer> banned = new HashSet<>();
-        
-        for(Collection<GeneticNode> nodes : exclude)
-            for(GeneticNode n : nodes)
-                banned.add(n.id);
-        
-        List<Integer> pool = new ArrayList<>();
-        
-        for(int s : fastAccessNodes.keySet())
-            if(!banned.contains(s))
-                pool.add(s);
-        
-        if(pool.isEmpty())
-            return null;
-        
-        int selection = pool.get(Rng.nextInt(pool.size()));
-        
-        return fastAccessNodes.get(selection);
-    }
     
-    private boolean pathExists(GeneticNode n1, GeneticNode n2) {
-        Queue<GeneticNode> queue = new LinkedList<>();
-        Set<GeneticNode> visited = new HashSet<>();
-        
-        queue.add(n1);
-        
-        while(!queue.isEmpty()) {
-            GeneticNode n = queue.poll();
-            
-            if(visited.contains(n))
-                continue;
-
-            String c = n.id + "-" + n2.id;
-
-            if(paths.contains(c))
-                return true;
-
-            if(n.to(n2) != null) {
-                paths.add(c);
-                return true;
-            }
-
-            visited.add(n);
-
-            for(GeneticNode next : n.to) {
-                queue.add(next);
-            }
-        }
-        
-        return false;
-    }
-    
-    GeneticNode[] topSort() {
-        if(lastTopSortConnectionCount == connections.size() && lastTopSortNodeCount == nodeCounter.get())
+    private GeneticNode[] topSort() {
+        if(lastTopSortConnectionCount == connectionMap.count() && lastTopSortNodeCount == nodeCounter.get())
             return topSort;
         
         ArrayList<GeneticNode> result = new ArrayList<>();
@@ -908,6 +755,9 @@ public class GeneticNetwork extends Network {
         Set<GeneticNode> visited = new HashSet<>();
         
         for(GeneticNode n : all) {
+            if(n.type == NodeType.INPUT)
+                continue;
+            
             if(visited.contains(n))
                 continue;
             
@@ -915,217 +765,114 @@ public class GeneticNetwork extends Network {
             
             while(!nodes.isEmpty()) {
                 GeneticNode current = nodes.peek();
-
-                boolean done = true;
                 
-                for(GeneticNode next : current.to) {
-                    if(!visited.contains(next)) {
-                        nodes.push(next);
-                        done = false;
-                        break;
-                    }
+                for(GeneticNode prev : connectionMap.prev(current)) {
+                    if(prev.type == NodeType.INPUT)
+                        continue;
+                    
+                    if(!visited.contains(prev))
+                        nodes.push(prev);
                 }
                 
-                if(done) {
-                    nodes.pop();
-                    visited.add(current);
-                    
-                    if(current.type != NodeType.INPUT)
-                        result.add(0, current);
+                if(current == nodes.peek()) {
+                    visited.add(nodes.pop());
+                    result.add(current);
                 }
             }
         }
         
         topSort = new GeneticNode[result.size()];
         result.toArray(topSort);
-        lastTopSortConnectionCount = connections.size();
+        lastTopSortConnectionCount = connectionMap.count();
         lastTopSortNodeCount = nodeCounter.get();
         
         return topSort;
     }
     
-    private boolean applyInnovation(Innovation i) {
-        switch(i.m) {
-            case ADD_NODE:
-                return addNode(i.fromName, i.toName);
-            case ADD_CONNECTION:
-                return addConnection(i.fromName, i.toName);
-            case ENABLE_CONNECTION:
-                return enableConnection(fastAccessIndex.get(i.fromName).id, fastAccessIndex.get(i.toName).id);
-            case DISABLE_CONNECTION:
-                return disableConnection(fastAccessIndex.get(i.fromName).id, fastAccessIndex.get(i.toName).id);
-        }
+    private Innovation addHiddenNode(GeneticConnection c) {
+        if(c.disabled)
+            throw new RuntimeException();
         
-        throw new RuntimeException();
-    }
+        GeneticNode n = createNode(hiddenCounter.getAndIncrement(), NodeType.HIDDEN);
         
-    public String getInputNodeID(int index) {
-        return "I" + index;
+        createConnection(c.from, n, c.weight);
+        createConnection(n, c.to, 1.0f);
+        
+        c.disabled = true;
+        connectionMap.update(c);
+        
+        return createInnovation(mutation.ADD_NODE, c.from, c.to);
     }
     
-    public String getOutputNodeID(int index) {
-        return "O" + index;
-    }
-    
-    public String getHiddenNodeID(int index) {
-        return "H" + index;
-    }
-    
-    public boolean addNode(String fromName, String toName) {
-        return addNode(fastAccessIndex.get(fromName).id, fastAccessIndex.get(toName).id);
-    }
-    
-    boolean addNode(int fromID, int toID) {
-        GeneticNode from = fastAccessNodes.get(fromID);
-        GeneticNode to = fastAccessNodes.get(toID);
-
-        GeneticConnection c = from.to(to);
-
-        from.disable(to);
+    /* Innovation Functions */
+    private Innovation createInnovation(mutation m, GeneticNode from, GeneticNode to) {
+        Innovation i = new Innovation(m, from.id, to.id);
         
-        GeneticNode n = new GeneticNode(nodeCounter.incrementAndGet(), "H"+hidden.size(), NodeType.HIDDEN);
-        insertNode(n);
-
-        connect(from, n, c.weight);
-        connect(n, to);
-    
-        updateInnovationList(mutation.ADD_NODE, fromID, toID);
-    
-        return true;
-    }
-    
-    public boolean addConnection(String fromName, String toName) {
-        return addConnection(fastAccessIndex.get(fromName).id, fastAccessIndex.get(toName).id);
-    }
-    
-    boolean addConnection(int fromID, int toID) {
-        GeneticNode n1 = fastAccessNodes.get(fromID);
-        GeneticNode n2 = fastAccessNodes.get(toID);
-        
-        if(n1 == n2)
-            return false;
-        
-        if(!pathExists(n2, n1)) {
-            connect(n1, n2);
-            updateInnovationList(mutation.ADD_CONNECTION, fromID, toID);
-            return true;
-        }
-        
-        return false;        
-    }
-
-    synchronized boolean enableConnection(int fromID, int toID) {
-        GeneticNode from = fastAccessNodes.get(fromID);
-        GeneticNode to = fastAccessNodes.get(toID);
-        
-        GeneticConnection c = from.to(to);
-        c.enable();
-        
-        int i = disabled.indexOf(c);
-        
-        if(i > -1)
-           disabled.remove(i);
-        
-        i = enabled.indexOf(c);
-        
-        if(i == -1)
-            enabled.add(c);
-
-        updateInnovationList(mutation.ENABLE_CONNECTION, fromID, toID);
-
-        return true;
-    }
-    
-    synchronized boolean disableConnection(int fromID, int toID) {
-        GeneticNode from = fastAccessNodes.get(fromID);
-        GeneticNode to = fastAccessNodes.get(toID);
-        
-        GeneticConnection c = from.to(to);
-        c.disable();
-        
-        int i = enabled.indexOf(c);
-        
-        if(i > -1)
-           enabled.remove(i);
-        
-        i = disabled.indexOf(c);
-        
-        if(i == -1)
-            disabled.add(c);
-
-        updateInnovationList(mutation.DISABLE_CONNECTION, fromID, toID);
-
-        return true;
-    }
-    
-    private void connect(GeneticNode a, GeneticNode b) {
-        connect(a, b, 1.0f);
-    }
-    
-    private void connect(GeneticNode a, GeneticNode b, float weight) {
-        GeneticConnection c = a.connect(b, weight);
-        connections.add(c);
-        fastAccessConnections.put(c.id, c);
-        enabled.add(c);
-    }
-
-    private boolean isDisabled(String fromName, String toName) {
-        GeneticNode from = fastAccessIndex.get(fromName);
-        GeneticNode to = fastAccessIndex.get(toName);
-        
-        GeneticConnection c = from.to(to);
-        
-        return c.disabled;
-    }
-    
-    @Override
-    public int getInputSize() {
-        return inputs.size() - 1;
-    }
-
-    @Override
-    public int getOutputSize() {
-        return outputs.size();
-    }
-    
-    public int getInnovationCount() {
-        return innovations.size();
-    }
-    
-    private void updateInnovationList(mutation m, int fromID, int toID) {
-        String hash = fromID + ":" + toID + ":" + m.toString();
-
+        /* make sure innovations dont repeat
+        * Remove this --> ENABLE_CONNECTION ... (new) DISABLE_CONNECTION
+        * Remove this --> DISABLE_CONNECTION ... (new) ENABLE_CONNECTION
+        * This will never happen -->  ENABLE_CONNECTION ... ADD_NODE ... (new) DISABLE_CONNECTION
+        * because ADD_NODE disables the connection  
+        */
         if(m == mutation.ENABLE_CONNECTION || m == mutation.DISABLE_CONNECTION) {
-            mutation c = m == mutation.ENABLE_CONNECTION ? mutation.DISABLE_CONNECTION : mutation.ENABLE_CONNECTION;
+            mutation mp = m == mutation.ENABLE_CONNECTION ? mutation.DISABLE_CONNECTION : mutation.ENABLE_CONNECTION;
 
-            String cHash = fromID + ":" + toID + ":" + c.toString();
+            String pid = Innovation.getId(mp, from, to);
+            Innovation p = fastAccessInnovation.get(pid);
 
-            Innovation previous = fastAccessInnovation.get(cHash);
-            
-            if(previous != null) {
-                System.out.println("Found enable disable: " + hash);
-                innovations.remove(previous);
-                fastAccessInnovation.remove(cHash);
-                return;
-            }            
+            if(p != null) {
+//                System.out.println("Removing: " + p.id());
+                innovations.remove(p);
+                fastAccessInnovation.remove(pid);
+                AtomicInteger count = fastAccessInnovationCount.get(pid);
+                count.decrementAndGet();
+                
+                if(count.get() == 0)
+                    fastAccessInnovationCount.remove(pid);
+    
+                return i;
+            }
         }
 
-        Innovation i = new Innovation(m, fastAccessNodes.get(fromID).name, fastAccessNodes.get(toID).name);
-        innovations.add(i);
-        fastAccessInnovation.put(hash, i);
+        String id = Innovation.getId(m, from, to);
         
+        innovations.add(i);
+        fastAccessInnovation.put(id, i);
+        fastAccessInnovationCount.putIfAbsent(id, new AtomicInteger());
+        fastAccessInnovationCount.get(id).incrementAndGet();
+                
         if(network != null) {
             network.freeGPU();
             network = null;
             networkMapping.clear();
         }
-    }
-    
-    private void insertNode(GeneticNode n) {
-        fastAccessNodes.put(n.id, n);
-        fastAccessIndex.put(n.name, n);
         
-        switch(n.type) {
+        return i;
+    }
+
+    private boolean applyInnovation(Innovation i) {
+        switch(i.m) {
+            case ADD_NODE:
+                return addHiddenNode(i.from, i.to) != null;
+            case ADD_CONNECTION:
+                return addConnection(i.from, i.to, 1.0f) != null;
+            case ENABLE_CONNECTION:
+                return enableConnection(i.from, i.to) != null;
+            case DISABLE_CONNECTION:
+                return disableConnection(i.from, i.to) != null;
+        }
+        
+        return false;
+    }
+
+    /* Node functions */
+    private GeneticNode createNode(int index, NodeType type) {
+        return createNode(GeneticNode.createId(index, type), type);
+    }
+    private GeneticNode createNode(String id, NodeType type) {
+        GeneticNode n = new GeneticNode(id, type);
+        
+        switch(type) {
             case INPUT:
                 inputs.add(n);
                 break;
@@ -1138,6 +885,83 @@ public class GeneticNetwork extends Network {
         }
         
         all.add(n);
+        fastAccessNodes.put(id, n);
+        
+        n.index = nodeCounter.getAndIncrement();
+        
+        return n;
+    }
+    
+    /* Connection functions */
+    private GeneticConnection createConnection(GeneticNode from, GeneticNode to, float weight) {
+        if(from == null || to == null || from == to)
+            return null;
+
+        if(connectionMap.get(from, to) != null)
+            return null;
+        
+        /* dont allow cycles */
+        if(pathExists(to, from))
+            return null;
+        
+        GeneticConnection c = new GeneticConnection(from, to, weight);
+        connectionMap.add(c);
+        
+        return c;
+    }
+    private boolean pathExists(GeneticNode from, GeneticNode to) {
+        Queue<GeneticNode> queue = new LinkedList<>();
+        Set<GeneticNode> visited = new HashSet<>();
+        
+        queue.add(from);
+        
+        while(!queue.isEmpty()) {
+            GeneticNode n = queue.poll();
+            
+            if(visited.contains(n))
+                continue;
+            
+            if(connectionMap.get(n, to) != null)
+                return true;
+
+            visited.add(n);
+
+            for(GeneticNode next : connectionMap.next(n))
+                queue.add(next);
+        }
+        
+        return false;
+    }
+
+    /* Get functions */
+    @Override
+    public int getInputSize() {
+        return inputCounter.get();
+    }
+
+    @Override
+    public int getOutputSize() {
+        return outputCounter.get();
+    }
+    
+    public String getInputNode(int index) {
+        return GeneticNode.createId(index, NodeType.INPUT);
+    }
+    
+    public String getOutputNode(int index) {
+        return GeneticNode.createId(index, NodeType.OUTPUT);
+    }
+    
+    public String getHiddenNode(int index) {
+        return GeneticNode.createId(index, NodeType.HIDDEN);
+    }
+    
+    public Activation getActivationHidden() {
+        return hiddenActivation;
+    }
+    
+    public Activation getActivationOutput() {
+        return outputActivation;
     }
     
     public List<Innovation> getInnovations() {
@@ -1145,7 +969,7 @@ public class GeneticNetwork extends Network {
     }
     
     public int getConnectionsCount() {
-        return fastAccessConnections.size();
+        return connectionMap.count();
     }
     
     public int getNodeCount() {
@@ -1153,6 +977,86 @@ public class GeneticNetwork extends Network {
     }
     
     public int getHiddenCount() {
-        return hidden.size();
+        return hiddenCounter.get();
+    }
+    
+    public int getInnovationCount() {
+        return innovations.size();
+    }
+    
+    private GeneticNode selectRandomExcept(Collection<GeneticNode>... exclude) {
+        Set<GeneticNode> banned = new HashSet<>();
+        
+        for(Collection<GeneticNode> nodes : exclude)
+            for(GeneticNode n : nodes)
+                banned.add(n);
+        
+        List<GeneticNode> pool = new ArrayList<>();
+        
+        for(GeneticNode n : all)
+            if(!banned.contains(n))
+                pool.add(n);
+        
+        if(pool.isEmpty())
+            return null;
+        
+        return pool.get(Rng.nextInt(pool.size()));
+    }
+    
+    /**
+     * Compute result for a certain input
+     * @param input
+     * @return 
+     */
+    @Deprecated
+    public float[] _compute(float[] input) {
+        float[] values = new float[nodeCounter.get()+1];
+        boolean[] computed = new boolean[nodeCounter.get()+1];
+        
+        for(int i=0; i < input.length; i++) {
+            int id = inputs.get(i).index;
+            values[id] = input[i];
+            computed[id] = true;
+        }
+        
+        values[BIAS_ID] = 1.0f;
+        computed[BIAS_ID] = true;
+        
+        float[] result = new float[outputs.size()];
+        
+        for(int i=0; i < outputs.size(); i++)
+            result[i] = _compute(outputs.get(i), values, computed);
+        
+        if(outputActivation != null)
+            outputActivation.compute(result);
+        
+        return result;
+    }
+
+    /**
+     * Private functions
+     */
+    @Deprecated
+    private float _compute(GeneticNode n, float[] values, boolean[] computed) {
+        float sum = 0;
+        
+        for(GeneticConnection c : connectionMap.to(n)) {
+            GeneticNode from = c.from;
+            
+            if(c.disabled)
+                continue;
+            
+            if(!computed[from.index]) {
+                values[from.index] = _compute(from, values, computed);
+                computed[from.index] = true;
+            }
+            
+            sum += values[from.index] * c.weight;
+        }
+        
+        if(hiddenActivation != null && n.type == NodeType.HIDDEN)
+            sum = hiddenActivation.compute(sum);
+        
+        return sum;
     }
 }

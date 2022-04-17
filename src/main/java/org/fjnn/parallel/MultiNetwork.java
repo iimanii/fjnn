@@ -34,15 +34,12 @@ import jcuda.driver.CUstream;
 import jcuda.driver.CUstream_flags;
 import jcuda.driver.JCudaDriver;
 import org.fjnn.activation.Activation;
-import org.fjnn.base.BaseLayer;
 import org.fjnn.base.BaseNetwork;
 import org.fjnn.base.LayeredNetwork;
 import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaEngine.CUdeviceptr2D;
-import org.fjnn.cuda.CudaThread;
-import org.fjnn.cuda.CudaUtil;
-import org.fjnn.serializer.LayerStub;
-import org.fjnn.serializer.NetworkStub;
+import org.fjnn.network_old.LayerStub;
+import org.fjnn.network_old.NetworkStub;
+import org.fjnn.parallel.ParallelUtil.CUdeviceptr2D;
 import org.fjnn.util.util;
 
 /**
@@ -170,11 +167,9 @@ public class MultiNetwork extends BaseNetwork {
      * @return 
      */
     @Override
-    public MultiNetwork randomize() {
+    public void randomize() {
         for(ParallelLayer l : layers)
             l.randomize();
-        
-        return this;
     }
     
     /**
@@ -303,7 +298,7 @@ public class MultiNetwork extends BaseNetwork {
      */
     @Override
     public int getInputSize() {
-        return input.size();
+        return input.neurons();
     }
     
     /**
@@ -312,7 +307,7 @@ public class MultiNetwork extends BaseNetwork {
      */
     @Override
     public int getOutputSize() {
-        return output.size();
+        return output.neurons();
     }
 
     /**
@@ -322,7 +317,7 @@ public class MultiNetwork extends BaseNetwork {
      */
     @Override
     public int getLayerSize(int layer) {
-        return layers[layer].size();
+        return layers[layer].neurons();
     }
     
     /**
@@ -339,22 +334,6 @@ public class MultiNetwork extends BaseNetwork {
     @Override
     public int getLayerCount() {
         return layers.length;
-    }
-    
-    
-    @Override
-    public Object getProperty(String name) {
-        return properties.get(name);
-    }
-    
-    @Override
-    public void setProperty(String name, Object object) {
-        properties.put(name, object);
-    }
-    
-    @Override
-    public boolean hasProperty(String name) {
-        return properties.containsKey(name);
     }
     
     /**
@@ -411,13 +390,13 @@ public class MultiNetwork extends BaseNetwork {
      */
     public boolean prepareGPU(int device) {
         if(this.deviceId != device && this.deviceId != -1) {
-            CudaThread.prepareThread(this.deviceId);
+            CudaEngine.prepareThread(this.deviceId);
             freeGPU();
         }
         
         this.deviceId = device;
         
-        CudaThread.prepareThread(device);
+        CudaEngine.prepareThread(device);
         
         if(mainstream == null) {
             mainstream = new CUstream();
@@ -426,20 +405,20 @@ public class MultiNetwork extends BaseNetwork {
 
         if(pinned == null && CudaEngine.usePinnedMemory()) {        
             pinned = new Pointer();
-            JCudaDriver.cuMemAllocHost(pinned, size * (input.size() + 1) * (long) Sizeof.FLOAT);
+            JCudaDriver.cuMemAllocHost(pinned, size * (input.neurons() + 1) * (long) Sizeof.FLOAT);
             buffer = pinned.getByteBuffer().asFloatBuffer();    
         }
         
         if(input2D == null)
-            input2D = CudaUtil.createPitch((input.size() + 1), size);
+            input2D = ParallelUtil.createPitch((input.neurons() + 1), size);
 
-        for(BaseLayer l : layers)
+        for(ParallelLayer l : layers)
             l.prepareGPU(mainstream);
         
         gpuReady = true;
         
         JCudaDriver.cuStreamSynchronize(mainstream);
-        CudaThread.finalizeThread();
+        CudaEngine.finalizeThread();
         
         return true;
     }
@@ -467,10 +446,10 @@ public class MultiNetwork extends BaseNetwork {
         if(threadSafe)
             throw new UnsupportedOperationException("Thread safe MultiNetworks not supported yet.");
         
-        CudaThread.prepareThread(deviceId);
+        CudaEngine.prepareThread(deviceId);
     
         Pointer devicePtr;
-        int width = (this.input.size() + 1);
+        int width = (this.input.neurons() + 1);
         int length = this.size * width;
         
         if(pinned != null) {
@@ -514,11 +493,11 @@ public class MultiNetwork extends BaseNetwork {
         for(ParallelLayer l : layers)
             ptr = l.feedForwardGPU(ptr, mainstream);
         
-        float[][] result = CudaUtil.fromGPU(ptr, output.size(), size, mainstream);
+        float[][] result = ParallelUtil.fromGPU(ptr, output.neurons(), size, mainstream);
         
         JCudaDriver.cuStreamSynchronize(mainstream);
 
-        CudaThread.finalizeThread();
+        CudaEngine.finalizeThread();
         
         return result;
     }
@@ -553,7 +532,7 @@ public class MultiNetwork extends BaseNetwork {
 //    }
 //        
     public void freeGPU() {
-        for(BaseLayer l : layers)
+        for(ParallelLayer l : layers)
             l.freeGPU();
 
         JCudaDriver.cuStreamDestroy(mainstream);
@@ -568,7 +547,7 @@ public class MultiNetwork extends BaseNetwork {
     }
 
     @Override
-    public MultiNetwork randomize(float min, float max) {
+    public void randomize(float min, float max) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
     

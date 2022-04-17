@@ -23,18 +23,13 @@
  */
 package org.fjnn.cuda;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
 import jcuda.Pointer;
 import jcuda.Sizeof;
-import jcuda.driver.CUDA_MEMCPY2D;
 import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUmemorytype;
+import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
-import org.fjnn.cuda.CudaEngine.CUdeviceptr2D;
+import run.timer;
 
 /**
  *
@@ -42,102 +37,156 @@ import org.fjnn.cuda.CudaEngine.CUdeviceptr2D;
  */
 public class CudaUtil {
     
-    public static final String CUDA_COMPILER = "nvcc";
+    private static final long FLOAT_SIZE = Sizeof.FLOAT;
     
-    /**
-     * Compiles CU files, throws runtime exception if anything went wrong
-     */ 
-    static void compileCU(String cuPath, String ptxPath) {
-        File cuFile = new File(cuPath);
+    public static CUdeviceptr create(long size) {
+        CUdeviceptr ptr = new CUdeviceptr();
+        JCudaDriver.cuMemAlloc(ptr, size * FLOAT_SIZE);
         
-        if(!cuFile.exists())
-            throw new RuntimeException("Cuda file not found: " + cuPath);
-        
-        String arch = System.getProperty("sun.arch.data.model");
-        
-        String command = String.format("%s -ptx %s -o %s -m %s -lineinfo",
-                                        CUDA_COMPILER, cuPath, ptxPath, arch);
-
-        System.out.println("Compiling: \n" + command);
-
-        try {
-            Process process = Runtime.getRuntime().exec(command);
-            
-            int result = process.waitFor();
-            
-            if(result != 0) {
-                String output = readStream(process.getInputStream());
-                String error  = readStream(process.getErrorStream());
-                
-                System.out.println("nvcc exit: " + result);
-                System.out.println("outputMessage:\n" + output);
-                System.out.println("errorMessage:\n" + error);
-                
-                throw new RuntimeException("Unable to create .ptx file: "+ error);
-            }
-        } catch(IOException | InterruptedException ex) {
-            throw new RuntimeException(ex);
-        }
-    }
-    
-    static String readStream(InputStream stream) throws IOException {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        byte buffer[] = new byte[4096];
-        
-        int len;
-        
-        while((len = stream.read(buffer)) != -1)
-            output.write(buffer, 0, len);
-
-        return output.toString("UTF-8");
+        return ptr;
     }
 
+    public static CUdeviceptr createBytes(long size) {
+        CUdeviceptr ptr = new CUdeviceptr();
+        JCudaDriver.cuMemAlloc(ptr, size);
+        
+        return ptr;
+    }
+    
     public static CUdeviceptr toGPU(float[] array) {
         CUdeviceptr ptr = new CUdeviceptr();
-        JCudaDriver.cuMemAlloc(ptr, array.length * (long)Sizeof.FLOAT);
-
-        JCudaDriver.cuMemcpyHtoD(ptr, Pointer.to(array), array.length * (long)Sizeof.FLOAT);
+        JCudaDriver.cuMemAlloc(ptr, array.length * FLOAT_SIZE);
+        JCudaDriver.cuMemcpyHtoD(ptr, Pointer.to(array), array.length * FLOAT_SIZE);
         
         return ptr;
     }
-    
+        
     public static CUdeviceptr toGPU(float[] array, CUstream stream) {
         CUdeviceptr ptr = new CUdeviceptr();
-        JCudaDriver.cuMemAlloc(ptr, array.length * (long)Sizeof.FLOAT);
-        JCudaDriver.cuMemcpyHtoDAsync(ptr, Pointer.to(array), array.length * (long)Sizeof.FLOAT, stream);
-        
-        return ptr;
-    }
-    public static CUdeviceptr toGPU(Pointer array, long size, CUstream stream) {
-        CUdeviceptr ptr = new CUdeviceptr();
-        JCudaDriver.cuMemAlloc(ptr, size * (long)Sizeof.FLOAT);
-        JCudaDriver.cuMemcpyHtoDAsync(ptr, array, size * (long)Sizeof.FLOAT, stream);
+        JCudaDriver.cuMemAlloc(ptr, array.length * FLOAT_SIZE);
+        JCudaDriver.cuMemcpyHtoDAsync(ptr, Pointer.to(array), array.length * FLOAT_SIZE, stream);
         
         return ptr;
     }
     
-    public static CUdeviceptr2D createPitch(int width, int height) {
-        CUdeviceptr ptr = new CUdeviceptr();
-        long[] pitch = new long[1];
-        
-        JCudaDriver.cuMemAllocPitch(ptr, pitch, width * (long)Sizeof.FLOAT, height, Sizeof.FLOAT);
-
-        return new CUdeviceptr2D(ptr, pitch[0] / Sizeof.FLOAT);
-    }
-    
-    public static float[] fromGPU(CUdeviceptr ptr, int size, CUstream stream) {
+    public static float[] fromGPU(CUdeviceptr src, int size) {
         float[] array = new float[size];
-        JCudaDriver.cuMemcpyDtoHAsync(Pointer.to(array), ptr, size * (long)Sizeof.FLOAT, stream);
+        JCudaDriver.cuMemcpyDtoH(Pointer.to(array), src, size * FLOAT_SIZE);
         
         return array;
     }
     
+    public static float[] fromGPU(CUdeviceptr src, int size, CUstream stream) {
+        float[] array = new float[size];
+        JCudaDriver.cuMemcpyDtoHAsync(Pointer.to(array), src, size * FLOAT_SIZE, stream);
+        
+        return array;
+    }
+        
     public static long length(CUdeviceptr ptr) {
         long[] size = new long[1];
         JCudaDriver.cuMemGetAddressRange(null, size, ptr);
         
         return size[0];
     }
+
+    /* for pinned memory */
+    public static Pointer createPinned(long size) {
+        Pointer ptr = new Pointer();
+        JCudaDriver.cuMemAllocHost(ptr, size);
+        
+        return ptr;
+    }
+    
+    public static CUdeviceptr toGPU(Pointer pinned, long size, CUstream stream) {
+        CUdeviceptr ptr = new CUdeviceptr();
+        JCudaDriver.cuMemAlloc(ptr, size * FLOAT_SIZE);
+        JCudaDriver.cuMemcpyHtoDAsync(ptr, pinned, size * FLOAT_SIZE, stream);
+        
+        return ptr;
+    }
+
+    public static float[] fromGPU(Pointer pinned, CUdeviceptr src, int size, CUstream stream) {
+        float[] array = new float[size];
+        JCudaDriver.cuMemcpyDtoHAsync(pinned, src, size * FLOAT_SIZE, stream);
+        
+        /* must sync here to actually get the data */
+        JCudaDriver.cuStreamSynchronize(stream);
+        
+        pinned.getByteBuffer().asFloatBuffer().get(array);
+        
+        return array;
+    }
+    
+    /* utility functions */
+    public static float sum_abs_differenceGPU(CUdeviceptr array1, CUdeviceptr array2, int size, CUstream stream) {
+        int device = CudaEngine.getThreadDeviceId();
+        int threadsPerBlock = CudaEngine.getMaxThreadsPerBlock(device);        
+        CUfunction matrixMulVector = CudaEngine.getKernel(CudaModule.MODULE_ACCUMULATE, "sum_abs_difference", device);
+        
+        int blockSizeX = Math.min(threadsPerBlock, size);
+        int gridSizeX  = (size-1) / (blockSizeX) + 1;
+        gridSizeX = (int) Math.max(1, Math.ceil(Math.sqrt(gridSizeX)));
+
+        CUdeviceptr result = CudaUtil.create(gridSizeX);
+        
+        Pointer kernelParameters = Pointer.to(
+            Pointer.to(array1),
+            Pointer.to(array2),
+            Pointer.to(new long[]{size}),
+            Pointer.to(result)
+        );
+
+        JCudaDriver.cuLaunchKernel(matrixMulVector,
+            gridSizeX, 1, 1,        // Grid dimension
+            blockSizeX, 1, 1,       // Block dimension
+            0, stream,                // Shared memory size and stream
+            kernelParameters, null  // Kernel- and extra parameters
+        );
+        
+        float sum = sumGPU(result, gridSizeX, stream);
+        JCudaDriver.cuMemFree(result);
+        
+        return sum;
+    }
+    
+    public static float sumGPU(CUdeviceptr array, int size, CUstream stream) {
+        int device = CudaEngine.getThreadDeviceId();
+        int threadsPerBlock = CudaEngine.getMaxThreadsPerBlock(device);        
+        CUfunction matrixMulVector = CudaEngine.getKernel(CudaModule.MODULE_ACCUMULATE, "accumulate_vector", device);
+        
+        int blockSizeX = Math.min(threadsPerBlock, size);
+        int gridSizeX  = (size-1) / (blockSizeX * 2) + 1;
+        gridSizeX = (int) Math.max(1, Math.ceil(Math.sqrt(gridSizeX)));
+
+        CUdeviceptr result = CudaUtil.create(gridSizeX);
+        
+        Pointer kernelParameters = Pointer.to(
+            Pointer.to(array),
+            Pointer.to(new long[]{size}),
+            Pointer.to(result)
+        );
+
+        JCudaDriver.cuLaunchKernel(matrixMulVector,
+            gridSizeX, 1, 1,        // Grid dimension
+            blockSizeX, 1, 1,       // Block dimension
+            0, stream,                // Shared memory size and stream
+            kernelParameters, null  // Kernel- and extra parameters
+        );
+        
+        float sum;
+        
+        if(gridSizeX > 1)
+            sum = sumGPU(result, gridSizeX, stream);
+        else {
+            sum = CudaUtil.fromGPU(result, 1, stream)[0];
+        }
+        
+        JCudaDriver.cuMemFree(result);
+        
+        return sum;
+    }
+    
     
     public static void print(CUdeviceptr ptr, int length, CUstream stream) {
         float[] temp = fromGPU(ptr, length, null);
@@ -146,7 +195,6 @@ public class CudaUtil {
             System.out.print(t + " ");
         System.out.println();
     }
-    
         
     public static void printMemUsage(boolean cpu) {
         if(cpu) {
@@ -171,40 +219,12 @@ public class CudaUtil {
 
         long[] free = new long[1];
         long[] total = new long[1];
-        CudaThread.prepareThread();
-        JCudaDriver.cuMemGetInfo(free, total);
-        CudaThread.finalizeThread();
-
-        System.out.println(Thread.currentThread().getId() + ": waiting -> " + free[0] + " " + total[0]);
-
-    }
-
-    public static float[][] fromGPU(CUdeviceptr2D ptr, int width, int height, CUstream mainstream) {
-        float[] temp = new float[height * width];
         
-        CUDA_MEMCPY2D memcpy = new CUDA_MEMCPY2D();
-        memcpy.srcMemoryType = CUmemorytype.CU_MEMORYTYPE_DEVICE;
-        memcpy.srcDevice = ptr.ptr;
-        memcpy.srcPitch = ptr.pitch * (long) Sizeof.FLOAT;
-
-        memcpy.dstMemoryType = CUmemorytype.CU_MEMORYTYPE_HOST;
-        memcpy.dstHost = Pointer.to(temp);
-        memcpy.dstPitch = width * (long) Sizeof.FLOAT;
-
-        memcpy.WidthInBytes = width * (long) Sizeof.FLOAT;
-        memcpy.Height = height;
-
-        memcpy.srcXInBytes = memcpy.srcY = memcpy.dstXInBytes = memcpy.dstY = 0;
-
-        JCudaDriver.cuMemcpy2DAsync(memcpy, mainstream);
-        
-        JCudaDriver.cuStreamSynchronize(mainstream);
-        
-        float[][] result = new float[height][width];
-        
-        for(int i=0; i < height; i++)
-            System.arraycopy(temp, i * width, result[i], 0, width);
-        
-        return result;
-    }
+        for(int i=0; i < CudaEngine.getDeviceCount(); i++) {
+            CudaEngine.prepareThread(i);
+            JCudaDriver.cuMemGetInfo(free, total);
+            System.out.println("Device " + i + ": " + free[0] + " " + total[0] + " " + (1.0*free[0])/total[0]);
+            CudaEngine.finalizeThread();
+        }
+    }    
 }

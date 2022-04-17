@@ -68,7 +68,7 @@ public class Rng {
     }
 
     public static double nextDoubleGaussian() {
-        return nextDoubleGaussian(0, 0.2);
+        return nextDoubleGaussian(-1, 1);
     }
 
     public static double nextDoubleGaussian(double min, double max) {
@@ -78,7 +78,7 @@ public class Rng {
         return gaussian(mean, stdDev);
     }
     
-    private static double gaussian(double mean, double stdDev) {
+    public static double gaussian(double mean, double stdDev) {
         double u, v, s;
         
         do {

@@ -21,59 +21,49 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.parallel;
+package org.fjnn.network_old;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.activation.Activation;
 import org.fjnn.base.BaseLayer;
-import org.fjnn.network_old.LayerStub;
-import org.fjnn.parallel.ParallelUtil.CUdeviceptr2D;
 
 /**
  *
  * @author ahmed
  */
-public abstract class ParallelLayer extends BaseLayer {
-
-    /* number of similar layers */
-    protected final int layersCount;
+public abstract class Layer extends BaseLayer {
     
-    protected final static ExecutorService THREAD_POOL = Executors.newCachedThreadPool();
-    
-    public ParallelLayer(int count, Activation activation, int neurons, int links, boolean hasBias, boolean[] condition) {
-        super(activation, neurons, links, hasBias, condition);
-        
-        this.layersCount = count;
+    public Layer(Activation activation, int neurons, int links, boolean hasBias, boolean[] conditional) {
+        super(activation, neurons, links, hasBias, conditional);
     }
     
-    
-    protected abstract float getWeight(int index, int from, int to);
 
-    protected abstract void setWeight(int index, int from, int to, float value);
+    protected abstract float getWeight(int from, int to);
 
-    protected abstract void setWeights(int index, float[][] values);
+    protected abstract void setWeight(int from, int to, float value);
+    
+    protected abstract float[][] getWeights();
 
-    protected abstract float[][] getWeights(int index);
+    protected abstract void setWeights(float[][] values);
     
     
-    protected abstract float getBias(int index, int to);
+    protected abstract float getBias(int to);
 
-    protected abstract void setBias(int index, int to, float value);
+    protected abstract void setBias(int to, float value);
     
-    protected abstract void setBiases(int index, float[] values);    
+    protected abstract float[] getBiases();
     
-    protected abstract float[] getBiases(int index);
-
+    protected abstract void setBiases(float[] values);
     
-    protected abstract float[][] feedForward(float[][] input);
     
-    protected abstract CUdeviceptr2D feedForwardGPU(CUdeviceptr2D ptr, CUstream stream);
+    protected abstract float[] feedForward(float[] input);
     
-        
-    protected abstract LayerStub getStub(int index);
+    protected abstract CUdeviceptr feedForwardGPU(CUdeviceptr ptr, CUstream stream);
+    
+    
+    protected abstract LayerStub getStub();
+    
     
     @Override
     protected abstract void prepareGPU(CUstream stream);

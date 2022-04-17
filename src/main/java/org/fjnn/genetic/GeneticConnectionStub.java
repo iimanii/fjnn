@@ -21,36 +21,29 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.serializer;
+package org.fjnn.genetic;
 
 import java.io.Serializable;
-import org.fjnn.activation.Activation;
 
 /**
  *
  * @author ahmed
  */
-public class LayerStub implements Serializable {
-    /* number of neurons in this layer */
-    public final int neurons;
+public class GeneticConnectionStub implements Serializable {
+    private static final long serialVersionUID = -7982604400188420487l;
+    
+    public final float weight;
+    public final boolean disabled;
 
-    /* activation function for this layer */
-    public final Activation activation;
-    
-    /* does this layer has a bias */
-    public final boolean hasBias;
-    
-    /* [to][from] */
-    public final float[][] weights;
-    
-    /* list of biases of size "links" */
-    public final float[] biases;
-    
-    public LayerStub(int neurons, float[][] weights, Activation activation, boolean hasBias, float[] biases) {
-        this.neurons = neurons;
-        this.weights = weights;
-        this.activation = activation;
-        this.hasBias = hasBias;
-        this.biases = biases;
+    public final String id;
+    public final String from;
+    public final String to;
+
+    public GeneticConnectionStub(String from, String to, float weight, boolean disabled) {
+        this.id = from + "-" + to;
+        this.weight = weight;
+        this.disabled = disabled;
+        this.from = from;
+        this.to = to;
     }
 }

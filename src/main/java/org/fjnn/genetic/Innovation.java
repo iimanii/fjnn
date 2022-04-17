@@ -31,13 +31,27 @@ import org.fjnn.genetic.GeneticConfig.mutation;
  * @author ahmed
  */
 public class Innovation implements Serializable {    
+    private static final long serialVersionUID = 7659747973936368991l;
+    
     public final mutation m;
-    public final String fromName;
-    public final String toName;
+    public final String from;
+    public final String to;
 
-    public Innovation(mutation m, String fromName, String toName) {
+    public Innovation(mutation m, String from, String to) {
         this.m = m;
-        this.fromName = fromName;
-        this.toName = toName;
+        this.from = from;
+        this.to = to;
+    }
+    
+    public String id() {
+        return getId(m, from, to);
+    }
+    
+    public static String getId(mutation m, GeneticNode from, GeneticNode to) {
+        return from.id + ":" + to.id + ":" + m.toString();
+    }
+    
+    public static String getId(mutation m, String from, String to) {
+        return from + ":" + to + ":" + m.toString();
     }
 }

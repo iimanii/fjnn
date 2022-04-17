@@ -21,29 +21,36 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.cuda;
+package org.fjnn.genetic;
 
-import jcuda.driver.CUdeviceptr;
+import java.io.Serializable;
+import java.util.List;
+import java.util.Map;
 
 /**
  *
  * @author ahmed
  */
-public class CudaResource {
-    public final String name;
-    
-    public final int deviceId;
-    
-    public final CUdeviceptr ptr;
-    
-    public final int length;
-    public final int size_t;
-    
-    CudaResource(String name, int deviceId, CUdeviceptr ptr, int length, int size_t) {
-        this.deviceId = deviceId;
-        this.ptr = ptr;
-        this.length = length;
-        this.name = name;
-        this.size_t = size_t;
+public class GeneticStub implements Serializable {
+    public final int inputSize;
+    public final int outputSize;
+    public final List<Innovation> innovations;
+    public final List<GeneticConnectionStub> connections;
+    public final Map<String, Object> properties;
+    public final String outputActivation;
+    public final String hiddenActivation;
+
+    public GeneticStub(int inputSize, int outputSize, 
+                       List<Innovation> innovations, 
+                       List<GeneticConnectionStub> connections, 
+                       Map<String, Object> properties, 
+                       String outputActivation, String hiddenActivation) {
+        this.inputSize = inputSize;
+        this.outputSize = outputSize;
+        this.innovations = innovations;
+        this.connections = connections;
+        this.properties = properties;
+        this.outputActivation = outputActivation;
+        this.hiddenActivation = hiddenActivation;
     }
 }

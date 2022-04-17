@@ -26,7 +26,7 @@ package org.fjnn.parallel;
 import java.util.Map;
 import org.fjnn.activation.Activation;
 import org.fjnn.base.LayeredNetwork;
-import org.fjnn.serializer.NetworkStub;
+import org.fjnn.network_old.NetworkStub;
 
 /**
  *
@@ -72,9 +72,8 @@ public class ShadowNetwork extends LayeredNetwork {
     }
 
     @Override
-    public LayeredNetwork randomize(float min, float max) {
+    public void randomize(float min, float max) {
         parent.randomize(index, min, max);
-        return this;
     }
 
     @Override

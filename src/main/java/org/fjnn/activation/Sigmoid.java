@@ -29,10 +29,8 @@ import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
 import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaEngine.CUdeviceptr2D;
 import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CudaThread;
-import org.fjnn.util.SafeMath;
+import org.fjnn.parallel.ParallelUtil.CUdeviceptr2D;
 
 /**
  *
@@ -42,18 +40,18 @@ public class Sigmoid extends Activation {
 
     @Override
     public float compute(float input) {
-        return (float) (1.0 / (1 + SafeMath.exp(-input)));
+        return (float) (1.0 / (1 + SafeExp(-input)));
     }
 
     @Override
-    public void compute(float[] input) {
-        for(int i=0; i < input.length; i++)
-            input[i] = (float) (1.0 / (1 + SafeMath.exp(-input[i])));
+    public void compute(float[] input, int from, int to) {
+        for(int i=from; i < to; i++)
+            input[i] = (float) (1.0 / (1 + SafeExp(-input[i])));
     }
 
     @Override
     public void computeGPU(CUdeviceptr ptr, int size, CUstream stream) {
-        int device = CudaThread.getThreadDeviceId();
+        int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "Sigmoid", device);
         
@@ -75,7 +73,7 @@ public class Sigmoid extends Activation {
 
     @Override
     public void computeMultiGPU(CUdeviceptr2D ptr, int width, int height, CUstream stream) {
-        int device = CudaThread.getThreadDeviceId();
+        int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "multi_Sigmoid", device);
         
@@ -101,12 +99,12 @@ public class Sigmoid extends Activation {
     public void computeConditional(float[] input, boolean[] compute) {
         for(int i=0; i < input.length; i++)
             if(compute[i])
-                input[i] = (float) (1.0 / (1 + SafeMath.exp(-input[i])));
+                input[i] = (float) (1.0 / (1 + SafeExp(-input[i])));
     }
 
     @Override
-    public void computeGPUConditional(CUdeviceptr ptr, CUdeviceptr compute, int size, CUstream stream) {
-        int device = CudaThread.getThreadDeviceId();
+    public void computeGPUConditional(CUdeviceptr ptr, CUdeviceptr compute, int size, CUstream stream, int count) {
+        int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "Sigmoid_Conditional", device);
         
@@ -120,8 +118,8 @@ public class Sigmoid extends Activation {
         int gridSizeX = (size - 1) / blockSizeX + 1;
         
         JCudaDriver.cuLaunchKernel(function,
-            gridSizeX, 1, 1,       // Grid dimension
-            blockSizeX, 1, 1,      // Block dimension
+            gridSizeX, count, 1,       // Grid dimension
+            blockSizeX, 1, 1,  // Block dimension
             0, stream,             // Shared memory size and stream
             kernelParameters, null // Kernel- and extra parameters
         );
@@ -129,7 +127,7 @@ public class Sigmoid extends Activation {
     
     @Override
     public void computeMultiGPUConditional(CUdeviceptr2D ptr, CUdeviceptr compute, int width, int height, CUstream stream) {
-        int device = CudaThread.getThreadDeviceId();
+        int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "multi_Sigmoid_Conditional", device);
         

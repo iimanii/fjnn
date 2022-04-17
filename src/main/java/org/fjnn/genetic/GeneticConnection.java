@@ -24,46 +24,65 @@
 package org.fjnn.genetic;
 
 import java.io.Serializable;
+import java.util.Objects;
 
 /**
  *
  * @author ahmed
  */
 public class GeneticConnection implements Serializable {
-    private static final long serialVersionUID = -7782604400128420487l;
-    
     public float weight;
     public boolean disabled;
 
     public final String id;
     public final GeneticNode from;
     public final GeneticNode to;
+    
+    private final int hashcode;
 
     public GeneticConnection(GeneticNode from, GeneticNode to, float weight) {
-        this.id = from.name + "-" + to.name;
+        this.id = createId(from, to);
         this.weight = weight;
         this.disabled = false;
         this.from = from;
         this.to = to;
+        this.hashcode = id.hashCode();
     }
     
-    public void enable() {
-        from.enable(to);
+    public String from() {
+        return from.id;
     }
     
-    public void disable() {
-        from.disable(to);
+    public String to() {
+        return to.id;
     }
     
-    public String getId() {
-        return id;
+    static final String createId(String from, String to) {
+        return from + "-" + to;
     }
     
-    public float getWeight() {
-        return weight;
+    static final String createId(GeneticNode from, GeneticNode to) {
+        return createId(from.id, to.id);
     }
     
-    public boolean isDisabled() {
-        return disabled;
+    @Override
+    public int hashCode() {
+        return hashcode;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj)
+            return true;
+
+        if (obj == null)
+            return false;
+
+        if (getClass() != obj.getClass())
+            return false;
+
+        final GeneticConnection other = (GeneticConnection) obj;
+        
+        return Objects.equals(this.id, other.id);
     }
 }

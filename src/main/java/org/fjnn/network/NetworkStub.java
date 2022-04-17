@@ -21,28 +21,23 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.cuda;
+package org.fjnn.network;
 
-import jcuda.driver.CUdeviceptr;
+import java.io.Serializable;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  *
  * @author ahmed
  */
-public class CudaPointer {
-    private final long size;
-    private final CUdeviceptr ptr;
+public class NetworkStub implements Serializable {
+    public final LayerStub[] layers;    
     
-    CudaPointer(CUdeviceptr ptr, long size) {
-        this.ptr = ptr;
-        this.size = size;
-    }
+    public final Map<String, Object> properties;
     
-    public long getSize() {
-        return size;
-    }
-    
-    public CUdeviceptr getPointer() {
-        return ptr;
+    public NetworkStub(LayerStub[] layers, Map<String, Object> properties) {
+        this.layers = layers;
+        this.properties = new LinkedHashMap<>(properties);
     }
 }

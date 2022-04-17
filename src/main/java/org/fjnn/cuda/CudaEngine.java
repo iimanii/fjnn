@@ -23,14 +23,15 @@
  */
 package org.fjnn.cuda;
 
+import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import jcuda.driver.*;
 import jcuda.runtime.JCuda;
+import org.fjnn.util.Rng;
 
 /**
  *
@@ -39,18 +40,10 @@ import jcuda.runtime.JCuda;
 public class CudaEngine {
     private static int DeviceCount;
     private static Map <Integer, CudaDevice> DeviceList;
+
     private static boolean initialized;
     private static boolean usePinnedMemory = true;
     
-    public static class CUdeviceptr2D {
-        public CUdeviceptr ptr;
-        public long pitch;
-
-        public CUdeviceptr2D(CUdeviceptr ptr, long pitch_ptr) {
-            this.ptr = ptr;
-            this.pitch = pitch_ptr;
-        }
-    }
     
     public static synchronized void init() {
         if(initialized)
@@ -71,28 +64,33 @@ public class CudaEngine {
         
         DeviceCount = count[0];
         
+        int minThreadsPerBlock = DeviceCount == 0 ? 1024 : Integer.MAX_VALUE;
+        
         ExecutorService threadPool = Executors.newCachedThreadPool();
         ArrayList<Future<CudaDevice>> futures = new ArrayList<>();
 
         for(int i=0; i < DeviceCount; i++) {
             int id = i;
-            futures.add(threadPool.submit(new Callable<CudaDevice>() {
-                @Override
-                public CudaDevice call() throws Exception {
-                    return new CudaDevice(id);
-                }
-            }));
+            futures.add(threadPool.submit(() -> new CudaDevice(id)));
         }
         
         for(Future<CudaDevice> f : futures) {
             try {
                 CudaDevice d = f.get();
+                minThreadsPerBlock = Math.min(d.getMaxThreadsPerBlock(), minThreadsPerBlock);
                 DeviceList.put(d.getId(), d);
             } catch (InterruptedException | ExecutionException ex) {
                 throw new RuntimeException(ex);
             }
         }
         
+        try {
+            CudaModule.saveUtilFile(minThreadsPerBlock);
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
+        
+        threadPool.shutdown();
         initialized = true;
     }
 
@@ -107,47 +105,6 @@ public class CudaEngine {
         return DeviceList.get(deviceId).getModule(module).getFunction(function);
     }
 
-    /**
-     * Stores array on all GPUs
-     * @param name
-     * @param array
-     * @return 
-     */
-    public static void storeGlobal(String name, float[] array) {
-        for(CudaDevice e : DeviceList.values()) {
-            e.storeResource(name, array);
-        }
-    }
-
-    /**
-     * Remove from all devices
-     * @param name 
-     */
-    public static void deleteGlobal(String name) {
-        for(CudaDevice e : DeviceList.values()) {
-            e.deleteResource(name);
-        }
-    }
-    
-    /**
-     * Free all global memory
-     */
-    public static void clearGlobal() {
-        for(CudaDevice e : DeviceList.values()) {
-            e.clearResources();
-        }        
-    }
-
-    /**
-     * 
-     * @param name
-     * @param deviceId
-     * @return 
-     */
-    public static CudaResource getResource(String name, int deviceId) {
-        return DeviceList.get(deviceId).getResource(name);
-    }
-    
     /**
      * Get context for specific device
      * @param deviceId
@@ -169,27 +126,24 @@ public class CudaEngine {
      * @param deviceId
      * @return Number of threads per block for the device attached to this thread
      */
+    public static CUstream getStream(int deviceId) {
+        return DeviceList.get(deviceId).getStream();
+    }
+    
+    /**
+     * @param deviceId
+     * @return Number of threads per block for the device attached to this thread
+     */
     public static int getMaxThreadsPerBlock(int deviceId) {
         return DeviceList.get(deviceId).getMaxThreadsPerBlock();
     }
     
     /**
-     * TODO: use CudaResource
-     * @param size
      * @param deviceId
-     * @return 
+     * @return Number of threads per block for the device attached to this thread
      */
-    public static CUdeviceptr getSharedResource(int size, int deviceId) {
-        return DeviceList.get(deviceId).allocSharedResource(size);
-    }
-    
-    /**
-     * TODO: use CudaResource
-     * @param ptr
-     * @param deviceId 
-     */    
-    public static void freeSharedResource(CUdeviceptr ptr, int deviceId) {
-        DeviceList.get(deviceId).freeSharedResource(ptr);
+    public static int getMultiProcessorCount(int deviceId) {
+        return DeviceList.get(deviceId).getMultiProcessorCount();
     }
     
     /**
@@ -200,7 +154,78 @@ public class CudaEngine {
         usePinnedMemory = state;
     }
     
+    /**
+     * 
+     * @return 
+     */
     public static boolean usePinnedMemory() {
         return usePinnedMemory;
+    }
+    
+    private final static ThreadLocal<Stack<Integer>> THREAD_DEVICE_ID = ThreadLocal.withInitial(() -> {
+        return new Stack<>();
+    });
+    
+    /**
+     * Prepares thread to run GPU code
+     * Call finalizeThread() when done
+     * @return 
+     */
+    public static int prepareThread() {
+        int device = Rng.nextInt(CudaEngine.getDeviceCount());
+        
+        prepareThread(device);
+        
+        return device;
+    }
+    
+    /**
+     * Prepares thread to run GPU code on a specific device
+     * Call finalizeThread() when done
+     * @param deviceId
+     * @return 
+     */
+    public static void prepareThread(int deviceId) {
+        CUcontext context = CudaEngine.getContext(deviceId);
+
+        THREAD_DEVICE_ID.get().push(deviceId);
+        
+        JCudaDriver.cuCtxPushCurrent(context);
+    }
+
+    /**
+     * Cleans up the thread from GPU context
+     * @param context 
+     * @return  
+     */
+    public static void finalizeThread() {        
+        Stack<Integer> s = THREAD_DEVICE_ID.get();
+        
+        if(s.isEmpty())
+            throw new RuntimeException("Thread does not have context");
+        
+        CUcontext context = new CUcontext();
+        JCudaDriver.cuCtxPopCurrent(context);
+
+        if(!context.equals(CudaEngine.getContext(s.pop())))
+            throw new RuntimeException("Invalid Context poped");
+        
+//        CUcontext context = new CUcontext();
+//        do {
+//            JCudaDriver.cuCtxGetCurrent(context);
+//            
+//            if(!context.equals(new CUcontext()))
+//                JCudaDriver.cuCtxPopCurrent(context);
+//            
+//        } while(!context.equals(new CUcontext()));
+    }
+    
+    public static int getThreadDeviceId() {
+        Stack<Integer> s = THREAD_DEVICE_ID.get();
+        
+        if(s.isEmpty())
+            return -1;
+        
+        return s.peek();
     }
 }

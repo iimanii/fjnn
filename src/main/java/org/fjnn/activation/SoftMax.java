@@ -29,11 +29,10 @@ import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
 import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaEngine.CUdeviceptr2D;
 import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CudaThread;
 import org.fjnn.cuda.CudaUtil;
-import org.fjnn.util.SafeMath;
+import org.fjnn.parallel.ParallelUtil;
+import org.fjnn.parallel.ParallelUtil.CUdeviceptr2D;
 
 /**
  *
@@ -47,33 +46,41 @@ public class SoftMax extends Activation {
     }
 
     @Override
-    public void compute(float[] input) {
+    public void compute(float[] input, int from, int to) {
         double sum = 0;
+        float max = Float.NEGATIVE_INFINITY;
         
-        for(int i=0; i < input.length; i++) {
-            input[i] = SafeMath.exp(input[i]);
+        for(int i=from; i < to; i++) {
+            max = Math.max(input[i], max);
+        }
+        
+        for(int i=from; i < to; i++) {
+            input[i] = (float) Math.exp(input[i] - max);
             sum += input[i];
         }
         
         if(sum == 0)
-            for(int i=0; i < input.length; i++)
+            for(int i=from; i < to; i++)
                 input[i] = 1.0f / input.length;
         else
-            for(int i=0; i < input.length; i++)
+            for(int i=from; i < to; i++)
                 input[i] /= sum;
     }
 
     @Override
     public void computeGPU(CUdeviceptr ptr, int size, CUstream stream) {
-        int device = CudaThread.getThreadDeviceId();
+        int device = CudaEngine.getThreadDeviceId();
         
         int blockSizeX = Math.min(CudaEngine.getMaxThreadsPerBlock(device), size);
         int gridSizeX = (size - 1) / blockSizeX + 1;
         
         /* Create temp array to put sums */
         int sums_size = gridSizeX;
-        CUdeviceptr sums = CudaEngine.getSharedResource(sums_size, device);//new CUdeviceptr();
+        CUdeviceptr sums = CudaUtil.create(sums_size);//CudaEngine.getSharedResource(sums_size, device);//new CUdeviceptr();
 //        JCudaDriver.cuMemAlloc(sums, sums_size * (long)Sizeof.FLOAT);
+        
+        if(true)
+            throw new RuntimeException("bad implementation reimplement to subtract MAX");
         
         /* Phase 1 */
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "SoftMax_1", device);
@@ -108,20 +115,20 @@ public class SoftMax extends Activation {
             kernelParameters, null // Kernel- and extra parameters
         );
         
-        CudaEngine.freeSharedResource(sums, device);
-//        JCudaDriver.cuMemFree(sums);
+//        CudaEngine.freeSharedResource(sums, device);
+        JCudaDriver.cuMemFree(sums);
     }
 
     @Override
     public void computeMultiGPU(CUdeviceptr2D ptr, int width, int height, CUstream stream) {
-        int device = CudaThread.getThreadDeviceId();
+        int device = CudaEngine.getThreadDeviceId();
         
         int blockSizeX = Math.min(CudaEngine.getMaxThreadsPerBlock(device), width);
         int gridSizeX = (width - 1) / blockSizeX + 1;
         int gridSizeY = height;
         
         /* Create temp array to put sums */
-        CUdeviceptr2D sums = CudaUtil.createPitch(width, height);
+        CUdeviceptr2D sums = ParallelUtil.createPitch(width, height);
         
         /* Phase 1 */
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "multi_SoftMax_1", device);
@@ -171,7 +178,7 @@ public class SoftMax extends Activation {
         
         for(int i=0; i < input.length; i++) {
             if(compute[i]) {
-                input[i] = SafeMath.exp(input[i]);
+                input[i] = SafeExp(input[i]);
                 sum += input[i];
             }
         }
@@ -189,7 +196,7 @@ public class SoftMax extends Activation {
     }
 
     @Override
-    public void computeGPUConditional(CUdeviceptr ptr, CUdeviceptr compute, int size, CUstream stream) {
+    public void computeGPUConditional(CUdeviceptr ptr, CUdeviceptr compute, int size, CUstream stream, int count) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 

@@ -23,7 +23,7 @@
  */
 package org.fjnn.base;
 
-import org.fjnn.serializer.NetworkStub;
+import org.fjnn.network_old.NetworkStub;
 
 /**
  *

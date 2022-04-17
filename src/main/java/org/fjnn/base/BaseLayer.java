@@ -32,25 +32,22 @@ import org.fjnn.activation.Activation;
  */
 public abstract class BaseLayer {
     /* number of neurons in this layer */
-    protected final int neurons;
+    protected int neurons;
     
     /* number of neurons in the next layer */
-    protected final int links;
+    protected int links;
 
     /* activation function for this layer */
     protected final Activation activation;
     
     /* conditional activation */
-    protected final boolean[] condition;
+    protected boolean[] condition;
     
     /* wether or not this layer is the output layer */
     protected final boolean isOutput;
     
     /* does this layer has a bias */
     protected final boolean hasBias;
-    
-    /* can we call computeGPU */
-    protected boolean gpuReady;
     
     protected BaseLayer(Activation activation, int neurons, int links, boolean hasBias, boolean[] condition) {        
         this.neurons = neurons;
@@ -59,8 +56,6 @@ public abstract class BaseLayer {
         this.activation = activation;
 
         this.isOutput = links == 0;
-        
-        this.gpuReady = false;
         
         this.condition = condition;
     }
@@ -84,16 +79,31 @@ public abstract class BaseLayer {
     /**
      * @return Number of neurons
      */
-    public int size() {
+    public int neurons() {
         return neurons;
     }
     
     /**
-     * 
-     * @return Number of neurons + bias
-     */    
-    public int totalSize() {
-        return neurons + (hasBias ? 1 : 0);
+     * @return number of neurons in the next layer
+     */
+    public int links() {
+        return links;
+    }
+    
+    /**
+     * total number of weights .. not counting bias 
+     * @return 
+     */
+    public int weights() {
+        return neurons * links;
+    }
+    
+    /**
+     * number of bias weights 
+     * @return 
+     */
+    public int biases() {
+        return links;
     }
     
     /**
@@ -109,10 +119,9 @@ public abstract class BaseLayer {
     
     public abstract void randomize(float min, float max);
 
-    
-    public abstract void prepareGPU(CUstream stream);
+    protected abstract void prepareGPU(CUstream stream);
         
-    public abstract void freeCPU();
+    protected abstract void freeCPU();
     
-    public abstract void freeGPU();
+    protected abstract void freeGPU();
 }

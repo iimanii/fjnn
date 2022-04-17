@@ -33,7 +33,7 @@ public class GeneticConfig {
     
     public enum mutation {
         ADD_NODE (0.1f),
-        ADD_CONNECTION (2.0f),
+        ADD_CONNECTION (0.1f),
         ENABLE_CONNECTION (0.5f),
         DISABLE_CONNECTION (0.5f);
         

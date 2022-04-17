@@ -21,26 +21,44 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.serializer;
+package org.fjnn.network;
 
 import java.io.Serializable;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import org.fjnn.activation.Activation;
 
 /**
  *
  * @author ahmed
  */
-public class NetworkStub implements Serializable {
-    public final boolean threadSafe;
+public class LayerStub implements Serializable {
+    /* number of neurons in this layer */
+    public final int neurons;
+
+    /* activation function for this layer */
+    public final Activation activation;
     
-    public final LayerStub[] layers;    
+    /* does this layer has a bias */
+    public final boolean hasBias;
     
-    public final LinkedHashMap<String, Object> properties;
+    /*  */
+    public final float[] weights;
     
-    public NetworkStub(LayerStub[] layers, Map<String, Object> properties, boolean threadSafe) {
-        this.layers = layers;
-        this.properties = new LinkedHashMap<>(properties);
-        this.threadSafe = threadSafe;
+    /* list of biases of size "links" */
+    public final float[] biases;
+    
+    /* turn on / off activation per node */
+    public final boolean[] condition;
+    
+    public LayerStub(int neurons, float[] weights, Activation activation, boolean hasBias, float[] biases, boolean[] condition) {
+        this.neurons = neurons;
+        this.weights = weights;
+        this.activation = activation;
+        this.hasBias = hasBias;
+        this.biases = biases;
+        this.condition = condition;
+        
+        if(activation != null && neurons < activation.minLayerSize())
+            throw new RuntimeException("Minimum layer size must be " + activation.minLayerSize() + 
+                                       " for activation function " + activation.toName());
     }
 }

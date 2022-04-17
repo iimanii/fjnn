@@ -29,9 +29,8 @@ import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
 import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaEngine.CUdeviceptr2D;
 import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CudaThread;
+import org.fjnn.parallel.ParallelUtil.CUdeviceptr2D;
 
 /**
  *
@@ -45,14 +44,14 @@ public class ReLU extends Activation {
     }
     
     @Override
-    public void compute(float[] input) {
-        for(int i=0; i < input.length; i++)
+    public void compute(float[] input, int from, int to) {
+        for(int i=from; i < to; i++)
             input[i] = Math.max(0, input[i]);
     }
 
     @Override
     public void computeGPU(CUdeviceptr ptr, int size, CUstream stream) {
-        int device = CudaThread.getThreadDeviceId();
+        int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "ReLU", device);
         
@@ -74,7 +73,7 @@ public class ReLU extends Activation {
 
     @Override
     public void computeMultiGPU(CUdeviceptr2D ptr, int width, int height, CUstream stream) {
-        int device = CudaThread.getThreadDeviceId();
+        int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "multi_ReLU", device);
         
@@ -104,8 +103,8 @@ public class ReLU extends Activation {
     }
 
     @Override
-    public void computeGPUConditional(CUdeviceptr ptr, CUdeviceptr compute, int size, CUstream stream) {
-        int device = CudaThread.getThreadDeviceId();
+    public void computeGPUConditional(CUdeviceptr ptr, CUdeviceptr compute, int size, CUstream stream, int count) {
+        int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "ReLU_Conditional", device);
         
@@ -119,16 +118,16 @@ public class ReLU extends Activation {
         int gridSizeX = (size - 1) / blockSizeX + 1;
         
         JCudaDriver.cuLaunchKernel(function,
-            gridSizeX, 1, 1,       // Grid dimension
-            blockSizeX, 1, 1,      // Block dimension
-            0, stream,             // Shared memory size and stream
-            kernelParameters, null // Kernel- and extra parameters
+            gridSizeX, count, 1,    // Grid dimension
+            blockSizeX, 1, 1,       // Block dimension
+            0, stream,              // Shared memory size and stream
+            kernelParameters, null  // Kernel- and extra parameters
         );
     }
 
     @Override
     public void computeMultiGPUConditional(CUdeviceptr2D ptr, CUdeviceptr compute, int width, int height, CUstream stream) {
-        int device = CudaThread.getThreadDeviceId();
+        int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "multi_ReLU_Conditional", device);
         

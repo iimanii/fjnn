@@ -21,7 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network;
+package org.fjnn.network_old;
 
 import jcuda.Pointer;
 import jcuda.Sizeof;
@@ -32,45 +32,58 @@ import jcuda.driver.JCudaDriver;
 import org.fjnn.activation.Activation;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CudaThread;
-import org.fjnn.cuda.CudaUtil;
-import org.fjnn.serializer.LayerStub;
 import org.fjnn.util.Rng;
 
 /**
  *
  * @author ahmed
+ * 
+ * Not thread safe, but 10% faster
  */
-public class ConcurrentLayer extends Layer {
-
+public class FastLayer extends Layer {
     /**
      * Store everything in 1D array
-     * [N(0-0), N(1-0), ... N(1-0) N(1-1) ....
+     * [N(0-0), N(1-0), ... N(B-0) N(1-0) N(1-1) ....
      */
     float[] weights;
 
-    /* separate biases in a separate array */
-    float[] biases;
-    
     /* weights stored on GPU */
     CUdeviceptr weightsGPU;
-    CUdeviceptr biasesGPU;    
-        
+    
     /* activation conditions on GPU */
     CUdeviceptr conditionGPU;
 
+    /* results are calculated here */
+    CUdeviceptr resultGPU;
+    
+    /**
+     * Number of neurons + 1 (bias)
+     */
+    final int totalNeurons;
+        
+    
+    /* can we call computeGPU */
+    protected boolean gpuReady;
+    
     /* unconnected layer / output layer */
-    public ConcurrentLayer(Activation activation, int neurons) {
+    public FastLayer(Activation activation, int neurons) {
         this(activation, neurons, 0, false, null);
     }
     
-    public ConcurrentLayer(Activation activation, int neurons, int links, boolean hasBias, boolean[] condition) {
+    public FastLayer(Activation activation, int neurons, int links, boolean hasBias, boolean[] condition) {
         super(activation, neurons, links, hasBias, condition);
+        
+        this.totalNeurons = neurons + 1;
 
-        this.weights = new float[neurons * links];
-        this.biases  = new float[links];
+        this.weights = new float[totalNeurons * links];
     }
     
+    /**
+     * 
+     * @param from
+     * @param to
+     * @return 
+     */
     @Override
     protected float getWeight(int from, int to) {
         if(from < 0 || from >= neurons)
@@ -79,18 +92,44 @@ public class ConcurrentLayer extends Layer {
         if(to < 0 || to >= links)
             throw new ArrayIndexOutOfBoundsException();            
         
-        return weights[from + neurons * to];        
+        return weights[from + totalNeurons * to];        
     }
 
+    /**
+     * 
+     * @param from
+     * @param to
+     * @param value 
+     */
     @Override
     protected void setWeight(int from, int to, float value) {
         if(from < 0 || from >= neurons)
             throw new ArrayIndexOutOfBoundsException();
         
         if(to < 0 || to >= links)
-            throw new ArrayIndexOutOfBoundsException();            
+            throw new ArrayIndexOutOfBoundsException();
         
-        weights[from + neurons * to] = value;
+        weights[from + totalNeurons * to] = value;
+
+        gpuReady = false;
+    }
+
+    @Override
+    protected float[][] getWeights() {
+        float[][] result = new float[links][neurons];
+        
+        for(int i=0; i < links; i++)
+            System.arraycopy(this.weights, i * totalNeurons, result[i], 0, neurons);
+        
+        return result;
+    }
+    
+    @Override
+    public void setWeights(float[][] values) {
+        for(int i=0; i < links; i++)
+            for(int j=0; j < neurons; j++)
+//                this.weights[] = values[]
+            System.arraycopy(values[i], 0, this.weights, i*totalNeurons, neurons);
         
         gpuReady = false;
     }
@@ -98,9 +137,9 @@ public class ConcurrentLayer extends Layer {
     @Override
     protected float getBias(int to) {
         if(to < 0 || to >= links)
-            throw new ArrayIndexOutOfBoundsException();            
-
-        return biases[to];
+            throw new ArrayIndexOutOfBoundsException();  
+        
+        return weights[totalNeurons * to + neurons];
     }
 
     @Override
@@ -109,9 +148,42 @@ public class ConcurrentLayer extends Layer {
             throw new ArrayIndexOutOfBoundsException();            
 
         if(hasBias)
-            biases[to] = value;
+            weights[totalNeurons * to + neurons] = value;
         
         gpuReady = false;
+    }
+    
+    @Override
+    protected float[] getBiases() {
+        float[] result = new float[links];
+        
+        for(int i=0; i < links; i++)
+            result[i] = weights[totalNeurons * i + neurons];
+        
+        return result;
+    }
+
+    @Override
+    public void setBiases(float[] values) {
+        gpuReady = false;
+        
+        if(!hasBias)
+            return;
+
+        for(int i=0; i < links; i++)
+            weights[totalNeurons * i + neurons] = values[i];
+    }
+
+    @Override
+    public void randomize(float min, float max) {
+        int len = totalNeurons * links;
+        
+        for(int i=0; i < len; i++)
+            weights[i] = Rng.nextFloat(min, max);
+        
+        if(!hasBias)
+            for(int i=neurons; i < len; i+=totalNeurons)
+                weights[i] = 0;
     }
 
     @Override
@@ -126,23 +198,23 @@ public class ConcurrentLayer extends Layer {
         /* output layer */
         if(isOutput)
             return input;
-        
+                
         float[] output = new float[links];
         
         for(int i=0; i < links; i++) {
             double sum = 0;
-            int k = i * neurons;
+            int k = i * totalNeurons;
             
             /* neurons */
             for(int j=0; j < neurons; j++)
                 sum += input[j] * weights[k + j];
             
             /* bias */
-            sum += biases[i];
+            sum += weights[k + neurons];
             
             output[i] = (float) sum;
         }
-
+        
         return output;
     }
     
@@ -153,12 +225,16 @@ public class ConcurrentLayer extends Layer {
             return;
         }
         
-        if(weightsGPU != null)
-            JCudaDriver.cuMemFree(weightsGPU);
+        if(weightsGPU == null) {
+            weightsGPU = new CUdeviceptr();
+            JCudaDriver.cuMemAlloc(weightsGPU, weights.length * (long) Sizeof.FLOAT);
+        }
         
-        if(biasesGPU != null)
-            JCudaDriver.cuMemFree(biasesGPU);
-
+        if(resultGPU == null) {
+            resultGPU = new CUdeviceptr();
+            JCudaDriver.cuMemAlloc(resultGPU, (links + 1) * (long) Sizeof.FLOAT);
+        }
+        
         if(condition != null && conditionGPU == null) {
             conditionGPU = new CUdeviceptr();
             JCudaDriver.cuMemAlloc(conditionGPU, condition.length * (long) Sizeof.BYTE);
@@ -170,44 +246,50 @@ public class ConcurrentLayer extends Layer {
             
             JCudaDriver.cuMemcpyHtoDAsync(conditionGPU, Pointer.to(temp), condition.length * (long)Sizeof.BYTE, stream);
         }
-                
-        weightsGPU = CudaUtil.toGPU(weights, stream);
-        biasesGPU = CudaUtil.toGPU(biases, stream);
-        
+
+        JCudaDriver.cuMemcpyHtoDAsync(weightsGPU, Pointer.to(weights), weights.length * (long)Sizeof.FLOAT, stream);
+
+        /**
+         * Make sure we initialize the array to 1
+         * important for including bias nodes
+         */
+        JCudaDriver.cuMemsetD32Async(resultGPU, Float.floatToIntBits(1.0f), links + 1, stream);
+
         gpuReady = true;
     }
     
-
+    /**
+     * ptr size must be equal to totalNeurons
+     * @param ptr
+     * @param stream
+     * @return 
+     */
     @Override
     protected CUdeviceptr feedForwardGPU(CUdeviceptr ptr, CUstream stream) {
         if(activation != null) {
             if(condition == null)
                 activation.computeGPU(ptr, neurons, stream);
             else
-                activation.computeGPUConditional(ptr, conditionGPU, neurons, stream);
+                activation.computeGPUConditional(ptr, conditionGPU, neurons, stream, 1);
         }
-
         
         /* output layer */
         if(isOutput)
             return ptr;
         
-        int deviceId = CudaThread.getThreadDeviceId();
-
-        CUdeviceptr result = new CUdeviceptr();
-        JCudaDriver.cuMemAlloc(result, links * (long)Sizeof.FLOAT);
+        int deviceId = CudaEngine.getThreadDeviceId();
         
         /* Compute Matrix Multiplication */
         CUfunction matrixMulVector = CudaEngine.getKernel(CudaModule.MODULE_MATRIX, "matrix_mul_vector", deviceId);
                         
-        int blockSizeX = Math.min(CudaEngine.getMaxThreadsPerBlock(deviceId), neurons);
+        int blockSizeX = Math.min(CudaEngine.getMaxThreadsPerBlock(deviceId), totalNeurons);
         int gridSizeX = links;
 
         Pointer kernelParameters = Pointer.to(
             Pointer.to(weightsGPU),
             Pointer.to(ptr),
-            Pointer.to(result),
-            Pointer.to(new long[]{neurons})
+            Pointer.to(resultGPU),
+            Pointer.to(new long[]{totalNeurons})
         );
 
         JCudaDriver.cuLaunchKernel(matrixMulVector,
@@ -217,32 +299,12 @@ public class ConcurrentLayer extends Layer {
             kernelParameters, null  // Kernel- and extra parameters
         );
         
-        /* Add Bias */
-        CUfunction Accumulator = CudaEngine.getKernel(CudaModule.MODULE_MATRIX, "accumulate_vector", deviceId);
-        
-        blockSizeX = Math.min(CudaEngine.getMaxThreadsPerBlock(deviceId), links);
-        gridSizeX = (links - 1) / blockSizeX + 1;
-
-        kernelParameters = Pointer.to(
-            Pointer.to(result),
-            Pointer.to(biasesGPU),
-            Pointer.to(new long[]{links})
-        );
-
-        JCudaDriver.cuLaunchKernel(Accumulator,
-            gridSizeX, 1, 1,        // Grid dimension
-            blockSizeX, 1, 1,       // Block dimension
-            0, stream,              // Shared memory size and stream
-            kernelParameters, null  // Kernel- and extra parameters
-        );
-        
-        return result;        
+        return resultGPU;        
     }
- 
+    
     @Override
     public void freeCPU() {
         weights = null;
-        biases = null;
     }
     
     @Override
@@ -250,68 +312,33 @@ public class ConcurrentLayer extends Layer {
         if(isOutput)
             return;
         
-        JCudaDriver.cuMemFree(weightsGPU);
-        JCudaDriver.cuMemFree(biasesGPU);
+        if(weightsGPU != null)
+            JCudaDriver.cuMemFree(weightsGPU);
+        
+        if(conditionGPU != null)
+            JCudaDriver.cuMemFree(conditionGPU);    
+    
+        if(resultGPU != null)
+            JCudaDriver.cuMemFree(resultGPU);
         
         weightsGPU = null;
-        biasesGPU = null;
+        conditionGPU = null;
+        resultGPU = null;
         gpuReady = false;
-    }    
-
-    @Override
-    public void setWeights(float[][] values) {
-        for(int i=0; i < links; i++)
-            System.arraycopy(values[i], 0, this.weights, i*neurons, neurons);
-
-        gpuReady = false;
-    }
-
-    @Override
-    public void setBiases(float[] values) {
-        gpuReady = false;
-        
-        if(!hasBias)
-            return;
-        
-        System.arraycopy(values, 0, biases, 0, biases.length);
     }
 
     @Override
     protected LayerStub getStub() {
-        float[][] weights = new float[links][neurons];
+        float[][] copy = new float[links][neurons];
         
         for(int i=0; i < links; i++)
-            System.arraycopy(this.weights, i*neurons, weights[i], 0, neurons);
+            System.arraycopy(this.weights, i*totalNeurons, copy[i], 0, neurons);
         
-        return new LayerStub(neurons, weights, activation, hasBias, biases);
-    }
-
-    @Override
-    public void randomize(float min, float max) {
-        for(int i=0; i < weights.length; i++)
-            weights[i] = Rng.nextFloat(min, max);
-        
-        if(hasBias)
-            for(int i=0; i < links; i++)
-                biases[i] = Rng.nextFloat(min, max);
-    }
-
-    @Override
-    protected float[][] getWeights() {
-        float[][] result = new float[links][neurons];
+        float[] biases = new float[links];
         
         for(int i=0; i < links; i++)
-            System.arraycopy(weights, i*neurons, result[i], 0, neurons);
-
-        return result;
-    }
-
-    @Override
-    protected float[] getBiases() {
-        float[] result = new float[links];
+            biases[i] = this.weights[totalNeurons * i + neurons];
         
-        System.arraycopy(biases, 0, result, 0, links);
-        
-        return result;
+        return new LayerStub(neurons, copy, activation, hasBias, biases, condition);
     }
 }

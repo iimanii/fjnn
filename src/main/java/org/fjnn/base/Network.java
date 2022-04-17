@@ -44,7 +44,7 @@ public abstract class Network {
      * @param name
      * @return 
      */
-    public Object getProperty(String name) {
+    public final Object getProperty(String name) {
         return properties.get(name);
     }
     
@@ -53,7 +53,7 @@ public abstract class Network {
      * @param name
      * @param object 
      */
-    public void setProperty(String name, Object object) {
+    public final void setProperty(String name, Object object) {
         properties.put(name, object);
     }
     
@@ -62,8 +62,17 @@ public abstract class Network {
      * @param name
      * @return 
      */
-    public boolean hasProperty(String name) {
+    public final boolean hasProperty(String name) {
         return properties.containsKey(name);
+    }
+    
+    /**
+     * 
+     * @param name
+     * @return 
+     */
+    public final Object removeProperty(String name) {
+        return properties.remove(name);
     }
     
     /**
@@ -77,4 +86,20 @@ public abstract class Network {
      * @return Number of outputs
      */
     public abstract int getOutputSize();    
+    
+    
+    /**
+     * Randomize the network in the range -1[inclusive], 1[exclusive]
+     */
+    public void randomize() {
+        randomize(-1, 1);
+    }
+
+    /**
+     * Randomize the network in the range min[inclusive] to max[exclusive]
+     * @param min
+     * @param max
+     */
+    public abstract void randomize(float min, float max);
+    
 }

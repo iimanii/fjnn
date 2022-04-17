@@ -23,17 +23,18 @@
  */
 package org.fjnn.cuda;
 
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import jcuda.Sizeof;
+import java.util.List;
 import jcuda.driver.CUcontext;
 import jcuda.driver.CUctx_flags;
 import jcuda.driver.CUdevice;
-import jcuda.driver.CUdeviceptr;
+import jcuda.driver.CUstream;
+import jcuda.driver.CUstream_flags;
 import jcuda.driver.JCudaDriver;
 import jcuda.runtime.JCuda;
 import jcuda.runtime.cudaDeviceProp;
-import org.fjnn.cuda.CudaEngine.CUdeviceptr2D;
 
 /**
  *
@@ -43,16 +44,10 @@ public class CudaDevice {
     private final int deviceId;
     private final CUdevice device;
     private final CUcontext context;
-
-    private final int maxThreadsPerBlock;
+    private final List<CUstream> streams;
+    private final cudaDeviceProp properties;
 
     private final HashMap<String, CudaModule> modules;
-    private final HashMap<String, CudaResource> resources;
-    
-    ConcurrentLinkedQueue<CUdeviceptr> freeResources;
-    ConcurrentLinkedQueue<CUdeviceptr2D> freeResources2D;
-    
-    final long TEMP_RESOURCE_SIZE = 4092;
     
     CudaDevice(int deviceId) {
         this.deviceId = deviceId;
@@ -61,19 +56,16 @@ public class CudaDevice {
         JCudaDriver.cuDeviceGet(this.device, deviceId);
 
         this.context = new CUcontext();
-        JCudaDriver.cuCtxCreate(this.context, CUctx_flags.CU_CTX_SCHED_AUTO, device);
+//        JCudaDriver.cuCtxCreate(this.context, CUctx_flags.CU_CTX_SCHED_AUTO, device);
+//        JCudaDriver.cuCtxPopCurrent(context);
+        JCudaDriver.cuDevicePrimaryCtxRetain (this.context, device);
         
         modules = new HashMap<>();
         
-        cudaDeviceProp prop = new cudaDeviceProp();
-        JCuda.cudaGetDeviceProperties(prop, deviceId);
-
-        maxThreadsPerBlock = prop.maxThreadsPerBlock;
+        properties = new cudaDeviceProp();
+        JCuda.cudaGetDeviceProperties(properties, deviceId);
         
-        resources = new HashMap<>();
-        freeResources = new ConcurrentLinkedQueue<>();
-        
-        JCudaDriver.cuCtxPopCurrent(context);
+        streams = new ArrayList<>();
     }
         
     CudaModule getModule(String name) {
@@ -83,75 +75,48 @@ public class CudaDevice {
         return modules.get(name);        
     }
     
-    synchronized void storeResource(String name, float[] array) {
-        /* ensure we have the right context */
-        JCudaDriver.cuCtxPushCurrent(context);
-        
-        CUdeviceptr ptr = CudaUtil.toGPU(array);
-        
-        if(resources.containsKey(name))
-            JCudaDriver.cuMemFree(resources.get(name).ptr);
-        
-        CudaResource resource = new CudaResource(name, deviceId, ptr, array.length, Sizeof.FLOAT);
-        
-        resources.put(name, resource);
-
-        JCudaDriver.cuCtxPopCurrent(context);
-    }
-    
-    synchronized void deleteResource(String name) {
-        if(resources.containsKey(name)) {
-            JCudaDriver.cuMemFree(resources.get(name).ptr);
-            resources.remove(name);
-        }
-    }
-
-    synchronized void clearResources() {
-        for(CudaResource resource : resources.values()) {
-            JCudaDriver.cuMemFree(resource.ptr);
-        }
-        
-        resources.clear();
-    }
-        
-    CudaResource getResource(String name) {
-        return resources.get(name);
-    }
-    
     CUcontext getContext() {
         return context;
     }
-    
-    int getMaxThreadsPerBlock() {
-        return maxThreadsPerBlock;
-    }
 
+    CUstream getStream() {
+        if(streams.size() < properties.multiProcessorCount)
+            createStream();
+        
+        int r = (int)(Math.random() * streams.size());
+        
+        return streams.get(r);
+    }
+    
+    int getId() {
+        return deviceId;
+    }
+        
+    public int getMaxThreadsPerBlock() {
+        return properties.maxThreadsPerBlock;
+    }
+    
+    public int getMultiProcessorCount() {
+        return properties.multiProcessorCount;
+    }
+    
     private synchronized void loadModule(String name) {
         if(modules.containsKey(name))
             return;
         
-        modules.put(name, new CudaModule(name));
-    }
-    
-    CUdeviceptr allocSharedResource(int size) {
-        if(size > TEMP_RESOURCE_SIZE)
-            throw new RuntimeException("Resource required exceeds: " + TEMP_RESOURCE_SIZE);
-       
-        CUdeviceptr ptr = freeResources.poll();
-        
-        if(ptr == null) {
-            ptr = new CUdeviceptr();
-            JCudaDriver.cuMemAlloc(ptr, TEMP_RESOURCE_SIZE * Sizeof.FLOAT);
+        try {
+            modules.put(name, new CudaModule(name));
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
         }
-        
-        return ptr;
     }
-    
-    void freeSharedResource(CUdeviceptr ptr) {
-        freeResources.add(ptr);
-    }
+
+    private synchronized void createStream() {
+        if(streams.size() >= properties.multiProcessorCount)
+            return;
         
-    int getId() {
-        return deviceId;
+        CUstream stream = new CUstream();
+        JCudaDriver.cuStreamCreate(stream, CUstream_flags.CU_STREAM_NON_BLOCKING);
+        streams.add(stream);
     }
 }

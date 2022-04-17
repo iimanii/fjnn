@@ -39,11 +39,9 @@ import jcuda.runtime.cudaMemcpyKind;
 import jcuda.runtime.cudaStream_t;
 import org.fjnn.activation.Activation;
 import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaEngine.CUdeviceptr2D;
 import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CudaThread;
-import org.fjnn.cuda.CudaUtil;
-import org.fjnn.serializer.LayerStub;
+import org.fjnn.network_old.LayerStub;
+import org.fjnn.parallel.ParallelUtil.CUdeviceptr2D;
 
 /**
  *
@@ -69,6 +67,9 @@ public class FastParallelLayer extends ParallelLayer {
     
     /* Number of neurons + 1 (bias) */
     final int totalNeurons;
+    
+    /* can we call computeGPU */
+    protected boolean gpuReady;
     
     /* unconnected layer / output layer */
     public FastParallelLayer(int count, Activation activation, int neurons) {
@@ -239,7 +240,7 @@ public class FastParallelLayer extends ParallelLayer {
         if(isOutput)
             return ptr;
         
-        int deviceId = CudaThread.getThreadDeviceId();
+        int deviceId = CudaEngine.getThreadDeviceId();
         
         /* Compute Matrix Multiplication */
         CUfunction multiMatrixMulVector = CudaEngine.getKernel(CudaModule.MODULE_MATRIX, "multi_matrix_mul_vector", deviceId);
@@ -285,7 +286,7 @@ public class FastParallelLayer extends ParallelLayer {
         int height = layersCount;
         
         if(weightsGPU == null)
-            weightsGPU = CudaUtil.createPitch(width, height);
+            weightsGPU = ParallelUtil.createPitch(width, height);
         
         if(condition != null && conditionGPU == null) {
             conditionGPU = new CUdeviceptr();
@@ -300,7 +301,7 @@ public class FastParallelLayer extends ParallelLayer {
         }
 
         if(resultGPU == null)
-            resultGPU = CudaUtil.createPitch(links + 1, height);
+            resultGPU = ParallelUtil.createPitch(links + 1, height);
         
         float[] temp = new float[height * width];
 
@@ -386,6 +387,6 @@ public class FastParallelLayer extends ParallelLayer {
         for(int i=0; i < links; i++)
             biases[i] = this.weights[index][totalNeurons * i + neurons];
         
-        return new LayerStub(neurons, copy, activation, hasBias, biases);
+        return new LayerStub(neurons, copy, activation, hasBias, biases, condition);
     }
 }

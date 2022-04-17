@@ -21,10 +21,9 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network;
+package org.fjnn.network_old;
 
 import org.fjnn.activation.Activation;
-import org.fjnn.serializer.LayerStub;
 
 /**
  *
@@ -51,6 +50,7 @@ public class LayerBuilder {
         this.activation = stub.activation;
         this.weights = stub.weights;
         this.biases = stub.biases;
+        this.condition = stub.condition;
     }
 
     Layer build(int links, boolean threadSafe) {

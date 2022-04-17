@@ -29,9 +29,8 @@ import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
 import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaEngine.CUdeviceptr2D;
 import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CudaThread;
+import org.fjnn.parallel.ParallelUtil.CUdeviceptr2D;
 
 /**
  *
@@ -45,14 +44,14 @@ public class Tanh extends Activation {
     }
     
     @Override
-    public void compute(float[] input) {
-        for(int i=0; i < input.length; i++)
+    public void compute(float[] input, int from, int to) {
+        for(int i=from; i < to; i++)
             input[i] = (float)Math.tanh(input[i]);
     }
 
     @Override
     public void computeGPU(CUdeviceptr ptr, int size, CUstream stream) {
-        int device = CudaThread.getThreadDeviceId();
+        int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "Tanh", device);
         
@@ -74,7 +73,7 @@ public class Tanh extends Activation {
 
     @Override
     public void computeMultiGPU(CUdeviceptr2D ptr, int width, int height, CUstream stream) {
-        int device = CudaThread.getThreadDeviceId();
+        int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "multi_Tanh", device);
         
@@ -104,7 +103,7 @@ public class Tanh extends Activation {
     }
 
     @Override
-    public void computeGPUConditional(CUdeviceptr ptr, CUdeviceptr compute, int size, CUstream stream) {
+    public void computeGPUConditional(CUdeviceptr ptr, CUdeviceptr compute, int size, CUstream stream, int count) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 

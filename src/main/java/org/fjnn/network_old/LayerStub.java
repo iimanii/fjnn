@@ -21,48 +21,42 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network;
+package org.fjnn.network_old;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.io.Serializable;
 import org.fjnn.activation.Activation;
-import org.fjnn.base.BaseLayer;
-import org.fjnn.serializer.LayerStub;
 
 /**
  *
  * @author ahmed
  */
-public class NetworkBuilder {
-    List<LayerBuilder> layerBuilders;
-    boolean threadSafe;
+public class LayerStub implements Serializable {
+    private static final long serialVersionUID = -7981650494188401487l;
     
-    public NetworkBuilder(boolean threadSafe) {
-        this.layerBuilders = new ArrayList<>();
-        this.threadSafe = threadSafe;
-    }
+    /* number of neurons in this layer */
+    public final int neurons;
 
-    public Layer[] buildLayers() {
-        Layer[] layers = new Layer[layerBuilders.size()];
-        
-        int io = layers.length - 1;
-        
-        for(int i=0; i < io; i++) {
-            LayerBuilder l = layerBuilders.get(i);
-            LayerBuilder n = layerBuilders.get(i+1);
-            layers[i] = l.build(n.size(), threadSafe);
-        }
-        
-        layers[io] = layerBuilders.get(io).buildOutput(threadSafe);
-        
-        return layers;
-    }
-
-    public void addLayer(int neurons, Activation activation, boolean hasBias, boolean[] condition) {
-        layerBuilders.add(new LayerBuilder(neurons, activation, hasBias, condition));
-    }
+    /* activation function for this layer */
+    public final Activation activation;
     
-    public void addLayer(LayerStub stub) {
-        layerBuilders.add(new LayerBuilder(stub));
+    /* does this layer has a bias */
+    public final boolean hasBias;
+    
+    /* [to][from] */
+    public final float[][] weights;
+    
+    /* list of biases of size "links" */
+    public final float[] biases;
+    
+    /* turn on / off activation per node */
+    public final boolean[] condition;
+    
+    public LayerStub(int neurons, float[][] weights, Activation activation, boolean hasBias, float[] biases, boolean[] condition) {
+        this.neurons = neurons;
+        this.weights = weights;
+        this.activation = activation;
+        this.hasBias = hasBias;
+        this.biases = biases;
+        this.condition = condition;
     }
 }
