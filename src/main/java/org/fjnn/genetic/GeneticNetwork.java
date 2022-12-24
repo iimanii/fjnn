@@ -39,7 +39,8 @@ import org.fjnn.activation.Activation;
 import org.fjnn.base.Network;
 import org.fjnn.genetic.GeneticConfig.mutation;
 import org.fjnn.genetic.GeneticNode.NodeType;
-import org.fjnn.network_old.NeuralNetwork;
+import org.fjnn.network.Connection;
+import org.fjnn.network.NeuralNetwork;
 import org.fjnn.util.Rng;
 
 /**
@@ -82,7 +83,6 @@ public class GeneticNetwork extends Network {
     private static final String BIAS_NAME = "Bias";
     private final int BIAS_ID;
     
-    private Activation outputActivation;
     private Activation hiddenActivation;
     
     private NeuralNetwork network;
@@ -117,6 +117,8 @@ public class GeneticNetwork extends Network {
      * @param hiddenActivation
      */
     public GeneticNetwork(int input, int output, Activation outputActivation, Activation hiddenActivation) {
+        super(input, output, outputActivation);
+        
         inputs = new ArrayList<>();
         hidden = new ArrayList<>();
         outputs = new ArrayList<>();
@@ -130,7 +132,6 @@ public class GeneticNetwork extends Network {
         fastAccessInnovation = new HashMap<>();
         fastAccessInnovationCount = new HashMap<>();
         
-        this.outputActivation = outputActivation;
         this.hiddenActivation = hiddenActivation;
         
         inputCounter  = new AtomicInteger();
@@ -201,7 +202,6 @@ public class GeneticNetwork extends Network {
         for(GeneticConnection c : connectionMap.all())
             result.setWeight(c.from.id, c.to.id, c.weight);
         
-        result.outputActivation = outputActivation;
         result.hiddenActivation = hiddenActivation;
         
         result.properties.putAll(properties);
@@ -472,8 +472,8 @@ public class GeneticNetwork extends Network {
      * @param threadSafe
      * @return 
      */
-    public NeuralNetwork getNetwork(boolean threadSafe) {
-        if(network != null && network.isThreadSafe() == threadSafe)
+    public NeuralNetwork getNetwork() {
+        if(network != null)
             return network;
         
         networkMapping.clear();
@@ -613,24 +613,22 @@ public class GeneticNetwork extends Network {
         
         
         /* build the actual network */
-        NeuralNetwork n = new NeuralNetwork(threadSafe);
-        
         int layerCount = layers.size();
+        int iSize = layers.get(0).size() - 1;
+        int oSize = layers.get(layerCount-1).size();
         
-        /* input */
-        n.addLayer(layers.get(0).size() - 1, null, true);
+        NeuralNetwork n = new NeuralNetwork(iSize, oSize, outputActivation);
         
         for(int i=1; i < layerCount-1; i++)
-            n.addLayer(layers.get(i).size(), hiddenActivation, false, conditions.get(i-1));
-
-        /* output */        
-        n.addLayer(layers.get(layerCount-1).size(), outputActivation, false);
+            n.addHiddenLayer(layers.get(i).size(), hiddenActivation);
         
         n.build();
         
         /* build input layer in order I0 - Bias */
         List<GeneticNode> next = layers.get(1);
         Set<GeneticConnection> currentLinks = layerLinks.get(0);
+        
+        Connection layerConnection = n.getLayer(0).getConnection();
         
         for(int j=0; j < inputs.size()-1; j++) {
             GeneticNode nodeCurrent = inputs.get(j);
@@ -641,12 +639,12 @@ public class GeneticNetwork extends Network {
                 GeneticConnection c = connectionMap.get(nodeCurrent, nodeNext);
 
                 if(currentLinks.contains(c)) {
-                   n.setWeight(0, j, k, c.weight);
+                   layerConnection.setWeight(j, k, c.weight);
                    networkMapping.put(c.id, new mapping(0, j, k));
                 }
 
                 if(nodeCurrent == nodeNext)
-                    n.setWeight(0, j, k, 1);
+                    layerConnection.setWeight(j, k, 1);
             }
         }
              
@@ -658,12 +656,12 @@ public class GeneticNetwork extends Network {
             GeneticConnection c = connectionMap.get(biasNode, nodeNext);
 
             if (c != null && !c.disabled) {
-                n.setBias(0, k, c.weight);
+                layerConnection.setBias(k, c.weight);
                 networkMapping.put(c.id, new mapping(0, -1, k));                
             }
 
             if (biasNode == nodeNext) {
-                n.setBias(0, k, 1);
+                layerConnection.setBias(k, 1);
             }
         }
         
@@ -671,7 +669,8 @@ public class GeneticNetwork extends Network {
             List<GeneticNode> current = layers.get(i);
             next = layers.get(i+1);
             currentLinks = layerLinks.get(i);
-                    
+            layerConnection = n.getLayer(i).getConnection();
+            
             for(int j=0; j < current.size(); j++) {
                 GeneticNode nodeCurrent = current.get(j);
 
@@ -681,12 +680,12 @@ public class GeneticNetwork extends Network {
                     GeneticConnection c = connectionMap.get(nodeCurrent, nodeNext);
 
                     if(currentLinks.contains(c)) {
-                       n.setWeight(i, j, k, c.weight);
+                       layerConnection.setWeight(j, k, c.weight);
                        networkMapping.put(c.id, new mapping(i, j, k));                       
                     }
 
                     if(nodeCurrent == nodeNext)
-                        n.setWeight(i, j, k, 1);
+                        layerConnection.setWeight(j, k, 1);
                 }
             }
         }
@@ -715,9 +714,9 @@ public class GeneticNetwork extends Network {
             mapping m = networkMapping.get(c.id);
             
             if(m.from == -1)
-                network.setBias(m.layer, m.to, weight);
+                network.getLayer(m.layer).getConnection().setBias(m.to, weight);
             else
-                network.setWeight(m.layer, m.from, m.to, weight);
+                network.getLayer(m.layer).getConnection().setWeight(m.from, m.to, weight);
         }
         
         return true;
@@ -746,7 +745,7 @@ public class GeneticNetwork extends Network {
         return sum;
     }
     
-    private GeneticNode[] topSort() {
+    public GeneticNode[] topSort() {
         if(lastTopSortConnectionCount == connectionMap.count() && lastTopSortNodeCount == nodeCounter.get())
             return topSort;
         
@@ -933,17 +932,6 @@ public class GeneticNetwork extends Network {
         return false;
     }
 
-    /* Get functions */
-    @Override
-    public int getInputSize() {
-        return inputCounter.get();
-    }
-
-    @Override
-    public int getOutputSize() {
-        return outputCounter.get();
-    }
-    
     public String getInputNode(int index) {
         return GeneticNode.createId(index, NodeType.INPUT);
     }

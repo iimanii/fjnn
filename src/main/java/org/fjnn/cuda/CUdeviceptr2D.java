@@ -21,7 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.parallel;
+package org.fjnn.cuda;
 
 import jcuda.Pointer;
 import jcuda.Sizeof;
@@ -35,16 +35,13 @@ import jcuda.driver.JCudaDriver;
  *
  * @author ahmed
  */
-public class ParallelUtil {
-        
-    public static class CUdeviceptr2D {
-        public CUdeviceptr ptr;
-        public long pitch;
+public class CUdeviceptr2D {   
+    public CUdeviceptr ptr;
+    public long pitch;
 
-        public CUdeviceptr2D(CUdeviceptr ptr, long pitch_ptr) {
-            this.ptr = ptr;
-            this.pitch = pitch_ptr;
-        }
+    public CUdeviceptr2D(CUdeviceptr ptr, long pitch_ptr) {
+        this.ptr = ptr;
+        this.pitch = pitch_ptr;
     }
     
     public static CUdeviceptr2D createPitch(int width, int height) {

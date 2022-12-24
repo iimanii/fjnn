@@ -40,9 +40,6 @@ public abstract class BaseLayer {
     /* activation function for this layer */
     protected final Activation activation;
     
-    /* conditional activation */
-    protected boolean[] condition;
-    
     /* wether or not this layer is the output layer */
     protected final boolean isOutput;
     
@@ -56,8 +53,6 @@ public abstract class BaseLayer {
         this.activation = activation;
 
         this.isOutput = links == 0;
-        
-        this.condition = condition;
     }
     
     /**
@@ -66,14 +61,6 @@ public abstract class BaseLayer {
      */
     public Activation getActivation() {
         return activation;
-    }
-    
-    /**
-     * 
-     * @return 
-     */
-    public boolean[] getCondition() {
-        return condition;
     }
 
     /**

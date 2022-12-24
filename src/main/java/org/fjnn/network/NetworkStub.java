@@ -23,7 +23,6 @@
  */
 package org.fjnn.network;
 
-import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -31,12 +30,12 @@ import java.util.Map;
  *
  * @author ahmed
  */
-public class NetworkStub implements Serializable {
-    public final LayerStub[] layers;    
+public class NetworkStub {
+    public final LayerPlan[] layers;    
     
     public final Map<String, Object> properties;
     
-    public NetworkStub(LayerStub[] layers, Map<String, Object> properties) {
+    public NetworkStub(LayerPlan[] layers, Map<String, Object> properties) {
         this.layers = layers;
         this.properties = new LinkedHashMap<>(properties);
     }

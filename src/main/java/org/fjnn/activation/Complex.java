@@ -28,7 +28,7 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
-import org.fjnn.parallel.ParallelUtil.CUdeviceptr2D;
+import org.fjnn.cuda.CUdeviceptr2D;
 
 /**
  * First x nodes represent mathematical functions 
@@ -38,7 +38,6 @@ public class Complex extends Activation {
     int count;
     Activation activation;
     function[] functions;
-
     
     private static interface calc {
         float compute(float a);
@@ -77,6 +76,11 @@ public class Complex extends Activation {
         this.activation = activation;
     }
     
+    @Override
+    public void derivative(float[] input, int from, int to) {
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
+
     protected static Complex parse(String name) {
         String[] split = name.toLowerCase().split("-");
         

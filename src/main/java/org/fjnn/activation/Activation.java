@@ -26,7 +26,7 @@ package org.fjnn.activation;
 import java.io.Serializable;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
-import org.fjnn.parallel.ParallelUtil.CUdeviceptr2D;
+import org.fjnn.cuda.CUdeviceptr2D;
 
 /**
  *
@@ -45,6 +45,12 @@ public abstract class Activation implements Serializable {
     public abstract void computeGPU(CUdeviceptr ptr, int size, CUstream stream);
     
     public abstract void computeConditional(float[] input, boolean[] compute);
+    
+    public final void derivative(float[] input) {
+        derivative(input, 0, input.length);
+    }
+    
+    public abstract void derivative(float[] input, int from, int to);
     
     public int minLayerSize() {
         return 0;

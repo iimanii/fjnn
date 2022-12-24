@@ -26,6 +26,7 @@ package org.fjnn.base;
 
 import java.util.HashMap;
 import java.util.Map;
+import org.fjnn.activation.Activation;
 
 /**
  *
@@ -33,10 +34,16 @@ import java.util.Map;
  */
 
 public abstract class Network {
-    protected Map<String, Object> properties;
+    protected final Map<String, Object> properties;
+    protected final int inputSize;
+    protected final int outputSize;
+    protected final Activation outputActivation;
     
-    public Network() {
+    public Network(int inputSize, int outputSize, Activation outputActivation) {
         this.properties = new HashMap<>();
+        this.inputSize = inputSize;
+        this.outputSize = outputSize;
+        this.outputActivation = outputActivation;
     }
     
     /**
@@ -79,14 +86,17 @@ public abstract class Network {
      * 
      * @return Number of inputs
      */
-    public abstract int getInputSize();
+    public final int getInputSize() {
+        return inputSize;
+    }
     
     /**
      * 
      * @return Number of outputs
      */
-    public abstract int getOutputSize();    
-    
+    public final int getOutputSize() {
+        return outputSize;
+    }    
     
     /**
      * Randomize the network in the range -1[inclusive], 1[exclusive]

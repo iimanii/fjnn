@@ -31,8 +31,7 @@ import jcuda.driver.JCudaDriver;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaModule;
 import org.fjnn.cuda.CudaUtil;
-import org.fjnn.parallel.ParallelUtil;
-import org.fjnn.parallel.ParallelUtil.CUdeviceptr2D;
+import org.fjnn.cuda.CUdeviceptr2D;
 
 /**
  *
@@ -128,7 +127,7 @@ public class SoftMax extends Activation {
         int gridSizeY = height;
         
         /* Create temp array to put sums */
-        CUdeviceptr2D sums = ParallelUtil.createPitch(width, height);
+        CUdeviceptr2D sums = CUdeviceptr2D.createPitch(width, height);
         
         /* Phase 1 */
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "multi_SoftMax_1", device);
@@ -203,5 +202,14 @@ public class SoftMax extends Activation {
     @Override
     public void computeMultiGPUConditional(CUdeviceptr2D ptr, CUdeviceptr compute, int width, int height, CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+    
+    /*
+     * https://mmuratarat.github.io/2019-01-27/derivation-of-softmax-function
+     * https://www.youtube.com/watch?v=09c7bkxpv9I
+     */
+    @Override
+    public void derivative(float[] input, int from, int to) {
+
     }
 }

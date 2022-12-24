@@ -25,9 +25,7 @@ package org.fjnn.network;
 
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import jcuda.Pointer;
 import jcuda.Sizeof;
@@ -47,6 +45,8 @@ import org.fjnn.cuda.CudaUtil;
 import org.fjnn.network.Layer.crossOverMutateResult;
 import org.fjnn.util.Rng;
 import org.fjnn.util.util;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 /**
  *
@@ -70,125 +70,94 @@ public class NeuralNetwork extends Network {
     /* handle for cublas */
     cublasHandle handle;
     
-    /* total number of weights exluding bias */
-    int weightsCount;
-    
-    /* total number of bias weights */
-    int biasCount;
-    
     /* for building the network */
-    LayerStub inputStub;
-    LayerStub outputStub;
-    List<LayerStub> hiddenStub;
+    List<LayerPlan> plan;
     
     /* I:size->H:size[activation].....->O:size[activation] */
     String signature;
     
-    public NeuralNetwork() {
-        this.properties = new HashMap<>();
+    public NeuralNetwork(int input, int output, Activation outputActivation) {
+        super(input, output, outputActivation);
         
-        this.cpuFree = false;
-        this.finalized = false;
         this.deviceId = -1;
-        
-        this.hiddenStub = new ArrayList<>();
+        this.plan = new ArrayList<>();
     }
-    
-    public NeuralNetwork(NetworkStub stub) {
-        this.properties = new HashMap<>(stub.properties);
         
-        this.cpuFree = false;
-        this.finalized = false;
+    NeuralNetwork(Layer[] layers) {
+        super(layers[0].neurons, layers[layers.length-1].neurons, layers[layers.length-1].activation);
+        
+        this.layers = layers;
+        this.finalized = true;
         this.deviceId = -1;
-
-        this.hiddenStub = new ArrayList<>();
-        
-        inputStub = stub.layers[0];
-        
-        for(int i=1; i < stub.layers.length - 1; i++)
-            hiddenStub.add(stub.layers[i]);
-        
-        outputStub = stub.layers[stub.layers.length-1];
-
-        build();
+        this.last = layers.length - 1;
     }
     
-    public NeuralNetwork copy() {
-       return new NeuralNetwork(this.getStub());
-    }
-    
-    public NeuralNetwork copyStructure() {
-        return new NeuralNetwork(this.getStub(false, false));
+    public NeuralNetwork copy(boolean withoutWeights) {
+        Layer[] copied = new Layer[layers.length];
+        
+        for(int i=0; i < layers.length; i++) {
+            copied[i] = layers[i].copy(withoutWeights);
+        }
+        
+        return new NeuralNetwork(copied);
     }
     
     /* for building the network */
-    public NeuralNetwork setInputLayer(int neurons, boolean hasBias) {
-        inputStub = new LayerStub(neurons, null, null, hasBias, null, null);
+    public NeuralNetwork addHiddenLayer(int neurons, Activation activation) {
+        if(finalized)
+            throw new RuntimeException("network already finalized");
+        
+        plan.add(new LayerPlan(neurons, activation));
         return this;
     }
-    public NeuralNetwork setOutputLayer(int neurons, Activation activation) {
-        return setOutputLayer(neurons, activation, null);
-    }
-    public NeuralNetwork setOutputLayer(int neurons, Activation activation, boolean[] condition) {
-        outputStub = new LayerStub(neurons, null, activation, false, null, condition);
-        return this;
-    }
-    public NeuralNetwork addHiddenLayer(int neurons, Activation activation, boolean hasBias) {
-        return addHiddenLayer(neurons, activation, hasBias, null);
-    }
-    public NeuralNetwork addHiddenLayer(int neurons, Activation activation, boolean hasBias, boolean[] condition) {
-        hiddenStub.add(new LayerStub(neurons, null, activation, hasBias, null, condition));
+    
+    public NeuralNetwork addConnection(int fromLayer, int toLayer) {
+        if(!finalized)
+            throw new RuntimeException("network layer structure is not finalized yet");
+        
+        int targetNeurons = layers[toLayer].neurons;
+        
+        layers[fromLayer].addConnection(toLayer, targetNeurons);
+        
         return this;
     }
     
     public final NeuralNetwork build() {
         if(finalized)
-            return this;
+            throw new RuntimeException("network already finalized");
         
-        List<LayerStub> stubs = new ArrayList<>();
-        stubs.add(inputStub);
-        stubs.addAll(hiddenStub);
-        stubs.add(outputStub);
+        /* input + output + hidden */
+        layers = new Layer[plan.size()+2];
         
-        weightsCount = 0;
-        biasCount = 0;
+        int i=0;
         
-        layers = new Layer[stubs.size()];
-        last = stubs.size()-1;
+        /* input layer */
+        layers[0] = new Layer(i++, inputSize, null);
         
-        for(int i=0; i < last; i++) {
-            int links = stubs.get(i+1).neurons;
-            layers[i] = new Layer(stubs.get(i), links);
-            weightsCount += layers[i].neurons() * layers[i].links();
-            if(layers[i].hasBias())
-                biasCount += layers[i].links();
+        Layer prev = layers[0];
+        
+        for(LayerPlan p : plan) {
+            Layer layer = new Layer(i++, p.neurons, p.activation);
+            prev.addConnection(layer.index, layer.neurons);
+            
+            layers[layer.index] = layer;            
+            prev = layer;
         }
         
-        layers[last] = new Layer(outputStub, 0);
-        
-        /* no need to keep stubs in memory */
-        inputStub = null;
-        outputStub = null;
-        hiddenStub = null;
+        /* output layer */
+        layers[i] = new Layer(i, outputSize, outputActivation);
+        prev.addConnection(i, outputSize);
+        last = i;
         
         finalized = true;
         
         return this;
     }
     
-    /* get layer information */
-    @Override
-    public int getInputSize() {
-        return layers[0].neurons();
-    }
     public Layer getInputLayer() {
         return layers[0];
     }
     
-    @Override
-    public int getOutputSize() {
-        return layers[last].neurons();
-    }
     public Layer getOutputLayer() {
         return layers[last];
     }
@@ -196,12 +165,7 @@ public class NeuralNetwork extends Network {
     public int getHiddenCount() {
         return layers.length - 2;
     }
-    public Layer getHiddenLayer(int num) {
-        if(num >= last)
-            return null;
-        
-        return layers[num+1];
-    }
+    
     public Layer getLayer(int layer) {
         return layers[layer];
     }
@@ -210,14 +174,14 @@ public class NeuralNetwork extends Network {
         return layers.length;
     }
     
-    /* total number of weights exluding bias weights */
+    /* total number of weights including bias */
     public int getWeightsCount() {
-        return weightsCount;
-    }
-    
-    /* total number of bias weights */
-    public int getBiasCount() {
-        return biasCount;
+        int count = 0;
+        
+        for(Layer l : layers)
+            count += l.getWeightsCount();
+        
+        return count;
     }
     
     @Override
@@ -231,25 +195,19 @@ public class NeuralNetwork extends Network {
      * @return Compute the output of the neural network on given input
      */
     public float[] compute(float[] input) {
-        float[] result = util.copyArray(input);
+        float[][] results = new float[getLayerCount()][];
+        results[0] = util.copyArray(input);
         
-        for(Layer l : layers) {
-            result = l.feedForward(result);
-        }
+        for(int i=0; i < layers.length; i++)
+            layers[i].feedForward(results[i], results);
         
-        return result;
+        return results[last];
     }
     
-    public float[][] compute(float[][] inputs) {
-        float[][] result = new float[inputs.length][];
-        
-        for(int i=0; i < inputs.length; i++) {
-            result[i] = compute(inputs[i]);
-        }
-         
-        return result;
+    public void backpropagate(float[][] loss, int threads) {
+        throw new RuntimeException("unsupported");
     }
-
+    
     public void freeCPU() {
         if(cpuFree)
             return;
@@ -258,6 +216,35 @@ public class NeuralNetwork extends Network {
             l.freeCPU();
         
         cpuFree = true;
+    }
+    
+    public JSONObject serialize() {
+        JSONObject obj = new JSONObject();
+        
+        obj.put("properties", properties);
+        
+        JSONArray array = new JSONArray();
+        
+        obj.put("layers", array);
+        
+        for(Layer l: layers)
+            array.put(l.serialize());
+        
+        return obj;
+    }
+
+    public static NeuralNetwork deserialize(JSONObject serialized) {
+        JSONArray array = serialized.getJSONArray("layers");
+        
+        Layer[] layers = new Layer[array.length()];
+        
+        for(int i=0; i < array.length(); i++)
+            layers[i] = Layer.deserialize(array.getJSONObject(i));
+        
+        NeuralNetwork result = new NeuralNetwork(layers);
+        
+        result.properties.putAll(serialized.getJSONObject("properties").toMap());
+        return result;
     }
     
     /**
@@ -529,19 +516,6 @@ public class NeuralNetwork extends Network {
 
         deviceId = -1;
     }
-
-    public NetworkStub getStub() {
-        return getStub(true, true);
-    }
-    
-    private NetworkStub getStub(boolean withWeights, boolean withProperties) {
-        LayerStub[] stubs = new LayerStub[layers.length];
-        for(int i=0; i < layers.length; i++)
-            stubs[i] = layers[i].getStub(withWeights);
-        
-        Map<String, Object> p = withProperties ? properties : new HashMap<>();
-        return new NetworkStub(stubs, p);
-    }
     
     /**
      * Average of all weights
@@ -551,20 +525,22 @@ public class NeuralNetwork extends Network {
         float sum = 0;
         int count = 0;
         
-        for(int i=0; i < layers.length; i++) {
-            float[] weights = layers[i].weights;
-            
-            for(float w : weights)
-                sum += w;
-            
-            count += weights.length;
-            
-            float[] bias = layers[i].bias;
-            
-            for(float b : bias)
-                sum += b;
-            
-            count += bias.length;
+        for (Layer l : layers) {
+            for(Connection c : l.connections.values()) {
+                float[] weights = c.weights;
+
+                for(float w : weights)
+                    sum += w;
+
+                count += weights.length;
+
+                float[] bias = c.biases;
+
+                for(float b : bias)
+                    sum += b;
+
+                count += bias.length;
+            }
         }
         
         return sum / count;
@@ -579,20 +555,22 @@ public class NeuralNetwork extends Network {
         float sd = 0;
         int count = 0;
         
-        for(int i=0; i < layers.length; i++) {
-            float[] weights = layers[i].weights;
-            
-            for(float w : weights)
-                sd += Math.pow(w - mean, 2);
-            
-            count += weights.length;
-            
-            float[] bias = layers[i].bias;
-            
-            for(float b : bias)
-                sd += Math.pow(b - mean, 2);
-            
-            count += bias.length;
+        for (Layer l : layers) {
+            for(Connection c : l.connections.values()) {
+                float[] weights = c.weights;
+
+                for(float w : weights)
+                    sd += Math.pow(w - mean, 2);
+
+                count += weights.length;
+
+                float[] bias = c.biases;
+
+                for(float b : bias)
+                    sd += Math.pow(b - mean, 2);
+
+                count += bias.length;
+            }
         }
         
         return (float) Math.sqrt(sd / count);
@@ -603,18 +581,18 @@ public class NeuralNetwork extends Network {
             return signature;
         
         StringBuilder b = new StringBuilder();
-        b.append("I:").append(layers[0].neurons()).append(",");
+        b.append("I:").append(layers[0].neurons).append(",");
         
         for(int i=1; i < layers.length-1; i++) {
-            b.append("H:").append(layers[i].neurons());
-            if(layers[i].getActivation() != null)
-                b.append("[").append(layers[i].getActivation().toName()).append("]");
+            b.append("H:").append(layers[i].neurons);
+            if(layers[i].activation != null)
+                b.append("[").append(layers[i].activation.toName()).append("]");
             b.append(",");
         }
         
-        b.append("O:").append(layers[last].neurons());
-        if(layers[last].getActivation() != null)
-            b.append("[").append(layers[last].getActivation().toName()).append("]");
+        b.append("O:").append(layers[last].neurons);
+        if(layers[last].activation != null)
+            b.append("[").append(layers[last].activation.toName()).append("]");
         
         signature = b.toString();
         

@@ -43,9 +43,10 @@ __global__ void ReLU(float* v, long size) {
 extern "C"
 __global__ void ReLU_Conditional(float* v, unsigned char* c, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
+    int index = row + blockIdx.y * size;
     
     if(row < size && c[row])
-        v[row] = max(0.0f, v[row]);
+        v[index] = max(0.0f, v[row]);
 }
 /**
  * Rectifier Linear Unit
@@ -77,9 +78,10 @@ __global__ void Sigmoid(float* v, long size) {
 extern "C"
 __global__ void Sigmoid_Conditional(float* v, unsigned char* c, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
+    int index = row + blockIdx.y * size;
     
     if(row < size && c[row])
-        v[row] = 1.0 / (1 + safe_exp(-v[row]));
+        v[index] = 1.0 / (1 + safe_exp(-v[index]));
 }
 
 /**
@@ -123,9 +125,10 @@ __global__ void Sin(float* v, long size) {
 extern "C"
 __global__ void Sin_Conditional(float* v, unsigned char* c, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
+    int index = row + blockIdx.y * size;
     
     if(row < size && c[row])
-        v[row] = sin(v[row]);
+        v[index] = sin(v[index]);
 }
 
 /**

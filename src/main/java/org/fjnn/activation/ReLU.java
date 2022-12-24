@@ -30,7 +30,7 @@ import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaModule;
-import org.fjnn.parallel.ParallelUtil.CUdeviceptr2D;
+import org.fjnn.cuda.CUdeviceptr2D;
 
 /**
  *
@@ -148,5 +148,10 @@ public class ReLU extends Activation {
             0, stream,                 // Shared memory size and stream
             kernelParameters, null     // Kernel- and extra parameters
         );
+    }
+    
+    @Override
+    public void derivative(float[] input, int from, int to) {
+        throw new UnsupportedOperationException("Not supported yet.");
     }
 }

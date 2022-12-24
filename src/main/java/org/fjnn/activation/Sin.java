@@ -30,7 +30,7 @@ import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaModule;
-import org.fjnn.parallel.ParallelUtil.CUdeviceptr2D;
+import org.fjnn.cuda.CUdeviceptr2D;
 
 /**
  *
@@ -109,6 +109,11 @@ public class Sin extends Activation {
 
     @Override
     public void computeMultiGPUConditional(CUdeviceptr2D ptr, CUdeviceptr compute, int width, int height, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void derivative(float[] input, int from, int to) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 }

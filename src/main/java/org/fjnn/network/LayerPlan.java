@@ -21,42 +21,27 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network_old;
+package org.fjnn.network;
 
-import java.io.Serializable;
 import org.fjnn.activation.Activation;
 
 /**
  *
  * @author ahmed
  */
-public class LayerStub implements Serializable {
-    private static final long serialVersionUID = -7981650494188401487l;
-    
+public class LayerPlan {
     /* number of neurons in this layer */
     public final int neurons;
 
     /* activation function for this layer */
     public final Activation activation;
     
-    /* does this layer has a bias */
-    public final boolean hasBias;
-    
-    /* [to][from] */
-    public final float[][] weights;
-    
-    /* list of biases of size "links" */
-    public final float[] biases;
-    
-    /* turn on / off activation per node */
-    public final boolean[] condition;
-    
-    public LayerStub(int neurons, float[][] weights, Activation activation, boolean hasBias, float[] biases, boolean[] condition) {
+    public LayerPlan(int neurons, Activation activation) {
         this.neurons = neurons;
-        this.weights = weights;
         this.activation = activation;
-        this.hasBias = hasBias;
-        this.biases = biases;
-        this.condition = condition;
+        
+        if(activation != null && neurons < activation.minLayerSize())
+            throw new RuntimeException("Minimum layer size must be " + activation.minLayerSize() + 
+                                       " for activation function " + activation.toName());
     }
 }
