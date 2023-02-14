@@ -14,13 +14,13 @@
         <dependency>
             <groupId>org.jcuda</groupId>
             <artifactId>jcuda</artifactId>
-            <version>10.0.0</version>
+            <version>11.0.0</version>
         </dependency>
         
         <dependency>
             <groupId>org.jcuda</groupId>
             <artifactId>jcuda-natives</artifactId>
-            <version>10.0.0</version>
+            <version>11.0.0</version>
             <classifier>linux-x86_64</classifier>
         </dependency>
 
@@ -28,14 +28,14 @@
         <dependency>
             <groupId>org.jcuda</groupId>
             <artifactId>jcublas</artifactId>
-            <version>10.0.0</version>
+            <version>11.0.0</version>
         </dependency>
         
         <!-- https://mvnrepository.com/artifact/org.jcuda/jcublas-natives -->
         <dependency>
             <groupId>org.jcuda</groupId>
             <artifactId>jcublas-natives</artifactId>
-            <version>10.0.0</version>
+            <version>11.0.0</version>
             <classifier>linux-x86_64</classifier>
         </dependency>
         
@@ -43,14 +43,14 @@
         <dependency>
             <groupId>org.jcuda</groupId>
             <artifactId>jcurand</artifactId>
-            <version>10.0.0</version>
+            <version>11.0.0</version>
         </dependency>
         
         <!-- https://mvnrepository.com/artifact/org.jcuda/jcurand-natives -->
         <dependency>
             <groupId>org.jcuda</groupId>
             <artifactId>jcurand-natives</artifactId>
-            <version>10.0.0</version>
+            <version>11.0.0</version>
             <classifier>linux-x86_64</classifier>
         </dependency>
 
@@ -74,6 +74,13 @@
             <version>20200518</version>
             <type>jar</type>
         </dependency>
+        <!-- https://mvnrepository.com/artifact/org.jblas/jblas -->
+        <dependency>
+            <groupId>org.jblas</groupId>
+            <artifactId>jblas</artifactId>
+            <version>1.2.4</version>
+            <scope>test</scope>
+        </dependency>        
     </dependencies>
     <build>
         <plugins>

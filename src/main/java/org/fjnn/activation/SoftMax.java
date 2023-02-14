@@ -23,6 +23,7 @@
  */
 package org.fjnn.activation;
 
+import java.nio.FloatBuffer;
 import jcuda.Pointer;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUfunction;
@@ -32,6 +33,8 @@ import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaModule;
 import org.fjnn.cuda.CudaUtil;
 import org.fjnn.cuda.CUdeviceptr2D;
+import org.fjnn.util.intrinsic;
+import org.fjnn.util.util;
 
 /**
  *
@@ -45,25 +48,30 @@ public class SoftMax extends Activation {
     }
 
     @Override
-    public void compute(float[] input, int from, int to) {
-        double sum = 0;
-        float max = Float.NEGATIVE_INFINITY;
-        
-        for(int i=from; i < to; i++) {
-            max = Math.max(input[i], max);
+    public void compute(float[] input, int stride, int count) {
+        for(int c=0; c < count; c++) {
+            int from = c * stride;
+            int to = from + stride;
+            
+            double sum = 0;
+            float max = Float.NEGATIVE_INFINITY;
+
+            for(int i=from; i < to; i++) {
+                max = Math.max(input[i], max);
+            }
+
+            for(int i=from; i < to; i++) {
+                input[i] = (float) Math.exp(input[i] - max);
+                sum += input[i];
+            }
+
+            if(sum == 0)
+                for(int i=from; i < to; i++)
+                    input[i] = 1.0f / input.length;
+            else
+                for(int i=from; i < to; i++)
+                    input[i] /= sum;
         }
-        
-        for(int i=from; i < to; i++) {
-            input[i] = (float) Math.exp(input[i] - max);
-            sum += input[i];
-        }
-        
-        if(sum == 0)
-            for(int i=from; i < to; i++)
-                input[i] = 1.0f / input.length;
-        else
-            for(int i=from; i < to; i++)
-                input[i] /= sum;
     }
 
     @Override
@@ -75,7 +83,7 @@ public class SoftMax extends Activation {
         
         /* Create temp array to put sums */
         int sums_size = gridSizeX;
-        CUdeviceptr sums = CudaUtil.create(sums_size);//CudaEngine.getSharedResource(sums_size, device);//new CUdeviceptr();
+        CUdeviceptr sums = CudaUtil.createFloat(sums_size);//CudaEngine.getSharedResource(sums_size, device);//new CUdeviceptr();
 //        JCudaDriver.cuMemAlloc(sums, sums_size * (long)Sizeof.FLOAT);
         
         if(true)
@@ -211,5 +219,10 @@ public class SoftMax extends Activation {
     @Override
     public void derivative(float[] input, int from, int to) {
 
+    }
+
+    @Override
+    public void compute(FloatBuffer input, int stride, int count) {
+        intrinsic.SoftMax(input, stride, count);
     }
 }

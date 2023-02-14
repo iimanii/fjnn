@@ -172,7 +172,7 @@ public class CudaModule {
         util.saveFile(cuPath, file.getBytes("UTF-8"));
     }
     
-    public static void saveUtilFile(int threadsPerBlock) throws IOException {
+    public static void saveUtilFile(int threadsPerBlock, int[] maxGridSize) throws IOException {
         /* Make sure to get folder for the current jar */
         String cDir = new File("").getAbsolutePath();
         
@@ -214,6 +214,9 @@ public class CudaModule {
         String file = util.readStream(connection.getInputStream());
         
         file = file.replace("INSERT_THREADS_PER_BLOCK", Integer.toString(threadsPerBlock));
+        file = file.replace("INSERT_MAX_GRID_X", Integer.toString(maxGridSize[0]));
+        file = file.replace("INSERT_MAX_GRID_Y", Integer.toString(maxGridSize[1]));
+        file = file.replace("INSERT_MAX_GRID_Z", Integer.toString(maxGridSize[2]));
         
         util.saveFile(filename, file.getBytes("UTF-8"));
     }

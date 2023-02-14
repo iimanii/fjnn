@@ -23,12 +23,16 @@
  */
 package org.fjnn.cuda;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.FloatBuffer;
 import jcuda.Pointer;
 import jcuda.Sizeof;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
+import org.fjnn.util.util;
 import run.timer;
 
 /**
@@ -37,20 +41,44 @@ import run.timer;
  */
 public class CudaUtil {
     
-    private static final long FLOAT_SIZE = Sizeof.FLOAT;
+    public static final long FLOAT_SIZE = Sizeof.FLOAT;
+    public static int DEFAULT_MEM_ALIGN = 1024;
+    public static int PREFERRED_BLOCK_SIZE = 128;
     
-    public static CUdeviceptr create(long size) {
+    public static CUdeviceptr createFloat(long size) {
         CUdeviceptr ptr = new CUdeviceptr();
         JCudaDriver.cuMemAlloc(ptr, size * FLOAT_SIZE);
         
         return ptr;
     }
 
-    public static CUdeviceptr createBytes(long size) {
+    public static CUdeviceptr createByte(long size) {
         CUdeviceptr ptr = new CUdeviceptr();
         JCudaDriver.cuMemAlloc(ptr, size);
         
         return ptr;
+    }
+    
+    public static CUdeviceptr createFloat(long size, int device) {
+        CudaEngine.prepareThread(device);
+        CUdeviceptr ptr = new CUdeviceptr();
+        JCudaDriver.cuMemAlloc(ptr, size * FLOAT_SIZE);
+        CudaEngine.finalizeThread();
+        
+        return ptr;
+    }
+
+    public static CUdeviceptr createByte(long size, int device) {
+        CudaEngine.prepareThread(device);
+        CUdeviceptr ptr = new CUdeviceptr();
+        JCudaDriver.cuMemAlloc(ptr, size);
+        CudaEngine.finalizeThread();
+        
+        return ptr;
+    }
+
+    public static void free(CUdeviceptr ptr) {
+        JCudaDriver.cuMemFree(ptr);
     }
     
     public static CUdeviceptr toGPU(float[] array) {
@@ -61,6 +89,22 @@ public class CudaUtil {
         return ptr;
     }
         
+    public static CUdeviceptr toGPU(float[] input, int device) {
+        CudaEngine.prepareThread(device);
+        CUdeviceptr ptr = toGPU(input);
+        CudaEngine.finalizeThread();
+        
+        return ptr;
+    }
+    
+    public static CUdeviceptr toGPU(float[][] input, int device) {
+        CudaEngine.prepareThread(device);
+        CUdeviceptr ptr = CudaUtil.toGPU(util.to1D(input, input[0].length));
+        CudaEngine.finalizeThread();
+        
+        return ptr;
+    }
+    
     public static CUdeviceptr toGPU(float[] array, CUstream stream) {
         CUdeviceptr ptr = new CUdeviceptr();
         JCudaDriver.cuMemAlloc(ptr, array.length * FLOAT_SIZE);
@@ -69,20 +113,38 @@ public class CudaUtil {
         return ptr;
     }
     
-    public static float[] fromGPU(CUdeviceptr src, int size) {
+    public static float[] fromGPUFloat(CUdeviceptr src, int size) {
         float[] array = new float[size];
         JCudaDriver.cuMemcpyDtoH(Pointer.to(array), src, size * FLOAT_SIZE);
         
         return array;
     }
     
-    public static float[] fromGPU(CUdeviceptr src, int size, CUstream stream) {
+    public static float[] fromGPUFloat(CUdeviceptr src, int size, CUstream stream) {
         float[] array = new float[size];
         JCudaDriver.cuMemcpyDtoHAsync(Pointer.to(array), src, size * FLOAT_SIZE, stream);
         
         return array;
     }
         
+    public static FloatBuffer toInputBuffer(float[] input) {
+        FloatBuffer result = ByteBuffer.allocateDirect(input.length * Float.BYTES).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
+        result.put(input);
+        
+        return result;
+    }
+    
+    public static FloatBuffer toInputBuffer(float[][] input) {
+        /* all inputs must be equal in size */
+        int size = input.length * input[0].length;
+        
+        FloatBuffer result = ByteBuffer.allocateDirect(size * Float.BYTES).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
+        for(float[] i : input)
+            result.put(i);
+        
+        return result;
+    }
+    
     public static long length(CUdeviceptr ptr) {
         long[] size = new long[1];
         JCudaDriver.cuMemGetAddressRange(null, size, ptr);
@@ -118,85 +180,15 @@ public class CudaUtil {
         return array;
     }
     
-    /* utility functions */
-    public static float sum_abs_differenceGPU(CUdeviceptr array1, CUdeviceptr array2, int size, CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
-        int threadsPerBlock = CudaEngine.getMaxThreadsPerBlock(device);        
-        CUfunction matrixMulVector = CudaEngine.getKernel(CudaModule.MODULE_ACCUMULATE, "sum_abs_difference", device);
-        
-        int blockSizeX = Math.min(threadsPerBlock, size);
-        int gridSizeX  = (size-1) / (blockSizeX) + 1;
-        gridSizeX = (int) Math.max(1, Math.ceil(Math.sqrt(gridSizeX)));
-
-        CUdeviceptr result = CudaUtil.create(gridSizeX);
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(array1),
-            Pointer.to(array2),
-            Pointer.to(new long[]{size}),
-            Pointer.to(result)
-        );
-
-        JCudaDriver.cuLaunchKernel(matrixMulVector,
-            gridSizeX, 1, 1,        // Grid dimension
-            blockSizeX, 1, 1,       // Block dimension
-            0, stream,                // Shared memory size and stream
-            kernelParameters, null  // Kernel- and extra parameters
-        );
-        
-        float sum = sumGPU(result, gridSizeX, stream);
-        JCudaDriver.cuMemFree(result);
-        
-        return sum;
-    }
-    
-    public static float sumGPU(CUdeviceptr array, int size, CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
-        int threadsPerBlock = CudaEngine.getMaxThreadsPerBlock(device);        
-        CUfunction matrixMulVector = CudaEngine.getKernel(CudaModule.MODULE_ACCUMULATE, "accumulate_vector", device);
-        
-        int blockSizeX = Math.min(threadsPerBlock, size);
-        int gridSizeX  = (size-1) / (blockSizeX * 2) + 1;
-        gridSizeX = (int) Math.max(1, Math.ceil(Math.sqrt(gridSizeX)));
-
-        CUdeviceptr result = CudaUtil.create(gridSizeX);
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(array),
-            Pointer.to(new long[]{size}),
-            Pointer.to(result)
-        );
-
-        JCudaDriver.cuLaunchKernel(matrixMulVector,
-            gridSizeX, 1, 1,        // Grid dimension
-            blockSizeX, 1, 1,       // Block dimension
-            0, stream,                // Shared memory size and stream
-            kernelParameters, null  // Kernel- and extra parameters
-        );
-        
-        float sum;
-        
-        if(gridSizeX > 1)
-            sum = sumGPU(result, gridSizeX, stream);
-        else {
-            sum = CudaUtil.fromGPU(result, 1, stream)[0];
-        }
-        
-        JCudaDriver.cuMemFree(result);
-        
-        return sum;
-    }
-    
-    
     public static void print(CUdeviceptr ptr, int length, CUstream stream) {
-        float[] temp = fromGPU(ptr, length, null);
+        float[] temp = CudaUtil.fromGPUFloat(ptr, length, null);
         
         for(float t : temp)
             System.out.print(t + " ");
         System.out.println();
     }
         
-    public static void printMemUsage(boolean cpu) {
+    public static void printMemUsage(boolean cpu, int deviceId) {
         if(cpu) {
             /* Total number of processors or cores available to the JVM */
             System.out.println("Available processors (cores): "
@@ -220,11 +212,13 @@ public class CudaUtil {
         long[] free = new long[1];
         long[] total = new long[1];
         
-        for(int i=0; i < CudaEngine.getDeviceCount(); i++) {
-            CudaEngine.prepareThread(i);
-            JCudaDriver.cuMemGetInfo(free, total);
-            System.out.println("Device " + i + ": " + free[0] + " " + total[0] + " " + (1.0*free[0])/total[0]);
-            CudaEngine.finalizeThread();
-        }
+        CudaEngine.prepareThread(deviceId);
+        JCudaDriver.cuMemGetInfo(free, total);
+        System.out.printf("Device %d: %.4f %.4f %.4f\n", deviceId, free[0] / 1e6f, total[0] / 1e6f, (1.0*free[0])/total[0]);
+        CudaEngine.finalizeThread();
     }    
+
+    public static long alignLength(long length, int alignment) {
+        return ((length + (alignment - 1)) & ~(alignment - 1));
+    }
 }

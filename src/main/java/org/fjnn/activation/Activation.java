@@ -24,6 +24,7 @@
 package org.fjnn.activation;
 
 import java.io.Serializable;
+import java.nio.FloatBuffer;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.cuda.CUdeviceptr2D;
@@ -37,10 +38,16 @@ public abstract class Activation implements Serializable {
     public abstract float compute(float input);
     
     public final void compute(float[] input) {
-        compute(input, 0, input.length);
+        compute(input, input.length, 1);
     }
     
-    public abstract void compute(float[] input, int from, int to);
+    public abstract void compute(float[] input, int stride, int count);
+    
+    public void compute(FloatBuffer input) {
+        compute(input, input.capacity(), 1);
+    }
+    
+    public abstract void compute(FloatBuffer input, int stride, int count);
     
     public abstract void computeGPU(CUdeviceptr ptr, int size, CUstream stream);
     
@@ -74,6 +81,8 @@ public abstract class Activation implements Serializable {
         switch(name.toLowerCase()) {
             case "relu":
                 return new ReLU();
+            case "leakyrelu":
+                return new LeakyReLU();
             case "sigmoid":
                 return new Sigmoid();
             case "sin":

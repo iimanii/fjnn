@@ -23,6 +23,7 @@
  */
 package org.fjnn.activation;
 
+import java.nio.FloatBuffer;
 import jcuda.Pointer;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUfunction;
@@ -31,6 +32,9 @@ import jcuda.driver.JCudaDriver;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaModule;
 import org.fjnn.cuda.CUdeviceptr2D;
+import org.fjnn.cuda.CudaFunctions;
+import org.fjnn.cuda.CudaUtil;
+import org.fjnn.util.intrinsic;
 
 /**
  *
@@ -44,31 +48,14 @@ public class Sigmoid extends Activation {
     }
 
     @Override
-    public void compute(float[] input, int from, int to) {
-        for(int i=from; i < to; i++)
+    public void compute(float[] input, int stride, int count) {
+        for(int i=0; i < input.length; i++)
             input[i] = (float) (1.0 / (1 + SafeExp(-input[i])));
     }
 
     @Override
     public void computeGPU(CUdeviceptr ptr, int size, CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
-        
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "Sigmoid", device);
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(ptr),
-            Pointer.to(new long[]{size})
-        );
-        
-        int blockSizeX = Math.min(CudaEngine.getMaxThreadsPerBlock(device), size);
-        int gridSizeX = (size - 1) / blockSizeX + 1;
-        
-        JCudaDriver.cuLaunchKernel(function,
-            gridSizeX, 1, 1,       // Grid dimension
-            blockSizeX, 1, 1,      // Block dimension
-            0, stream,             // Shared memory size and stream
-            kernelParameters, null // Kernel- and extra parameters
-        );
+        CudaFunctions.Sigmoid(ptr, size, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
     }
 
     @Override
@@ -153,5 +140,10 @@ public class Sigmoid extends Activation {
     @Override
     public void derivative(float[] input, int from, int to) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void compute(FloatBuffer input, int stride, int count) {
+        intrinsic.Sigmoid(input, stride * count);
     }
 }

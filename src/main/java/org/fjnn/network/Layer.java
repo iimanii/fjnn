@@ -23,6 +23,10 @@
  */
 package org.fjnn.network;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.FloatBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -40,11 +44,11 @@ import jcuda.jcublas.cublasOperation;
 import jcuda.jcurand.JCurand;
 import jcuda.jcurand.curandGenerator;
 import org.fjnn.activation.Activation;
-import org.fjnn.base.BaseLayer;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaModule;
 import org.fjnn.cuda.CudaUtil;
 import org.fjnn.util.Rng;
+import org.fjnn.util.intrinsic;
 import org.fjnn.util.util;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -64,29 +68,30 @@ public class Layer {
     public final Activation activation;
     
     final Map<Integer, Connection> connections;
-
-    /* can we call computeGPU */
-    protected boolean gpuReady;
     
     public Layer(int index, int neurons, Activation activation) {
         this.index = index;
         this.neurons = neurons;
         this.activation = activation;
         this.connections = new HashMap<>();
-
-        gpuReady = false;
     }
 
-    Layer copy(boolean withoutWeights) {
+    Layer copy(boolean copyWeights, boolean createWeights) {
         Layer result = new Layer(index, neurons, activation);
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
-            result.addConnection(e.getKey(), e.getValue().copy(withoutWeights));
+            result.addConnection(e.getKey(), e.getValue().copy(copyWeights, createWeights));
         }
         
         return result;
     }
 
+    void copyWeights(Layer layer) {
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
+            e.getValue().copyWeights(layer.getConnection(e.getKey()));
+        }
+    }
+    
     public void addConnection(int toLayer, int links) {
         if(toLayer == index)
             throw new RuntimeException("Adding connection to the same layer");
@@ -111,6 +116,10 @@ public class Layer {
     public Connection getConnection(int toLayer) {
         return connections.get(toLayer);
     }
+    
+    public List<Connection> getConnections() {
+        return new ArrayList<>(connections.values());
+    }
 
     public void randomize(float min, float max) {
         for(Connection c : connections.values())
@@ -122,26 +131,88 @@ public class Layer {
             activation.compute(input);
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
+            int toLayer = e.getKey();
+            Connection c = e.getValue();
+            
+            if(result[toLayer] == null)
+                result[toLayer] = new float[c.links];
+                
+            c.feedForward(input, result[toLayer]);
+        }
+    }
+    
+    protected void feedForward(float[] input, int count, float[][] result) {
+        if(activation != null)
+            activation.compute(input, neurons, count);
+        
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
+            int toLayer = e.getKey();
+            Connection c = e.getValue();
+            
+            if(result[toLayer] == null)
+                result[toLayer] = new float[c.links * count];
+                
+            c.feedForward(input, count, result[toLayer]);
+        }
+    }
+    
+    protected void feedForward(FloatBuffer input, FloatBuffer[] result) {
+        if(activation != null)
+            activation.compute(input);
+        
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
             int layer = e.getKey();
             Connection c = e.getValue();
             
-            float[] computed = c.feedForward(input);
+            if(result[layer] == null)
+                result[layer] = ByteBuffer.allocateDirect(c.links * Float.BYTES).order(ByteOrder.nativeOrder()).asFloatBuffer();
+        
+            c.feedForward(input, result[layer]);
+        }
+    }
+    
+    protected void feedForward(FloatBuffer input, int count, FloatBuffer[] result) {
+        if(activation != null)
+            activation.compute(input, neurons, count);
+        
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
+            int layer = e.getKey();
+            Connection c = e.getValue();
             
             if(result[layer] == null)
-                result[layer] = computed;
-            else
-                util.addArray(result[layer], computed);
+                result[layer] = ByteBuffer.allocateDirect(c.links * count * Float.BYTES).order(ByteOrder.nativeOrder()).asFloatBuffer();
+            
+            c.feedForward(input, count, result[layer]);
         }
+    }
+    
+    public boolean nativeReady() {
+        boolean nativeReady = true;
+        for(Connection c : connections.values())
+            nativeReady &= c.nativeReady;
+        
+        return nativeReady;
+    }
+    
+    protected void prepareCPU() {
+        for(Connection c : connections.values())
+            c.prepareCPU();
+    }
+    
+
+    void ensureCPU(CUstream stream) {
+        for(Connection c : connections.values())
+            c.ensureCPU(stream);
     }
     
     protected void freeCPU() {
         for(Connection c : connections.values())
-            c.free();
+            c.freeCPU();
         
         connections.clear();
     }
     
-    protected void crossOverMutate(Layer a, Layer b, double min, double max, double mutation) {
+    protected void crossOverMutate(Layer a, Layer b, float min, float max, double mutation) {
         /* crossover mutate all connections */
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             int layer = e.getKey();
@@ -149,8 +220,6 @@ public class Layer {
             
             c.crossOverMutate(a.getConnection(layer), b.getConnection(layer), min, max, mutation);
         }
-        
-        gpuReady = false;
     }
     
     protected int getWeightsCount() {
@@ -169,7 +238,7 @@ public class Layer {
         JSONObject result = new JSONObject();
         result.put("index", index);
         result.put("neurons", neurons);
-        result.put("activation", activation.toName());
+        result.put("activation", activation == null ? JSONObject.NULL : activation.toName());
         
         JSONArray array = new JSONArray();
         result.put("connections", array);
@@ -203,142 +272,86 @@ public class Layer {
     
     /**
      * deprecated stuff
+     * @return 
      */
     
-    protected CUdeviceptr feedForwardGPU(CUdeviceptr ptr, CUstream stream, cublasHandle handle) {
-        if(activation != null)
-            activation.computeGPU(ptr, neurons, stream);
+    public boolean gpuReady() {
+        boolean gpuReady = true;
+        for(Connection c : connections.values())
+            gpuReady &= c.gpuReady;
         
-        throw new RuntimeException("unsupported");
-
-//        /* output layer */
-//        if(isOutput)
-//            return ptr;
-//        
-//        long biasSize = links * (long) Sizeof.FLOAT;
-//        CUdeviceptr resultGPU = new CUdeviceptr();
-//        JCudaDriver.cuMemAlloc(resultGPU, biasSize);
-//        
-//        if(hasBias)
-//            JCudaDriver.cuMemcpyDtoDAsync(resultGPU, biasesGPU, biasSize, stream);
-//
-//        /* NOTE: cublas uses column-major format */
-//        int row_a = links;
-//        int col_a = neurons;
-//        CUdeviceptr d_A = weightsGPU;
-//
-//        CUdeviceptr d_B = ptr;        
-//        CUdeviceptr d_C = resultGPU;
-//        
-//        Pointer pAlpha = Pointer.to(new float[]{1.0f});
-//        Pointer pBeta = Pointer.to(new float[]{hasBias ? 1.0f : 0.0f});
-//
-//        /* Compute Vector Matrix Multiplication */
-//        JCublas2.cublasSgemv(handle, cublasOperation.CUBLAS_OP_N,
-//                            row_a, col_a,
-//                            pAlpha, d_A, row_a, 
-//                            d_B, 1, 
-//                            pBeta, d_C, 1);
-//        
-//        return resultGPU;   
-    }
-    
-    protected CUdeviceptr feedForwardGPU(CUdeviceptr ptr, CUstream stream, cublasHandle handle, int count) {
-        if(activation != null)
-            activation.computeGPU(ptr, neurons * count, stream);
-        
-        throw new RuntimeException("unsupported");
-        
-        /* output layer */
-//        if(isOutput)
-//            return ptr;
-//        
-//        long biasSize = links * (long) Sizeof.FLOAT;
-//        CUdeviceptr resultGPU = new CUdeviceptr();
-//        JCudaDriver.cuMemAlloc(resultGPU, count * biasSize);
-//        
-//        if(hasBias)
-//            for(int i=0; i < count; i++)
-//                JCudaDriver.cuMemcpyDtoDAsync(resultGPU.withByteOffset(i * biasSize), biasesGPU, biasSize, stream);
-//
-//        /* NOTE: cublas uses column-major format */
-//        int row_a = links;
-//        int col_a = neurons;
-//        CUdeviceptr d_A = weightsGPU;
-//
-//        int row_b = neurons;
-//        int col_b = count;
-//        CUdeviceptr d_B = ptr;
-//        
-//        int row_c = links;
-//        CUdeviceptr d_C = resultGPU;
-//        
-//        Pointer pAlpha = Pointer.to(new float[]{1.0f});
-//        Pointer pBeta = Pointer.to(new float[]{hasBias ? 1.0f : 0.0f});
-//
-//        /* Compute Matrix Multiplication */
-//        JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_N, cublasOperation.CUBLAS_OP_N, 
-//                            row_a, col_b, col_a, 
-//                            pAlpha, d_A, row_a, 
-//                            d_B, row_b, 
-//                            pBeta, d_C, row_c);
-//        
-//        return resultGPU;
+        return gpuReady;
     }
     
     protected void prepareGPU(CUstream stream) {
-        if(gpuReady)
-            return;
-        
-        throw new RuntimeException("unsupported");
-        
-//        if(!isOutput) {
-//            if(weightsGPU == null)
-//               weightsGPU = CudaUtil.create(weights.length);
-//
-//            if(biasesGPU == null && hasBias)
-//               biasesGPU = CudaUtil.create(bias.length);
-//
-//            JCudaDriver.cuMemcpyHtoDAsync(weightsGPU, Pointer.to(weights), weights.length * (long) Sizeof.FLOAT, stream);
-//
-//            if(hasBias)
-//                JCudaDriver.cuMemcpyHtoDAsync(biasesGPU, Pointer.to(bias), bias.length * (long) Sizeof.FLOAT, stream);
-//        }
-//
-//        if(condition != null) {
-//            if(conditionGPU == null)
-//               conditionGPU = CudaUtil.createBytes(condition.length);
-//
-//            byte[] temp = new byte[condition.length];
-//
-//            for(int i=0; i < condition.length; i++)
-//                temp[i] = condition[i] ? (byte)1 : 0;
-//            
-//            JCudaDriver.cuMemcpyHtoDAsync(conditionGPU, Pointer.to(temp), condition.length, stream);
-//        }
-//
-//        gpuReady = true;
+        for(Connection c : connections.values())
+            c.prepareGPU(stream);
     }
     
-    protected void freeGPU() {
-        throw new RuntimeException("unsupported");
-//        if(isOutput)
-//            return;
-//        
-//        if(weightsGPU != null)
-//            JCudaDriver.cuMemFree(weightsGPU);
-//        
-//        if(conditionGPU != null)
-//            JCudaDriver.cuMemFree(conditionGPU);    
-//        
-//        if(biasesGPU != null)
-//            JCudaDriver.cuMemFree(biasesGPU);
-//        
-//        weightsGPU = null;
-//        conditionGPU = null;
-//        gpuReady = false;
+    protected long getMemoryRequirements() {
+        long total = 0;
+        
+        for(Connection c : connections.values()) {
+            total += c.getMemoryRequirements();
+        }
+        
+        return total;
+    }
+    
+    protected void feedForwardGPU(CUdeviceptr input, CUdeviceptr[] result, CUstream stream, cublasHandle handle) {
+        if(activation != null)
+            activation.computeGPU(input, neurons, stream);
+        
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
+            int toLayer = e.getKey();
+            Connection c = e.getValue();
+            
+            if(result[toLayer] == null) {
+               result[toLayer] = CudaEngine.getMempoolFloat(c.links);
+               JCudaDriver.cuMemsetD32Async(result[toLayer], 0, c.links, stream);
+            }
+        
+            c.feedForwardGPU(input, result[toLayer], stream, handle);
+        }
+    }
+    
+    protected void feedForwardGPU(CUdeviceptr input, int count, CUdeviceptr[] result, CUstream stream, cublasHandle handle) {
+        if(activation != null)
+            activation.computeGPU(input, neurons * count, stream);
+        
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
+            int toLayer = e.getKey();
+            Connection c = e.getValue();
+            
+            if(result[toLayer] == null) {
+               result[toLayer] = CudaEngine.getMempoolFloat(c.links * count);
+               JCudaDriver.cuMemsetD32Async(result[toLayer], 0, c.links * count, stream);           
+            }
+            
+            c.feedForwardGPU(input, count, result[toLayer], stream, handle);
+        }
+    }
+    
+    protected void crossOverMutateGPU(Layer a, Layer b, float min, float max, double mutation, boolean nocopy, CUstream stream, curandGenerator generator) {
+        /* crossover mutate all connections */
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
+            int layer = e.getKey();
+            Connection c = e.getValue();
+            
+            c.crossOverMutateGPU(a.getConnection(layer), b.getConnection(layer), min, max, mutation, nocopy, stream, generator);
+        }
     }
 
+    protected void freeGPU(int deviceId) {
+        for(Connection c : connections.values())
+            c.freeGPU(deviceId);
+    }
+
+    protected void freeGPURng() {
+        for(Connection c : connections.values())
+            c.freeGPURng();
+    }
+    
     protected void crossOverMutate(Layer a, Layer b, Layer min, Layer max, double mutation) {
         throw new RuntimeException("unsupported");
 //        float[] wa = a.getWeights();
@@ -378,6 +391,7 @@ public class Layer {
     public boolean hasBias() {
         return getConnection().hasBias();
     }
+
 
     public static class crossOverMutateResult {
         public int forcePick_A;
@@ -457,75 +471,6 @@ public class Layer {
         }
         
         return w + m;
-    }
-
-    protected void crossOverMutateGPU(Layer a, Layer b, double min, double max, double mutation, CUstream stream, curandGenerator generator) {
-        throw new RuntimeException("unsupported");
-//        
-//        int deviceId = CudaEngine.getThreadDeviceId();
-//        int size = neurons * links;
-//        int bias = hasBias ? links : 0;
-//        float mean = (float) (max + min) / 2.0f;
-//        float stdDev = (float) (max - min) / 10.0f;
-//        
-//        if(size == 0)
-//            return;
-//        
-//        CUdeviceptr uniform = CudaUtil.create((size + bias) * 2);
-//        CUdeviceptr gaussian = CudaUtil.create((size + bias));
-//
-//        JCurand.curandGenerateUniform(generator, uniform, (size + bias) * 2);
-//        JCurand.curandGenerateNormal(generator, gaussian, size + bias, mean, stdDev);
-//            
-//        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_GENETIC, "crossOverMutate", deviceId);
-//
-//        int blockSizeX = Math.min(CudaEngine.getMaxThreadsPerBlock(deviceId), size);
-//        int gridSizeX = (size - 1) / blockSizeX + 1;
-//
-//        Pointer kernelParameters = Pointer.to(
-//            Pointer.to(a.weightsGPU),
-//            Pointer.to(b.weightsGPU),
-//            Pointer.to(weightsGPU),
-//            Pointer.to(new long[]{size}),
-//            Pointer.to(new double[]{mutation}),
-//            Pointer.to(uniform),
-//            Pointer.to(uniform.withByteOffset(size * (long) Sizeof.FLOAT)),
-//            Pointer.to(gaussian)
-//        );        
-//                
-//        JCudaDriver.cuLaunchKernel(function,
-//            gridSizeX, 1, 1,       // Grid dimension
-//            blockSizeX, 1, 1,      // Block dimension
-//            0, stream,             // Shared memory size and stream
-//            kernelParameters, null // Kernel- and extra parameters
-//        );
-//        
-//        weights = CudaUtil.fromGPU(weightsGPU, size, stream);
-//        
-//        if(hasBias) {
-//            kernelParameters = Pointer.to(
-//                Pointer.to(a.biasesGPU),
-//                Pointer.to(b.biasesGPU),
-//                Pointer.to(biasesGPU),
-//                Pointer.to(new long[]{bias}),
-//                Pointer.to(new double[]{mutation}),
-//                Pointer.to(uniform.withByteOffset((size * 2) * (long) Sizeof.FLOAT)),
-//                Pointer.to(uniform.withByteOffset((size * 2 + bias) * (long) Sizeof.FLOAT)),
-//                Pointer.to(gaussian.withByteOffset(size * (long) Sizeof.FLOAT))
-//            );
-//
-//            JCudaDriver.cuLaunchKernel(function,
-//                gridSizeX, 1, 1,       // Grid dimension
-//                blockSizeX, 1, 1,      // Block dimension
-//                0, stream,             // Shared memory size and stream
-//                kernelParameters, null // Kernel- and extra parameters
-//            );
-//
-//            this.bias = CudaUtil.fromGPU(biasesGPU, bias, stream);
-//        }
-//        
-//        JCudaDriver.cuMemFree(uniform);
-//        JCudaDriver.cuMemFree(gaussian);
     }
 
     protected float compareGPU(Layer l, CUstream stream) {

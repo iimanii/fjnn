@@ -29,8 +29,12 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import jcuda.driver.*;
+import jcuda.jcublas.cublasHandle;
+import jcuda.jcurand.curandGenerator;
 import jcuda.runtime.JCuda;
+import jcuda.runtime.cudaDeviceProp;
 import org.fjnn.util.Rng;
 
 /**
@@ -39,53 +43,68 @@ import org.fjnn.util.Rng;
  */
 public class CudaEngine {
     private static int DeviceCount;
-    private static Map <Integer, CudaDevice> DeviceList;
+    private static CudaDevice[] DeviceList;
 
     private static boolean initialized;
-    private static boolean usePinnedMemory = true;
     
+    private final static ThreadLocal<Stack<Integer>> THREAD_DEVICE_ID = ThreadLocal.withInitial(() -> {
+        return new Stack<>();
+    });
     
     public static synchronized void init() {
         if(initialized)
             return;
         
-        DeviceList = new HashMap<>();
-
-        /* init driver */
-        JCudaDriver.cuInit(0);
-        
         /* throw exceptions on failure */
         JCudaDriver.setExceptionsEnabled(true);
         JCuda.setExceptionsEnabled(true);
+        
+        /* init driver */
+        JCudaDriver.cuInit(0);
         
         /* get device count */
         int[] count = new int[1];
         JCudaDriver.cuDeviceGetCount(count);
         
-        DeviceCount = count[0];
-        
+        DeviceCount = count[0];        
+        DeviceList = new CudaDevice[DeviceCount];
+
         int minThreadsPerBlock = DeviceCount == 0 ? 1024 : Integer.MAX_VALUE;
+        int[] maxGridSize = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
         
         ExecutorService threadPool = Executors.newCachedThreadPool();
         ArrayList<Future<CudaDevice>> futures = new ArrayList<>();
 
         for(int i=0; i < DeviceCount; i++) {
             int id = i;
-            futures.add(threadPool.submit(() -> new CudaDevice(id)));
+//            futures.add(threadPool.submit(() -> new CudaDevice(id)));
+            DeviceList[i] = new CudaDevice(id);
+            CudaDevice d = DeviceList[i];
+            minThreadsPerBlock = Math.min(d.properties.maxThreadsPerBlock, minThreadsPerBlock);
+            int[] deviceMaxGridSize = d.properties.maxGridSize;
+            
+            for(int j=0; j < maxGridSize.length; j++)
+                maxGridSize[j] = Math.min(maxGridSize[j], deviceMaxGridSize[j]);            
         }
         
         for(Future<CudaDevice> f : futures) {
+            CudaDevice d;
             try {
-                CudaDevice d = f.get();
-                minThreadsPerBlock = Math.min(d.getMaxThreadsPerBlock(), minThreadsPerBlock);
-                DeviceList.put(d.getId(), d);
+                d = f.get();
             } catch (InterruptedException | ExecutionException ex) {
                 throw new RuntimeException(ex);
             }
+
+            minThreadsPerBlock = Math.min(d.properties.maxThreadsPerBlock, minThreadsPerBlock);
+            DeviceList[d.getId()] = d;
+            int[] deviceMaxGridSize = d.properties.maxGridSize;
+            
+            for(int i=0; i < maxGridSize.length; i++)
+                maxGridSize[i] = Math.min(maxGridSize[i], deviceMaxGridSize[i]);
         }
         
         try {
-            CudaModule.saveUtilFile(minThreadsPerBlock);
+            CudaModule.saveUtilFile(minThreadsPerBlock, maxGridSize);
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
@@ -94,96 +113,91 @@ public class CudaEngine {
         initialized = true;
     }
 
-    /**
-     * 
-     * @param deviceId
-     * @param module
-     * @param function
-     * @return 
-     */
+    public static synchronized void free() {
+        for(CudaDevice cd : DeviceList)
+            cd.free();
+        
+        DeviceList = null;
+        initialized = false;
+    }
+    
+    
+    static CUcontext getContext(int deviceId) {        
+        return DeviceList[deviceId].getContext();
+    }
+    
     public static CUfunction getKernel(String module, String function, int deviceId) {
-        return DeviceList.get(deviceId).getModule(module).getFunction(function);
+        return DeviceList[deviceId].getModule(module).getFunction(function);
+    }
+    
+//    public static CUstream getStream(int deviceId) {
+//        return DeviceList.get(deviceId).getStream();
+//    }
+//    
+
+    public static cublasHandle getCublasHandle(int deviceId) {
+        return DeviceList[deviceId].getCublasHandle();
+    }
+    
+    public static curandGenerator getCurandGenerator(int deviceId) {
+        return DeviceList[deviceId].getCurandGenerator();
     }
 
-    /**
-     * Get context for specific device
-     * @param deviceId
-     * @return 
-     */
-    static CUcontext getContext(int deviceId) {        
-        return DeviceList.get(deviceId).getContext();
+    public static cudaDeviceProp getDeviceProperties(int deviceId) {
+        return DeviceList[deviceId].properties;
+    }
+
+    public static CUdeviceptr getMempool(long size) {
+        return getMempool(getThreadDeviceId(), size);
     }
     
-    /**
-     * 
-     * @return Number of GPUs accessible
-     */
-    public static int getDeviceCount() {
-        return DeviceCount;
+    public static CUdeviceptr getMempool(int deviceId, long size) {
+        return DeviceList[deviceId].mempool.get(size);
     }
     
-    /**
-     * @param deviceId
-     * @return Number of threads per block for the device attached to this thread
-     */
-    public static CUstream getStream(int deviceId) {
-        return DeviceList.get(deviceId).getStream();
+    public static CUdeviceptr getMempoolFloat(long size) {
+        return getMempoolFloat(getThreadDeviceId(), size);
     }
     
-    /**
-     * @param deviceId
-     * @return Number of threads per block for the device attached to this thread
-     */
-    public static int getMaxThreadsPerBlock(int deviceId) {
-        return DeviceList.get(deviceId).getMaxThreadsPerBlock();
+    public static CUdeviceptr getMempoolFloat(int deviceId, long size) {
+        return DeviceList[deviceId].mempool.getFloat(size);
     }
     
-    /**
-     * @param deviceId
-     * @return Number of threads per block for the device attached to this thread
-     */
-    public static int getMultiProcessorCount(int deviceId) {
-        return DeviceList.get(deviceId).getMultiProcessorCount();
+    public static void freeMempool(CUdeviceptr ptr) {
+        freeMempool(getThreadDeviceId(), ptr);
     }
     
-    /**
-     * 
-     * @param state 
-     */
-    public static void setUsePinnedMemory(boolean state) {
-        usePinnedMemory = state;
+    public static void freeMempool(int deviceId, CUdeviceptr ptr) {
+        DeviceList[deviceId].mempool.free(ptr);
     }
     
-    /**
-     * 
-     * @return 
-     */
-    public static boolean usePinnedMemory() {
-        return usePinnedMemory;
+    public static Semaphore getMemLock(int deviceId) {
+        return DeviceList[deviceId].memlock;
     }
     
-    private final static ThreadLocal<Stack<Integer>> THREAD_DEVICE_ID = ThreadLocal.withInitial(() -> {
-        return new Stack<>();
-    });
+    public static void setMaxUsedMemory(int deviceId, long bytes) {
+        DeviceList[deviceId].setMaxUsedMemory(bytes);
+    }
     
-    /**
-     * Prepares thread to run GPU code
-     * Call finalizeThread() when done
-     * @return 
-     */
-    public static int prepareThread() {
-        int device = Rng.nextInt(CudaEngine.getDeviceCount());
+    public static long getFreeMemory(int deviceId) {
+        long[] free = new long[1];
+        long[] total = new long[1];
         
-        prepareThread(device);
-        
-        return device;
+        CudaEngine.prepareThread(deviceId);
+        JCudaDriver.cuMemGetInfo(free, total);
+        CudaEngine.finalizeThread();
+
+        return free[0];
+    }
+    
+    public static void printMempoolStats(int deviceId) {
+        DeviceList[deviceId].mempool.printMempoolStats();
     }
     
     /**
      * Prepares thread to run GPU code on a specific device
      * Call finalizeThread() when done
-     * @param deviceId
-     * @return 
+     * @param deviceId 
      */
     public static void prepareThread(int deviceId) {
         CUcontext context = CudaEngine.getContext(deviceId);
@@ -194,9 +208,7 @@ public class CudaEngine {
     }
 
     /**
-     * Cleans up the thread from GPU context
-     * @param context 
-     * @return  
+     * Cleans up the thread from GPU context  
      */
     public static void finalizeThread() {        
         Stack<Integer> s = THREAD_DEVICE_ID.get();
@@ -222,10 +234,50 @@ public class CudaEngine {
     
     public static int getThreadDeviceId() {
         Stack<Integer> s = THREAD_DEVICE_ID.get();
-        
+
         if(s.isEmpty())
             return -1;
         
         return s.peek();
     }
+
+    public static CUstream aquireStream(int deviceId) {
+        return DeviceList[deviceId].aquireStream();
+    }
+
+    public static void releaseStream(int deviceId, CUstream stream) {
+        DeviceList[deviceId].releaseStream(stream);        
+    }
+    
+    /**
+     * @param deviceId
+     * @return Number of threads per block for the device attached to this thread
+     */
+    public static int getMaxThreadsPerBlock(int deviceId) {
+        return DeviceList[deviceId].properties.maxThreadsPerBlock;
+    }
+    
+    /**
+    * @param deviceId
+    * @return Number of threads per block for the device attached to this thread
+    */
+    public static int[] getMaxGridSize(int deviceId) {
+        return DeviceList[deviceId].properties.maxGridSize;
+    }
+    
+    /**
+     * @param deviceId
+     * @return Number of threads per block for the device attached to this thread
+     */
+    public static int getMultiProcessorCount(int deviceId) {
+        return DeviceList[deviceId].properties.multiProcessorCount;
+    }
+    
+    /**
+     * @return Number of GPUs accessible
+     */
+    public static int getDeviceCount() {
+        return DeviceCount;
+    }
+    
 }

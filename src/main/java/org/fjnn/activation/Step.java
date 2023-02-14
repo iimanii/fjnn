@@ -23,6 +23,7 @@
  */
 package org.fjnn.activation;
 
+import java.nio.FloatBuffer;
 import jcuda.Pointer;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUfunction;
@@ -31,6 +32,7 @@ import jcuda.driver.JCudaDriver;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaModule;
 import org.fjnn.cuda.CUdeviceptr2D;
+import org.fjnn.util.intrinsic;
 
 /**
  *
@@ -44,8 +46,8 @@ public class Step extends Activation {
     }
 
     @Override
-    public void compute(float[] input, int from, int to) {
-        for(int i=from; i < to; i++)
+    public void compute(float[] input, int stride, int count) {
+        for(int i=0; i < input.length; i++)
             input[i] = input[i] >= 0 ? 1 : 0;
     }
 
@@ -115,5 +117,10 @@ public class Step extends Activation {
     @Override
     public void derivative(float[] input, int from, int to) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void compute(FloatBuffer input, int stride, int count) {
+        intrinsic.Step(input, stride * count);
     }
 }

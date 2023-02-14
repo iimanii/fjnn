@@ -40,25 +40,34 @@ import org.fjnn.util.intrinsic;
  *
  * @author ahmed
  */
-public class ReLU extends Activation {
-
+public class LeakyReLU extends Activation {
+    public static final float DEFAULT_ALPHA = 0.3f;
+    
+    final float alpha;
+    
+    public LeakyReLU() {
+        this.alpha = DEFAULT_ALPHA;
+    }
+    
+    public LeakyReLU(float alpha) {
+        this.alpha = alpha;
+    }
+    
     @Override
     public float compute(float input) {
-        return Math.max(0, input);
+        return input < 0 ? input * alpha : input;
     }
     
     @Override
     public void compute(float[] input, int stride, int count) {
-        for(int i=0; i < input.length; i++) {
-            if(input[i] < 0) {
-                input[i] = 0;
-            }
-        }
+        for(int i=0; i < input.length; i++)
+            if(input[i] < 0)
+                input[i] = input[i] * alpha;
     }
 
     @Override
     public void computeGPU(CUdeviceptr ptr, int size, CUstream stream) {
-        CudaFunctions.ReLU(ptr, size, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
+        CudaFunctions.LeakyReLU(ptr, size, alpha, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
     }
 
     @Override
@@ -147,6 +156,6 @@ public class ReLU extends Activation {
 
     @Override
     public void compute(FloatBuffer input, int stride, int count) {
-        intrinsic.ReLU(input, stride * count);
+        throw new UnsupportedOperationException("Not supported yet.");
     }
 }

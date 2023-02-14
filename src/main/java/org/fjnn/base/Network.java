@@ -61,7 +61,9 @@ public abstract class Network {
      * @param object 
      */
     public final void setProperty(String name, Object object) {
-        properties.put(name, object);
+        synchronized(properties) {
+            properties.put(name, object);
+        }
     }
     
     /**

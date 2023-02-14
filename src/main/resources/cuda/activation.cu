@@ -33,8 +33,19 @@ extern "C"
 __global__ void ReLU(float* v, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
-    if(row < size)
-        v[row] = max(0.0f, v[row]);
+    if(row < size && v[row] < 0.0f)
+        v[row] = 0.0f;
+}
+
+/**
+ * Leaky Rectifier Linear Unit
+ */
+extern "C"
+__global__ void LeakyReLU(float* v, long size, float alpha) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size && v[row] < 0.0f)
+        v[row] = v[row] * alpha;
 }
 
 /**

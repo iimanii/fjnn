@@ -3,8 +3,9 @@
 #include "util.h"
 
 extern "C"
-__global__ void crossOverMutate(float* a0, float* a1, float* r, long size, double mutation, 
-                                float* crossover, float* mutate, float* gaussian) {
+__global__ void cross_over_mutate(float* a0, float* a1, float* r, int size, 
+                                  float min, float max, double mutation,
+                                  float* rng_crossover, float* rng_mutate, float* rng_pool) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
     
     if(i >= size)
@@ -13,10 +14,10 @@ __global__ void crossOverMutate(float* a0, float* a1, float* r, long size, doubl
     float w0 = a0[i];
     float w1 = a1[i];
     
-    float w = crossover[i] < 0.5 ? w0 : w1;
+    float w = rng_crossover[i] < 0.5f ? w0 : w1;
 
-    if(mutate[i] < mutation)
-        w = w + gaussian[i];
+    if(rng_mutate[i] < mutation)
+        w += rng_pool[i] * (max - min) + min;
     
     r[i] = w;
 }

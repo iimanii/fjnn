@@ -23,15 +23,35 @@
  */
 package org.fjnn.util;
 
+import java.nio.ByteBuffer;
+import java.nio.FloatBuffer;
+
 /**
  *
  * @author ahmed
  */
 public class intrinsic {
+//    
+//    static {
+//        System.loadLibrary("intrinsic.dll");
+//    }
     
-    static {
-        System.loadLibrary("libintrinsic");
-    }
+    public static native ByteBuffer createAlignedDirectBuffer(int length, int alignment);
+    public static native float dotProductByteBufferLoop(FloatBuffer a, FloatBuffer b, int length);
+    public static native float dotProductByteBufferInline(FloatBuffer a, FloatBuffer b, int length);
+    public static native float dotProductByteBufferAsm256(FloatBuffer a, FloatBuffer b, int length);
+    public static native float dotProductByteBufferAsm256fma(FloatBuffer a, FloatBuffer b, int length);
+    public static native float dotProductByteBufferMKL(FloatBuffer a, FloatBuffer b, int length);
     
-    public static native float dotProduct(float[] a, float[] b);
+    public static native void sgemv(FloatBuffer input, FloatBuffer result, FloatBuffer weights, FloatBuffer bias, int neurons, int links);
+    public static native void sgemm(FloatBuffer inputs, int inputsCount, FloatBuffer result, FloatBuffer weights, FloatBuffer bias, int neurons, int links);
+
+    public static native void ReLU(FloatBuffer input, int len);
+    public static native void Sigmoid(FloatBuffer input, int len);
+    public static native void Sin(FloatBuffer input, int len);
+    public static native void SoftMax(FloatBuffer input, int len, int count);
+    public static native void Step(FloatBuffer input, int len);
+    public static native void Tanh(FloatBuffer input, int len);
+    
+    public static native void Add(FloatBuffer a, FloatBuffer b, int len);
 }

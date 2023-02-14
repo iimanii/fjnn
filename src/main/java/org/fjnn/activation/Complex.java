@@ -23,6 +23,7 @@
  */
 package org.fjnn.activation;
 
+import java.nio.FloatBuffer;
 import java.util.LinkedHashSet;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -38,6 +39,11 @@ public class Complex extends Activation {
     int count;
     Activation activation;
     function[] functions;
+
+    @Override
+    public void compute(FloatBuffer input, int stride, int count) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
     
     private static interface calc {
         float compute(float a);

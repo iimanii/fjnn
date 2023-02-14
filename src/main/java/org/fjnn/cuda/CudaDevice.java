@@ -24,17 +24,26 @@
 package org.fjnn.cuda;
 
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 import jcuda.driver.CUcontext;
-import jcuda.driver.CUctx_flags;
 import jcuda.driver.CUdevice;
 import jcuda.driver.CUstream;
 import jcuda.driver.CUstream_flags;
 import jcuda.driver.JCudaDriver;
+import jcuda.jcublas.JCublas2;
+import jcuda.jcublas.cublasHandle;
+import jcuda.jcurand.JCurand;
+import jcuda.jcurand.curandGenerator;
+import jcuda.jcurand.curandRngType;
 import jcuda.runtime.JCuda;
 import jcuda.runtime.cudaDeviceProp;
+import org.fjnn.util.Rng;
 
 /**
  *
@@ -44,10 +53,17 @@ public class CudaDevice {
     private final int deviceId;
     private final CUdevice device;
     private final CUcontext context;
-    private final List<CUstream> streams;
-    private final cudaDeviceProp properties;
-
     private final HashMap<String, CudaModule> modules;
+    
+    private int streamSelect;
+    private final Queue<CUstream> streams;
+    private final cublasHandle cublasHandle;     
+    private final curandGenerator curandGenerator;
+    private final int cublasMemRequirement;
+    
+    protected Semaphore memlock;    
+    protected final CudaMempool mempool;
+    protected final cudaDeviceProp properties;
     
     CudaDevice(int deviceId) {
         this.deviceId = deviceId;
@@ -59,13 +75,42 @@ public class CudaDevice {
 //        JCudaDriver.cuCtxCreate(this.context, CUctx_flags.CU_CTX_SCHED_AUTO, device);
 //        JCudaDriver.cuCtxPopCurrent(context);
         JCudaDriver.cuDevicePrimaryCtxRetain (this.context, device);
+        JCudaDriver.cuCtxPushCurrent(context);
         
         modules = new HashMap<>();
         
         properties = new cudaDeviceProp();
         JCuda.cudaGetDeviceProperties(properties, deviceId);
         
-        streams = new ArrayList<>();
+        streams = new ArrayDeque<>();
+        
+        curandGenerator = new curandGenerator();
+        JCurand.curandCreateGenerator(curandGenerator, curandRngType.CURAND_RNG_PSEUDO_DEFAULT);
+        JCurand.curandSetPseudoRandomGeneratorSeed(curandGenerator, Rng.nextLong(Long.MAX_VALUE));
+    
+        long[] free = new long[1];
+        long[] total = new long[1];
+        
+        JCudaDriver.cuMemGetInfo(free, total);
+        
+        cublasHandle = new cublasHandle();
+        JCublas2.cublasCreate(cublasHandle);
+        
+        mempool = new CudaMempool(free[0]);
+        memlock = new Semaphore((int) Math.floor(free[0] / 1024.0), true);
+        
+        JCudaDriver.cuMemGetInfo(free, total);
+        
+        long[] free_after = new long[1];
+        
+        JCublas2.cublasCreate(cublasHandle);
+        JCudaDriver.cuMemGetInfo(free_after, total);
+        
+        cublasMemRequirement = (int) (free[0] - free_after[0]);
+        
+        System.out.println("CUBLAS memory usage: " +  (cublasMemRequirement / 1e6f)); 
+        
+        JCudaDriver.cuCtxPopCurrent(context);
     }
         
     CudaModule getModule(String name) {
@@ -79,25 +124,30 @@ public class CudaDevice {
         return context;
     }
 
-    CUstream getStream() {
-        if(streams.size() < properties.multiProcessorCount)
-            createStream();
-        
-        int r = (int)(Math.random() * streams.size());
-        
-        return streams.get(r);
+//    CUstream getStream() {
+//        if(streams.size() < properties.multiProcessorCount)
+//            createStream();
+//        
+//        streamSelect = ++streamSelect % streams.size();
+//        
+//        return streams.get(streamSelect);
+//    }
+
+    cublasHandle getCublasHandle() {
+        return cublasHandle;
+    }
+
+    curandGenerator getCurandGenerator() {
+        return curandGenerator;
+    }
+    
+    synchronized void setMaxUsedMemory(long bytes) {
+        memlock = new Semaphore((int) Math.floor(bytes / 1024.0), true);
+        mempool.setMaxMemory(bytes);
     }
     
     int getId() {
         return deviceId;
-    }
-        
-    public int getMaxThreadsPerBlock() {
-        return properties.maxThreadsPerBlock;
-    }
-    
-    public int getMultiProcessorCount() {
-        return properties.multiProcessorCount;
     }
     
     private synchronized void loadModule(String name) {
@@ -110,13 +160,39 @@ public class CudaDevice {
             throw new RuntimeException(ex);
         }
     }
-
-    private synchronized void createStream() {
-        if(streams.size() >= properties.multiProcessorCount)
-            return;
+    
+    private final AtomicInteger streamCounter = new AtomicInteger();
+    
+    private CUstream createStream() {
+//        if(streams.size() >= properties.multiProcessorCount)
+//            return;
+        
+//        System.out.println("Stream created: " + streamCounter.incrementAndGet());
         
         CUstream stream = new CUstream();
         JCudaDriver.cuStreamCreate(stream, CUstream_flags.CU_STREAM_NON_BLOCKING);
-        streams.add(stream);
+        return stream;
+//        streams.add(stream);
+    }
+    
+    synchronized void free() {
+        for(CUstream cu : streams)
+            JCudaDriver.cuStreamDestroy(cu);
+        
+        JCublas2.cublasDestroy(cublasHandle);
+        JCurand.curandDestroyGenerator(curandGenerator);
+        mempool.free();
+    }
+
+    CUstream aquireStream() {
+        synchronized(streams) {
+            return streams.isEmpty() ? createStream() : streams.poll();
+        }
+    }
+
+    void releaseStream(CUstream stream) {
+        synchronized(streams) {
+            streams.add(stream);
+        }
     }
 }
