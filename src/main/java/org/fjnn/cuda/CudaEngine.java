@@ -102,9 +102,9 @@ public class CudaEngine {
             for(int i=0; i < maxGridSize.length; i++)
                 maxGridSize[i] = Math.min(maxGridSize[i], deviceMaxGridSize[i]);
         }
-        
         try {
             CudaModule.saveUtilFile(minThreadsPerBlock, maxGridSize);
+            CudaModule.saveMatrixFile(128, 128, 16, 128, 4, 2, 1, false);
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
@@ -130,6 +130,13 @@ public class CudaEngine {
         return DeviceList[deviceId].getModule(module).getFunction(function);
     }
     
+    public static void loadModule(String module, int deviceId) {
+        DeviceList[deviceId].loadModule(module);
+    }
+    
+    public static void reloadModule(String module, int deviceId, boolean recompile) {
+        DeviceList[deviceId].reloadModule(module, recompile);
+    }
 //    public static CUstream getStream(int deviceId) {
 //        return DeviceList.get(deviceId).getStream();
 //    }

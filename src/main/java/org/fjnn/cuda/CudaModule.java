@@ -46,8 +46,9 @@ public class CudaModule {
     public static final String MODULE_GENETIC = "genetic";    
     public static final String MODULE_ACCUMULATE = "accumulate";    
     public static final String UTIL_FILE = "util.h";
+    public static final String MATRIX_HEADER = "matrix.h";
     
-    private static final String CUDA_COMPILER = "nvcc";
+    public static String CUDA_COMPILER = "nvcc";
     
     private static final Map<String, String> ptxFiles = new HashMap<>();
     
@@ -55,11 +56,13 @@ public class CudaModule {
     
     private static final String PTX_FILE_EXTENTION = ".ptx";
     
+    public static boolean VERBOSE = true;
+    
     CUmodule module;
     HashMap<String, CUfunction> functions;
 
-    protected CudaModule(String name) throws IOException {
-        String path = getPtxFile(name);
+    protected CudaModule(String name, boolean forceCompile) throws IOException {
+        String path = getPtxFile(name, forceCompile);
         
         this.module = new CUmodule();
         JCudaDriver.cuModuleLoad(module, path);
@@ -84,11 +87,15 @@ public class CudaModule {
         functions.put(functionName, function);
     }
     
+    protected void unload() {
+        JCudaDriver.cuModuleUnload(module);
+    }
+    
     /********************/
     /* Static functions */
     /********************/
-    private static synchronized String getPtxFile(String name) throws IOException {
-        if(ptxFiles.containsKey(name))
+    private static synchronized String getPtxFile(String name, boolean forceCompile) throws IOException {
+        if(ptxFiles.containsKey(name) && !forceCompile)
             return ptxFiles.get(name);
         
         /* Make sure to get folder for the current jar */
@@ -107,7 +114,7 @@ public class CudaModule {
         String ptxPath = cudaDir + "/" + name + PTX_FILE_EXTENTION;
         File ptx = new File(ptxPath);
         
-        if(ptx.exists() && ptx.lastModified() > new File(cuPath).lastModified()) {
+        if(ptx.exists() && ptx.lastModified() > new File(cuPath).lastModified() && !forceCompile) {
             ptxFiles.put(name, ptxPath);
             return ptxPath;
         }
@@ -132,8 +139,9 @@ public class CudaModule {
         
         String command = String.format("%s -ptx %s -o %s -m %s -lineinfo",
                                         CUDA_COMPILER, cuPath, ptxPath, arch);
-
-        System.out.println("Compiling: \n" + command);
+        
+        if(VERBOSE)
+            System.out.println("Compiling: \n" + command);
 
         try {
             Process process = Runtime.getRuntime().exec(command);
@@ -219,5 +227,30 @@ public class CudaModule {
         file = file.replace("INSERT_MAX_GRID_Z", Integer.toString(maxGridSize[2]));
         
         util.saveFile(filename, file.getBytes("UTF-8"));
+    }
+    
+    public static void saveMatrixFile(int blockSize, int a_rows, int a_cols, int b_cols, int w_rows_a, int w_cols_a, int w_cols_b, boolean debug) throws IOException {
+        /* Make sure to get folder for the current jar */
+        String cDir = new File("").getAbsolutePath();
+        
+        String cudaDir = cDir + "/" + CUDA_DIRECTORY;
+        
+        URL url = CudaModule.class.getResource("/" + CUDA_DIRECTORY + "/" + MATRIX_HEADER);
+        
+        URLConnection connection = url.openConnection();
+        String file = util.readStream(connection.getInputStream());
+
+        file = file.replace("PLACEHOLDER_BLOCK_SIZE", Integer.toString(blockSize));
+        file = file.replace("PLACEHOLDER_CACHE_SIZE_ROWS_A", Integer.toString(a_rows));
+        file = file.replace("PLACEHOLDER_CACHE_SIZE_COLS_A", Integer.toString(a_cols));
+        file = file.replace("PLACEHOLDER_CACHE_SIZE_COLS_B", Integer.toString(b_cols));
+        file = file.replace("PLACEHOLDER_CALC_WINDOW_A_ROWS", Integer.toString(w_rows_a));
+        file = file.replace("PLACEHOLDER_CALC_WINDOW_A_COLS", Integer.toString(w_cols_a));
+        file = file.replace("PLACEHOLDER_CALC_WINDOW_B_COLS", Integer.toString(w_cols_b));
+        file = file.replace("PLACEHOLDER_DEBUG", Integer.toString(debug ? 1 : 0));
+        
+        String filename = cudaDir + "/" + MATRIX_HEADER;
+        util.saveFile(filename, file.getBytes("UTF-8"));
+
     }
 }

@@ -150,12 +150,25 @@ public class CudaDevice {
         return deviceId;
     }
     
-    private synchronized void loadModule(String name) {
+    protected synchronized void loadModule(String name) {
         if(modules.containsKey(name))
             return;
         
         try {
-            modules.put(name, new CudaModule(name));
+            modules.put(name, new CudaModule(name, false));
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+    
+    protected synchronized void reloadModule(String name, boolean recompile) {
+        if(modules.containsKey(name)) {
+           modules.get(name).unload();
+           modules.remove(name);
+        }
+        
+        try {
+            modules.put(name, new CudaModule(name, recompile));
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
