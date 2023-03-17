@@ -54,87 +54,8 @@ public class Sigmoid extends Activation {
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, int size, CUstream stream) {
-        CudaFunctions.Sigmoid(ptr, size, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
-    }
-
-    @Override
-    public void computeMultiGPU(CUdeviceptr2D ptr, int width, int height, CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
-        
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "multi_Sigmoid", device);
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(ptr.ptr),
-            Pointer.to(new long[]{width}),
-            Pointer.to(new long[]{ptr.pitch})
-        );
-        
-        int blockSizeX = Math.min(CudaEngine.getMaxThreadsPerBlock(device), width);
-        int gridSizeX = (width - 1) / blockSizeX + 1;
-        int gridSizeY = height;
-        
-        JCudaDriver.cuLaunchKernel(function,
-            gridSizeX, gridSizeY, 1,   // Grid dimension
-            blockSizeX, 1, 1,          // Block dimension
-            0, stream,                 // Shared memory size and stream
-            kernelParameters, null     // Kernel- and extra parameters
-        );
-    }
-
-    @Override
-    public void computeConditional(float[] input, boolean[] compute) {
-        for(int i=0; i < input.length; i++)
-            if(compute[i])
-                input[i] = (float) (1.0 / (1 + SafeExp(-input[i])));
-    }
-
-    @Override
-    public void computeGPUConditional(CUdeviceptr ptr, CUdeviceptr compute, int size, CUstream stream, int count) {
-        int device = CudaEngine.getThreadDeviceId();
-        
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "Sigmoid_Conditional", device);
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(ptr),
-            Pointer.to(compute),
-            Pointer.to(new long[]{size})
-        );
-        
-        int blockSizeX = Math.min(CudaEngine.getMaxThreadsPerBlock(device), size);
-        int gridSizeX = (size - 1) / blockSizeX + 1;
-        
-        JCudaDriver.cuLaunchKernel(function,
-            gridSizeX, count, 1,       // Grid dimension
-            blockSizeX, 1, 1,  // Block dimension
-            0, stream,             // Shared memory size and stream
-            kernelParameters, null // Kernel- and extra parameters
-        );
-    }
-    
-    @Override
-    public void computeMultiGPUConditional(CUdeviceptr2D ptr, CUdeviceptr compute, int width, int height, CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
-        
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "multi_Sigmoid_Conditional", device);
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(ptr.ptr),
-            Pointer.to(compute),
-            Pointer.to(new long[]{width}),
-            Pointer.to(new long[]{ptr.pitch})
-        );
-        
-        int blockSizeX = Math.min(CudaEngine.getMaxThreadsPerBlock(device), width);
-        int gridSizeX = (width - 1) / blockSizeX + 1;
-        int gridSizeY = height;
-        
-        JCudaDriver.cuLaunchKernel(function,
-            gridSizeX, gridSizeY, 1,   // Grid dimension
-            blockSizeX, 1, 1,          // Block dimension
-            0, stream,                 // Shared memory size and stream
-            kernelParameters, null     // Kernel- and extra parameters
-        );
+    public void computeGPU(CUdeviceptr ptr, int stride, int count, CUstream stream) {
+        CudaFunctions.Sigmoid(ptr, stride * count, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
     }
 
     @Override

@@ -293,4 +293,20 @@ public class util {
 
         return builder.toString();
     }    
+
+    static double log2 = Math.log(2);
+    
+    public static int log2(int x) {
+        return (int) Math.round(Math.log(x) / log2);
+    }
+
+    public static int clip(int b_cols, int min, int max) {
+        if(b_cols < min)
+            b_cols = min;
+        
+        if(b_cols > max)
+            b_cols = max;
+        
+        return b_cols;
+    }
 }

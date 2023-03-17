@@ -113,9 +113,9 @@ public class CudaDevice {
         JCudaDriver.cuCtxPopCurrent(context);
     }
         
-    CudaModule getModule(String name) {
+    CudaModule getModule(String name, boolean cubin) {
         if(!modules.containsKey(name))
-            loadModule(name);
+            loadModule(name, cubin);
         
         return modules.get(name);        
     }
@@ -150,27 +150,34 @@ public class CudaDevice {
         return deviceId;
     }
     
-    protected synchronized void loadModule(String name) {
+    protected synchronized void loadModule(String name, boolean cubin) {
         if(modules.containsKey(name))
             return;
         
         try {
-            modules.put(name, new CudaModule(name, false));
+            modules.put(name, new CudaModule(name, cubin, false));
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
     }
     
-    protected synchronized void reloadModule(String name, boolean recompile) {
+    protected synchronized void reloadModule(String name, boolean cubin, boolean recompile) {
         if(modules.containsKey(name)) {
            modules.get(name).unload();
            modules.remove(name);
         }
         
         try {
-            modules.put(name, new CudaModule(name, recompile));
+            modules.put(name, new CudaModule(name, cubin, recompile));
         } catch (IOException ex) {
             throw new RuntimeException(ex);
+        }
+    }
+    
+    protected synchronized void unloadModule(String name) {
+        if(modules.containsKey(name)) {
+           modules.get(name).unload();
+           modules.remove(name);
         }
     }
     

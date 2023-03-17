@@ -44,6 +44,11 @@ public class Complex extends Activation {
     public void compute(FloatBuffer input, int stride, int count) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
+
+    @Override
+    public void computeGPU(CUdeviceptr ptr, int stride, int size, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
     
     private static interface calc {
         float compute(float a);
@@ -124,11 +129,6 @@ public class Complex extends Activation {
     }
     
     @Override
-    public int minLayerSize() {
-        return count * functions.length;
-    }
-    
-    @Override
     public float compute(float input) {
         throw new RuntimeException("Function not supported");
     }
@@ -145,30 +145,5 @@ public class Complex extends Activation {
         }
         
         activation.compute(input, c, input.length);
-    }
-
-    @Override
-    public void computeGPU(CUdeviceptr ptr, int size, CUstream stream) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public void computeMultiGPU(CUdeviceptr2D ptr, int width, int height, CUstream stream) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public void computeConditional(float[] input, boolean[] compute) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public void computeGPUConditional(CUdeviceptr ptr, CUdeviceptr compute, int size, CUstream stream, int count) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public void computeMultiGPUConditional(CUdeviceptr2D ptr, CUdeviceptr compute, int width, int height, CUstream stream) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 }

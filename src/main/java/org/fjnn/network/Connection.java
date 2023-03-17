@@ -188,6 +188,10 @@ public class Connection {
         /* add bias to current result accumulator */
         CudaFunctions.addStride(result, biasesGPU, links, count, stream);
         
+        
+//        System.out.printf("%d %d %d\n", count, neurons, links);
+//        CudaFunctions.MatrixMultiply(input, weightsGPU, result, count, neurons, links, 1, stream);
+
         Pointer p = Pointer.to(new float[]{1.0f});
         
         /* NOTE: cublas uses column-major format */
@@ -427,7 +431,7 @@ public class Connection {
         }
         
         /* mutate weights and biases in one kernel launch */
-        CudaFunctions.crossoverMutate(a.weightsGPU, b.weightsGPU, weightsGPU, lengthTotal, min, max, mutation, 
+        CudaFunctions.CrossoverMutate(a.weightsGPU, b.weightsGPU, weightsGPU, lengthTotal, min, max, mutation, 
                                       rngCrossover, rngMutate, rngPool, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
         
         

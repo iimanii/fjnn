@@ -25,11 +25,11 @@
 #include <cuda_runtime_api.h>
 
 #include "util.h"
-#include "matrix.h"
+#include "matrix_unaligned.h"
 
 extern "C"
-__global__ void matrix_mul_matrix_default(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
-    matrix_mul_matrix<DEFAULT_BLOCK_SIZE,
+__global__ void matrix_mul_matrix_default_unaligned(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
+    matrix_mul_matrix_unaligned<DEFAULT_BLOCK_SIZE,
         DEFAULT_CACHE_SIZE_ROWS_A,
         DEFAULT_CACHE_SIZE_COLS_A,
         DEFAULT_CACHE_SIZE_COLS_B,
@@ -39,43 +39,45 @@ __global__ void matrix_mul_matrix_default(float* a, float* b, float* r, int rows
         DEFAULT_CALC_WINDOW_B_COLS>(a, b, r, rows_a, cols_a, cols_b, alpha);
 }
 
+
 /* ############################################ */
 /* #################### 128 ################### */
 /* ############################################ */
 
-// tuned
+
 extern "C"
-__launch_bounds__(128, 4)
-__global__ void matrix_mul_matrix_128x16x64(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
-    matrix_mul_matrix<128, 128, 16, 64, 16, 8, 4>(a, b, r, rows_a, cols_a, cols_b, alpha);
+__global__ void matrix_mul_matrix_128x16x64_unaligned(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {    
+    matrix_mul_matrix_unaligned<128, 128, 16, 64, 16, 8, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
 }
 
 extern "C"
-__global__ void matrix_mul_matrix_128x16x32(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
-    matrix_mul_matrix<128, 128, 16, 32, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
+__global__ void matrix_mul_matrix_128x16x32_unaligned(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
+    matrix_mul_matrix_unaligned<128, 128, 16, 32, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
 }
 
 extern "C"
-__global__ void matrix_mul_matrix_128x16x16(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
-    matrix_mul_matrix<64, 128, 16, 16, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
+__global__ void matrix_mul_matrix_128x16x16_unaligned(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
+    matrix_mul_matrix_unaligned<128, 128, 16, 16, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
 }
+
 /* ############################################ */
 /* #################### 64 #################### */
 /* ############################################ */
 
 extern "C"
-__global__ void matrix_mul_matrix_64x16x64(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
-    matrix_mul_matrix<128, 64, 16, 64, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
+__global__ void matrix_mul_matrix_64x16x64_unaligned(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
+    matrix_mul_matrix_unaligned<128, 64, 16, 64, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
 }
 
 extern "C"
-__global__ void matrix_mul_matrix_64x16x32(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
-    matrix_mul_matrix<128, 64, 16, 32, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
+__global__ void matrix_mul_matrix_64x16x32_unaligned(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
+    matrix_mul_matrix_unaligned<128, 64, 16, 32, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
 }
 
+
 extern "C"
-__global__ void matrix_mul_matrix_64x16x16(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
-    matrix_mul_matrix<64, 64, 16, 16, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
+__global__ void matrix_mul_matrix_64x16x16_unaligned(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
+    matrix_mul_matrix_unaligned<128, 64, 16, 16, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
 }
 
 /* ############################################ */
@@ -83,26 +85,26 @@ __global__ void matrix_mul_matrix_64x16x16(float* a, float* b, float* r, int row
 /* ############################################ */
 
 extern "C"
-__global__ void matrix_mul_matrix_32x16x64(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
-    matrix_mul_matrix<128, 32, 16, 64, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
+__global__ void matrix_mul_matrix_32x16x64_unaligned(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
+    matrix_mul_matrix_unaligned<128, 32, 16, 64, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
 }
 
 extern "C"
-__global__ void matrix_mul_matrix_32x16x32(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
-    matrix_mul_matrix<128, 32, 16, 32, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
+__global__ void matrix_mul_matrix_32x16x32_unaligned(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
+    matrix_mul_matrix_unaligned<128, 32, 16, 32, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
 }
 
 extern "C"
-__global__ void matrix_mul_matrix_32x16x16(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
-    matrix_mul_matrix<64, 32, 16, 16, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
+__global__ void matrix_mul_matrix_32x16x16_unaligned(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
+    matrix_mul_matrix_unaligned<128, 32, 16, 16, 1, 1, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
 }
 
 /* ############################################ */
 /* #################### 16 #################### */
 /* ############################################ */
 extern "C"
-__global__ void matrix_mul_matrix_16x16x16(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
-    matrix_mul_matrix<64, 16, 16, 16, 1, 16, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
+__global__ void matrix_mul_matrix_16x16x16_unaligned(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
+    matrix_mul_matrix_unaligned<256, 16, 16, 16, 1, 16, 1>(a, b, r, rows_a, cols_a, cols_b, alpha);
 }
 
 
@@ -112,7 +114,7 @@ __global__ void matrix_mul_matrix_16x16x16(float* a, float* b, float* r, int row
  * y -> row index
  **/
 extern "C"
-__global__ void matrix_mul_matrix_small(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
+__global__ void matrix_mul_matrix_small_unaligned(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
     int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
     
@@ -125,7 +127,7 @@ __global__ void matrix_mul_matrix_small(float* a, float* b, float* r, int rows_a
         int ia = index2d(y, i, cols_a);
         int ib = index2d(i, x, cols_b);
 //        sum = __fmaf_rn(a[y * cols_a + i], b[i * cols_b + x], sum);
-        sum += a[ia] * b[ib];
+        sum += a[y * cols_a + i] * b[i * cols_b + x];
 //        sum = __fadd_rn(__fmul_rn(a[ia], b[ib]), sum);
     }
     
@@ -133,21 +135,4 @@ __global__ void matrix_mul_matrix_small(float* a, float* b, float* r, int rows_a
     int ir = index2d(y, x, cols_b);
     r[ir] = sum + alpha * r[ir];
 //    r[ir] = __fadd_rn(__fmul_rn(alpha, r[ir]), sum);
-}
-
-
-/**
- * each thread calculates 1 value in output
- * x -> column index
- * y -> row index
- **/
-extern "C"
-__global__ void matrix_mul_matrix_empty(float* a, float* b, float* r, int rows_a, int cols_a, int cols_b, float alpha) {
-    int x = threadIdx.x + blockIdx.x * blockDim.x;
-    int y = threadIdx.y + blockIdx.y * blockDim.y;
-    
-    if(x >= cols_b || y >= rows_a)
-        return;
-    
-    float sum = 0;
 }

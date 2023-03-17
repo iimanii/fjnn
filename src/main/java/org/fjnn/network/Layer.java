@@ -300,7 +300,7 @@ public class Layer {
     
     protected void feedForwardGPU(CUdeviceptr input, CUdeviceptr[] result, CUstream stream, cublasHandle handle) {
         if(activation != null)
-            activation.computeGPU(input, neurons, stream);
+            activation.computeGPU(input, neurons, 1, stream);
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             int toLayer = e.getKey();
@@ -317,7 +317,7 @@ public class Layer {
     
     protected void feedForwardGPU(CUdeviceptr input, int count, CUdeviceptr[] result, CUstream stream, cublasHandle handle) {
         if(activation != null)
-            activation.computeGPU(input, neurons * count, stream);
+            activation.computeGPU(input, neurons, count, stream);
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             int toLayer = e.getKey();

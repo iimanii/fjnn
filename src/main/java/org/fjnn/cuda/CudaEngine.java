@@ -104,7 +104,8 @@ public class CudaEngine {
         }
         try {
             CudaModule.saveUtilFile(minThreadsPerBlock, maxGridSize);
-            CudaModule.saveMatrixFile(128, 128, 16, 128, 4, 2, 1, false);
+            CudaModule.saveMatrixFile(128, 128, 16, 128, 4, 4, 4, false);
+            CudaModule.saveMatrixUnalignedFile(128, 128, 16, 128, 4, 4, 1, false);
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
@@ -127,15 +128,23 @@ public class CudaEngine {
     }
     
     public static CUfunction getKernel(String module, String function, int deviceId) {
-        return DeviceList[deviceId].getModule(module).getFunction(function);
+        return DeviceList[deviceId].getModule(module, false).getFunction(function);
     }
     
-    public static void loadModule(String module, int deviceId) {
-        DeviceList[deviceId].loadModule(module);
+    public static CUfunction getKernel(String module, boolean cubin, String function, int deviceId) {
+        return DeviceList[deviceId].getModule(module, cubin).getFunction(function);
     }
     
-    public static void reloadModule(String module, int deviceId, boolean recompile) {
-        DeviceList[deviceId].reloadModule(module, recompile);
+    public static void loadModule(String module, boolean cubin, int deviceId) {
+        DeviceList[deviceId].loadModule(module, cubin);
+    }
+    
+    public static void reloadModule(String module, boolean cubin, int deviceId, boolean recompile) {
+        DeviceList[deviceId].reloadModule(module, cubin, recompile);
+    }
+    
+    public static void unloadModule(String module, int deviceId) {
+        DeviceList[deviceId].unloadModule(module);
     }
 //    public static CUstream getStream(int deviceId) {
 //        return DeviceList.get(deviceId).getStream();

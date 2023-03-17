@@ -28,6 +28,7 @@ import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
+import org.fjnn.util.util;
 
 /**
  *
@@ -260,7 +261,112 @@ public class CudaFunctions {
         );
     }
     
-    public static void crossoverMutate(CUdeviceptr a, CUdeviceptr b, CUdeviceptr r, int size, float min, float max, double mutation,
+    public static void Sin(CUdeviceptr ptr, int size, CUstream stream) {
+        int device = CudaEngine.getThreadDeviceId();
+        
+        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "Sin", device);
+        
+        Pointer kernelParameters = Pointer.to(
+            Pointer.to(ptr),
+            Pointer.to(new long[]{size})
+        );
+        
+        int blockSizeX = Math.min(128, size);
+        int gridSizeX = (size - 1) / blockSizeX + 1;
+        
+        JCudaDriver.cuLaunchKernel(function,
+            gridSizeX, 1, 1,       // Grid dimension
+            blockSizeX, 1, 1,      // Block dimension
+            0, stream,             // Shared memory size and stream
+            kernelParameters, null // Kernel- and extra parameters
+        );
+    }
+    
+    public static void SoftMax(CUdeviceptr ptr, int count, int stride, CUstream stream) {
+        
+    }
+    
+    public static void Step(CUdeviceptr ptr, int size, CUstream stream) {
+        int device = CudaEngine.getThreadDeviceId();
+        
+        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "Step", device);
+        
+        Pointer kernelParameters = Pointer.to(
+            Pointer.to(ptr),
+            Pointer.to(new long[]{size})
+        );
+        
+        int blockSizeX = Math.min(128, size);
+        int gridSizeX = (size - 1) / blockSizeX + 1;
+        
+        JCudaDriver.cuLaunchKernel(function,
+            gridSizeX, 1, 1,       // Grid dimension
+            blockSizeX, 1, 1,      // Block dimension
+            0, stream,             // Shared memory size and stream
+            kernelParameters, null // Kernel- and extra parameters
+        );
+    }
+    
+    public static void Tanh(CUdeviceptr ptr, int size, CUstream stream) {
+        int device = CudaEngine.getThreadDeviceId();
+        
+        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "Tanh", device);
+        
+        Pointer kernelParameters = Pointer.to(
+            Pointer.to(ptr),
+            Pointer.to(new long[]{size})
+        );
+        
+        int blockSizeX = Math.min(128, size);
+        int gridSizeX = (size - 1) / blockSizeX + 1;
+        
+        JCudaDriver.cuLaunchKernel(function,
+            gridSizeX, 1, 1,       // Grid dimension
+            blockSizeX, 1, 1,      // Block dimension
+            0, stream,             // Shared memory size and stream
+            kernelParameters, null // Kernel- and extra parameters
+        );
+    }
+    
+    public static void MatrixMultiply(CUdeviceptr a, CUdeviceptr b, CUdeviceptr r, int rows_a, int cols_a, int cols_b, float alpha, CUstream stream) {
+        boolean unaligned = cols_a % 4 != 0 || cols_b % 4 != 0;
+        
+        int[] dims = getDimentions(rows_a, cols_a, cols_b, unaligned);
+        
+        String name = String.format("matrix_mul_matrix_%dx%dx%d%s", dims[0], dims[1], dims[2], unaligned ? "_unaligned" : "");
+        String module = unaligned ? CudaModule.MODULE_MATRIX_UNALIGNED : CudaModule.MODULE_MATRIX;
+        
+        int deviceId = CudaEngine.getThreadDeviceId();
+        
+        System.out.println(name);
+        
+        /* Compute Matrix Multiplication */
+        CUfunction function = CudaEngine.getKernel(module, name, deviceId);
+        
+        int blockSizeX = getBlockSize(name);
+        int blockSizeY = 1;
+        int gridSizeX = (cols_b - 1) / dims[2] + 1;
+        int gridSizeY = (rows_a - 1) / dims[0] + 1;
+
+        Pointer kernelParameters = Pointer.to(
+            Pointer.to(a),
+            Pointer.to(b),
+            Pointer.to(r),
+            Pointer.to(new int[]{rows_a}),
+            Pointer.to(new int[]{cols_a}),
+            Pointer.to(new int[]{cols_b}),
+            Pointer.to(new float[]{alpha})
+        );
+
+        JCudaDriver.cuLaunchKernel(function,
+            gridSizeX, gridSizeY, 1,            // Grid dimension
+            blockSizeX, blockSizeY, 1,          // Block dimension
+            0, stream,                          // Shared memory size and stream
+            kernelParameters, null              // Kernel- and extra parameters
+        );
+    }
+    
+    public static void CrossoverMutate(CUdeviceptr a, CUdeviceptr b, CUdeviceptr r, int size, float min, float max, double mutation,
                                        CUdeviceptr rng_crossover, CUdeviceptr rng_mutate, CUdeviceptr rng_pool, 
                                        int threadsPerBlock, CUstream stream) {
         int device = CudaEngine.getThreadDeviceId();
@@ -329,5 +435,164 @@ public class CudaFunctions {
         }
         JCudaDriver.cuMemFree(result);
         return sum;
+    }
+
+    public static int[] getDimentions(int rows_a, int cols_a, int cols_b, boolean unaligned) {
+        int b_cols = util.log2(cols_b);
+        b_cols = util.clip(b_cols, 3, 7);
+        b_cols = (int) Math.pow(2, b_cols);
+        
+        int a_cols = util.log2(cols_a);
+        
+        if(unaligned) {
+            switch(b_cols) {
+                case 8:
+                    a_cols = util.clip(a_cols, 3, 7);
+                    break;
+                case 16:
+                    a_cols = util.clip(a_cols, 3, 7);
+                    break;
+                case 32:
+                    a_cols = util.clip(a_cols, 4, 7);
+                    break;
+                case 64:
+                    a_cols = util.clip(a_cols, 5, 7);
+                    break;
+                case 128:
+                    a_cols = util.clip(a_cols, 5, 5);
+                    break;
+            }
+        } else {
+            switch(b_cols) {
+                case 8:
+                    a_cols = util.clip(a_cols, 4, 7);
+                    break;
+                case 16:
+                    a_cols = util.clip(a_cols, 3, 7);
+                    break;
+                case 32:
+                    a_cols = util.clip(a_cols, 3, 7);
+                    break;
+                case 64:
+                    a_cols = util.clip(a_cols, 3, 7);
+                    break;
+                case 128:
+                    a_cols = util.clip(a_cols, 3, 6);
+                    break;
+            }            
+        }
+        
+        a_cols = (int) Math.pow(2, a_cols);
+        return new int[]{select(a_cols, b_cols, unaligned), a_cols, b_cols};
+    }
+    
+    private static int select(int cols_a, int cols_b, boolean unaligned) {
+        String hash = String.format("%dx%d", cols_a, cols_b);
+        
+        if(unaligned) {
+            switch(hash) {
+                case "128x16":
+                    return 16;
+                case "128x32":
+                    return 8;
+                case "128x64":
+                    return 8;
+                case "128x8":
+                    return 16;
+                case "16x16":
+                    return 8;
+                case "16x32":
+                    return 8;
+                case "16x8":
+                    return 16;
+                case "32x128":
+                    return 8;
+                case "32x16":
+                    return 8;
+                case "32x32":
+                    return 8;
+                case "32x64":
+                    return 8;
+                case "32x8":
+                    return 16;
+                case "64x16":
+                    return 8;
+                case "64x32":
+                    return 8;
+                case "64x64":
+                    return 8;
+                case "64x8":
+                    return 16;
+                case "8x16":
+                    return 8;
+                case "8x8":
+                    return 16;
+            }
+        } else {
+            switch(hash) {
+                case "128x16":
+                    return 16;
+                case "128x32":
+                    return 16;
+                case "128x64":
+                    return 32;
+                case "128x8":
+                    return 32;
+                case "16x128":
+                    return 64;
+                case "16x16":
+                    return 16;
+                case "16x32":
+                    return 64;
+                case "16x64":
+                    return 128;
+                case "16x8":
+                    return 16;
+                case "32x128":
+                    return 64;
+                case "32x16":
+                    return 16;
+                case "32x32":
+                    return 8;
+                case "32x64":
+                    return 128;
+                case "32x8":
+                    return 32;
+                case "64x128":
+                    return 32;
+                case "64x16":
+                    return 16;
+                case "64x32":
+                    return 8;
+                case "64x64":
+                    return 64;
+                case "64x8":
+                    return 32;
+                case "8x128":
+                    return 64;
+                case "8x16":
+                    return 16;
+                case "8x32":
+                    return 32;
+                case "8x64":
+                    return 64;
+            }
+        }
+        
+        return 0;
+    }
+    
+    private static int getBlockSize(String name) {
+        switch(name) {
+            case "matrix_mul_matrix_128x16x16":
+            case "matrix_mul_matrix_64x16x16":
+            case "matrix_mul_matrix_32x16x16":
+            case "matrix_mul_matrix_16x16x16":
+                return 64;
+            case "matrix_mul_matrix_16x16x16_unaligned":
+                return 256;
+        }
+        
+        return 128;
     }
 }

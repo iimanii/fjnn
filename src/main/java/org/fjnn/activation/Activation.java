@@ -41,27 +41,21 @@ public abstract class Activation implements Serializable {
         compute(input, input.length, 1);
     }
     
-    public abstract void compute(float[] input, int stride, int count);
-    
-    public void compute(FloatBuffer input) {
+    public final void compute(FloatBuffer input) {
         compute(input, input.capacity(), 1);
     }
-    
-    public abstract void compute(FloatBuffer input, int stride, int count);
-    
-    public abstract void computeGPU(CUdeviceptr ptr, int size, CUstream stream);
-    
-    public abstract void computeConditional(float[] input, boolean[] compute);
     
     public final void derivative(float[] input) {
         derivative(input, 0, input.length);
     }
     
-    public abstract void derivative(float[] input, int from, int to);
+    public abstract void compute(float[] input, int stride, int count);
     
-    public int minLayerSize() {
-        return 0;
-    }
+    public abstract void compute(FloatBuffer input, int stride, int count);
+    
+    public abstract void computeGPU(CUdeviceptr ptr, int stride, int size, CUstream stream);
+    
+    public abstract void derivative(float[] input, int from, int to);
     
     public String toName() {
         return this.getClass().getSimpleName();
@@ -145,14 +139,6 @@ public abstract class Activation implements Serializable {
         return (float) (sign * Math.sqrt(Math.abs(a)));
     }
     
-    
-    
-    public abstract void computeMultiGPU(CUdeviceptr2D ptr, int width, int height, CUstream stream);    
-
-    public abstract void computeGPUConditional(CUdeviceptr ptr, CUdeviceptr compute, int size, CUstream stream, int count);
-    
-    public abstract void computeMultiGPUConditional(CUdeviceptr2D ptr, CUdeviceptr compute, int width, int height, CUstream stream);
-
 // TODO
 //    ActivationBiPolar,
 //    ActivationBipolarSteepenedSigmoid,

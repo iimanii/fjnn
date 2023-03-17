@@ -32,6 +32,7 @@ import jcuda.driver.JCudaDriver;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaModule;
 import org.fjnn.cuda.CUdeviceptr2D;
+import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.util.intrinsic;
 
 /**
@@ -52,75 +53,18 @@ public class Step extends Activation {
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, int size, CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
-        
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "Step", device);
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(ptr),
-            Pointer.to(new long[]{size})
-        );
-        
-        int blockSizeX = Math.min(CudaEngine.getMaxThreadsPerBlock(device), size);
-        int gridSizeX = (size - 1) / blockSizeX + 1;
-        
-        JCudaDriver.cuLaunchKernel(function,
-            gridSizeX, 1, 1,       // Grid dimension
-            blockSizeX, 1, 1,      // Block dimension
-            0, stream,             // Shared memory size and stream
-            kernelParameters, null // Kernel- and extra parameters
-        );
+    public void compute(FloatBuffer input, int stride, int count) {
+        intrinsic.Step(input, stride * count);
     }
 
     @Override
-    public void computeMultiGPU(CUdeviceptr2D ptr, int width, int height, CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
-        
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "multi_Step", device);
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(ptr.ptr),
-            Pointer.to(new long[]{width}),
-            Pointer.to(new long[]{ptr.pitch})
-        );
-        
-        int blockSizeX = Math.min(CudaEngine.getMaxThreadsPerBlock(device), width);
-        int gridSizeX = (width - 1) / blockSizeX + 1;
-        int gridSizeY = height;
-        
-        JCudaDriver.cuLaunchKernel(function,
-            gridSizeX, gridSizeY, 1,   // Grid dimension
-            blockSizeX, 1, 1,          // Block dimension
-            0, stream,                 // Shared memory size and stream
-            kernelParameters, null     // Kernel- and extra parameters
-        );
+    public void computeGPU(CUdeviceptr ptr, int stride, int count, CUstream stream) {
+        CudaFunctions.Step(ptr, stride * count, stream);        
     }
-
-    @Override
-    public void computeConditional(float[] input, boolean[] compute) {
-        for(int i=0; i < input.length; i++)
-            if(compute[i])
-                input[i] = input[i] >= 0 ? 1 : 0;
-    }
-
-    @Override
-    public void computeGPUConditional(CUdeviceptr ptr, CUdeviceptr compute, int size, CUstream stream, int count) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public void computeMultiGPUConditional(CUdeviceptr2D ptr, CUdeviceptr compute, int width, int height, CUstream stream) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
+    
     @Override
     public void derivative(float[] input, int from, int to) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
-    @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        intrinsic.Step(input, stride * count);
-    }
 }

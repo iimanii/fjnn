@@ -39,9 +39,5 @@ public class LayerPlan {
     public LayerPlan(int neurons, Activation activation) {
         this.neurons = neurons;
         this.activation = activation;
-        
-        if(activation != null && neurons < activation.minLayerSize())
-            throw new RuntimeException("Minimum layer size must be " + activation.minLayerSize() + 
-                                       " for activation function " + activation.toName());
     }
 }

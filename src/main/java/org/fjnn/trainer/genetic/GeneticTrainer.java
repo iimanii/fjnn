@@ -134,7 +134,7 @@ public class GeneticTrainer {
         
         for(NeuralNetwork n : pool) {
             if(!n.hasProperty(FITNESS_PROP)) {
-                futures.add(threadPool.submit(() -> {                    
+                futures.add(threadPool.submit(() -> {
                     TrainingResult output = compute(n, 0);
 
                     n.setProperty(FITNESS_PROP, output.fitness);
@@ -176,7 +176,7 @@ public class GeneticTrainer {
                 if(!n.gpuReady())
                     n.prepareGPU(config.deviceId);
                 
-                CUdeviceptr gpuInput = batch < 0 ? trainingSet.getAllGPUInput(config.deviceId) : trainingSet.getGPUInput(config.deviceId, batch);
+                CUdeviceptr gpuInput = batch == -1 ? trainingSet.getAllGPUInput(config.deviceId) : trainingSet.getGPUInput(config.deviceId, batch);
                 result = n.computeGPU(gpuInput, batchsize);
                 break;                
             case gpu_all:
@@ -240,12 +240,14 @@ public class GeneticTrainer {
             int batchId = i;
             
             for(NeuralNetwork n : newGeneration) {
-                futures.add(threadPool.submit(() -> {                    
-                    TrainingResult output = compute(n, batchId);
+                if(trainingSet.getBatchCount() > 1 || !n.hasProperty(FITNESS_PROP)) {
+                    futures.add(threadPool.submit(() -> {                    
+                        TrainingResult output = compute(n, batchId);
 
-                    n.setProperty(FITNESS_PROP, output.fitness);
-                    n.setProperty(DETAILED_FITNESS_PROP, output.detailed);
-                }));
+                        n.setProperty(FITNESS_PROP, output.fitness);
+                        n.setProperty(DETAILED_FITNESS_PROP, output.detailed);
+                    }));
+                }
             }
 
             waitForAll(futures);
