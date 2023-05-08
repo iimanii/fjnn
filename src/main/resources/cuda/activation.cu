@@ -96,7 +96,6 @@ __global__ void Step(float* v, long size) {
 /**
  * SoftMax
  */
-
 template<const int BLOCK_SIZE>
 __forceinline__ 
 __device__ float reduceBlockMax(float array[BLOCK_SIZE], float value) {
@@ -116,8 +115,11 @@ __device__ float reduceBlockMax(float array[BLOCK_SIZE], float value) {
     if(tid < 32) {
         float v = array[tid];
 
-        v = max(v, array[tid+32]);  __syncwarp();
-        array[tid] = v;             __syncwarp();
+        if(BLOCK_SIZE >= 64) {
+            v = max(v, array[tid+32]);  __syncwarp();
+            array[tid] = v;             __syncwarp();
+        }
+
         v = max(v, array[tid+16]);  __syncwarp();
         array[tid] = v;             __syncwarp();
         v = max(v, array[tid+8]);   __syncwarp();
@@ -153,9 +155,12 @@ __device__ float reduceBlockSum(float array[BLOCK_SIZE], float value) {
        
     if(tid < 32) {
         float v = array[tid];
+        
+        if(BLOCK_SIZE >= 64) {
+            v += array[tid+32]; __syncwarp();
+            array[tid] = v;     __syncwarp();
+        }
 
-        v += array[tid+32]; __syncwarp();
-        array[tid] = v;     __syncwarp();
         v += array[tid+16]; __syncwarp();
         array[tid] = v;     __syncwarp();
         v += array[tid+8];  __syncwarp();
@@ -171,188 +176,6 @@ __device__ float reduceBlockSum(float array[BLOCK_SIZE], float value) {
     __syncthreads();
     
     return array[0];
-}
-
-/**
- * SoftMax
- */
-template<const int CACHE, const int BLOCK_SIZE>
-__device__ void SoftMax_smem(float* v, long size) {
-    __shared__ float cache[CACHE];
-    __shared__ float temp[BLOCK_SIZE];
-    
-    int blockIndex = blockIdx.x * size;
-    
-    const int iterations = (size - 1) / BLOCK_SIZE + 1;
-    
-    float tmax = FLOAT_MIN;
-#pragma unroll
-    for(int i=0; i < iterations; i++) {
-        int index = threadIdx.x + i * BLOCK_SIZE;
-        
-        if(index < size) {
-            float value = v[blockIndex + index];
-            tmax = max(tmax, value);
-            cache[index] = value;
-        }
-    }
-    
-    /* get max over block */    
-    float blockMax = reduceBlockMax<BLOCK_SIZE>(temp, tmax);
-    
-    /* calculate exp */
-    float sum = 0;
-#pragma unroll
-    for(int i=0; i < iterations; i++) {
-        int index = threadIdx.x + i * BLOCK_SIZE;
-        
-        if(index < size) {
-            float value = safe_exp(cache[index] - blockMax);
-            sum += value;
-            cache[index] = value;
-        }
-    }
-    
-    /* get sum over block */
-    float blockSum = reduceBlockSum<BLOCK_SIZE>(temp, sum);
-
-    /* calculate final value and store */
-#pragma unroll
-    for(int i=0; i < iterations; i++) {
-        int index = threadIdx.x + i * BLOCK_SIZE;
-        
-        if(index < size) {
-            if(sum == 0)
-                v[blockIndex + index] = 1.0 / size;
-            else
-                v[blockIndex + index] = cache[index] / blockSum;
-        }
-    }
-}
-
-extern "C"
-__global__ void SoftMax_smem_4096(float* v, long size) {
-    SoftMax_smem<4096 - 256, 256>(v, size);
-}
-
-extern "C"
-__global__ void SoftMax_smem_2048(float* v, long size) {
-    SoftMax_smem<2048 - 128, 128>(v, size);
-}
-
-extern "C"
-__global__ void SoftMax_smem_1024(float* v, long size) {
-    SoftMax_smem<1024 - 64, 64>(v, size);
-}
-
-
-template<const int LOCAL_SIZE, const int BLOCK_SIZE>
-__device__ void SoftMax_lmem(float* v, long size) {
-    __shared__ float temp[BLOCK_SIZE];
-    float store[LOCAL_SIZE];
-    
-    int blockIndex = blockIdx.x * size;
-    
-    const int iterations = LOCAL_SIZE;//(size - 1) / BLOCK_SIZE + 1;
-    
-    float tmax = FLOAT_MIN;
-
-//    if(threadIdx.x == 0)
-//        printf("iterations: %d %d\n", iterations, BLOCK_SIZE);
-    
-    for(int i=0; i < iterations; i++) {
-        int index = threadIdx.x + i * BLOCK_SIZE;
-        
-        if(index < size) {
-            float value = v[blockIndex + index];
-            store[i] = value;
-            tmax = max(tmax, value);
-        } else
-            break;
-    }
-    
-    /* get max over block */    
-    float blockMax = reduceBlockMax<BLOCK_SIZE>(temp, tmax);
-    
-//    if(threadIdx.x == 0)
-//        printf("max: %.5f\n", blockMax);
-
-    /* calculate exp */
-    float sum = 0;
-    for(int i=0; i < iterations; i++) {
-        int index = threadIdx.x + i * BLOCK_SIZE;
-        
-        if(index < size) {
-            float value = safe_exp(store[i] - blockMax);
-            sum += value;
-            store[i] = value;
-        } else
-            break;
-    }
-    
-    /* get sum over block */
-    float blockSum = reduceBlockSum<BLOCK_SIZE>(temp, sum);
-        
-//    if(threadIdx.x == 0)
-//        printf("sum: %.5f\n", blockSum);
-
-    /* calculate final value and store */
-    for(int i=0; i < iterations; i++) {
-        int index = threadIdx.x + i * BLOCK_SIZE;
-        
-        if(index < size) {
-            if(sum == 0)
-                v[blockIndex + index] = 1.0 / size;
-            else
-                v[blockIndex + index] = store[i] / blockSum;
-        } else
-            break;
-    }
-}
-
-extern "C"
-__global__ void SoftMax_lmem_32_64(float* v, long size) {
-    SoftMax_lmem<32, 64>(v, size);
-}
-
-extern "C"
-__global__ void SoftMax_lmem_32_128(float* v, long size) {
-    SoftMax_lmem<32, 128>(v, size);
-}
-
-extern "C"
-__global__ void SoftMax_lmem_32_256(float* v, long size) {
-    SoftMax_lmem<32, 256>(v, size);
-}
-
-extern "C"
-__global__ void SoftMax_lmem_64_64(float* v, long size) {
-    SoftMax_lmem<64, 64>(v, size);
-}
-
-extern "C"
-__global__ void SoftMax_lmem_64_128(float* v, long size) {
-    SoftMax_lmem<64, 128>(v, size);
-}
-
-extern "C"
-__global__ void SoftMax_lmem_64_256(float* v, long size) {
-    SoftMax_lmem<64, 256>(v, size);
-}
-
-extern "C"
-__global__ void SoftMax_lmem_96_64(float* v, long size) {
-    SoftMax_lmem<96, 64>(v, size);
-}
-
-extern "C"
-__global__ void SoftMax_lmem_96_128(float* v, long size) {
-    SoftMax_lmem<96, 128>(v, size);
-}
-
-extern "C"
-__global__ void SoftMax_lmem_96_256(float* v, long size) {
-    SoftMax_lmem<96, 256>(v, size);
 }
 
 template<const int BLOCK_SIZE>
@@ -397,14 +220,18 @@ __device__ void SoftMax(float* v, long size) {
         int index = threadIdx.x + i * BLOCK_SIZE;
         
         if(index < size) {
-            if(sum == 0)
+            if(blockSum == 0) {
                 v[blockIndex + index] = 1.0 / size;
-            else
+            } else
                 v[blockIndex + index] = v[blockIndex + index] / blockSum;
         }
     }
 }
 
+extern "C"
+__global__ void SoftMax_32(float* v, long size) {
+    SoftMax<32>(v, size);
+}
 
 extern "C"
 __global__ void SoftMax_64(float* v, long size) {
@@ -419,6 +246,11 @@ __global__ void SoftMax_128(float* v, long size) {
 extern "C"
 __global__ void SoftMax_256(float* v, long size) {
     SoftMax<256>(v, size);
+}
+
+extern "C"
+__global__ void SoftMax_512(float* v, long size) {
+    SoftMax<512>(v, size);
 }
 
 extern "C"
@@ -478,4 +310,14 @@ __global__ void SoftMax_2(float* v, long size, float* sums, long sums_size) {
         } else {
             v[row] /= sum;
         }
+}
+
+extern "C"
+__global__ void empty_0() {
+
+}
+
+extern "C"
+__global__ void empty_1(int i) {
+
 }

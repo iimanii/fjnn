@@ -35,7 +35,6 @@ import jcuda.driver.CUfunction;
 import jcuda.driver.CUmodule;
 import jcuda.driver.JCudaDriver;
 import org.fjnn.util.util;
-import run.timer;
 
 /**
  *

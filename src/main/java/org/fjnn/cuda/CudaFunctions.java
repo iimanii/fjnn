@@ -283,7 +283,40 @@ public class CudaFunctions {
     }
     
     public static void SoftMax(CUdeviceptr ptr, int count, int stride, CUstream stream) {
+        int device = CudaEngine.getThreadDeviceId();
         
+        int blockSize;
+        
+        int temp = stride / 16;
+        
+        if(temp <= 32)
+            blockSize = 32;
+        else if(stride <= 64)
+            blockSize = 64;
+        else if(stride <= 128)
+            blockSize = 128;
+        else if(stride <= 256)
+            blockSize = 256;
+        else
+            blockSize = 512;
+        
+        /* Compute Matrix Multiplication */
+        CUfunction fn = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, true, String.format("SoftMax_%d", blockSize), device);
+        
+        int blockSizeX = blockSize;
+        int gridSizeX = count;
+        
+        Pointer kernelParameters = Pointer.to(
+            Pointer.to(ptr),
+            Pointer.to(new int[]{stride})
+        );
+
+        JCudaDriver.cuLaunchKernel(fn,
+            gridSizeX, 1, 1,            // Grid dimension
+            blockSizeX, 1, 1,           // Block dimension
+            0, stream,                  // Shared memory size and stream
+            kernelParameters, null      // Kernel- and extra parameters
+        );
     }
     
     public static void Step(CUdeviceptr ptr, int size, CUstream stream) {
@@ -366,15 +399,15 @@ public class CudaFunctions {
         );
     }
     
-    public static void CrossoverMutate(CUdeviceptr a, CUdeviceptr b, CUdeviceptr r, int size, float min, float max, double mutation,
+    public static void CrossoverMutate(CUdeviceptr a, CUdeviceptr b, CUdeviceptr r, long size, float min, float max, double mutation,
                                        CUdeviceptr rng_crossover, CUdeviceptr rng_mutate, CUdeviceptr rng_pool, 
                                        int threadsPerBlock, CUstream stream) {
         int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_GENETIC, "cross_over_mutate", device);
         
-        int blockSizeX = Math.min(threadsPerBlock, size);
-        int gridSizeX = (size - 1) / blockSizeX + 1;
+        int blockSizeX = (int) Math.min(threadsPerBlock, size);
+        int gridSizeX = (int) ((size - 1) / blockSizeX + 1);
 
         Pointer kernelParameters = Pointer.to(
             Pointer.to(a),
@@ -397,6 +430,29 @@ public class CudaFunctions {
         );
     }
 
+    public static void ClipWeights(CUdeviceptr weights, long size, float min, float max, CUstream stream) {
+        int device = CudaEngine.getThreadDeviceId();
+        
+        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_GENETIC, "clip_weights", device);
+        
+        int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+        int gridSizeX = (int) ((size - 1) / blockSizeX + 1);
+
+        Pointer kernelParameters = Pointer.to(
+            Pointer.to(weights),
+            Pointer.to(new long[]{size}),
+            Pointer.to(new float[]{min}),
+            Pointer.to(new float[]{max})
+        );        
+                
+        JCudaDriver.cuLaunchKernel(function,
+            gridSizeX, 1, 1,       // Grid dimension
+            blockSizeX, 1, 1,      // Block dimension
+            0, stream,             // Shared memory size and stream
+            kernelParameters, null // Kernel- and extra parameters
+        );
+    }
+    
     /* utility functions */
     public static float sum_abs_differenceGPU(CUdeviceptr array1, CUdeviceptr array2, int size, CUstream stream) {
         int device = CudaEngine.getThreadDeviceId();

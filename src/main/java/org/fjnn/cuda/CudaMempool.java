@@ -150,21 +150,24 @@ public class CudaMempool {
                     
                     i = (i + 1) % len;
                     
-                    if(loops++ > 5000)
+                    if(++loops % 5000 == 0)
                         System.out.println("problem");
                 }
+                
+                if(loops > 5000)
+                    System.out.println("removed: " + loops);
             }
             
-            long t2 = System.nanoTime();
+//            long t2 = System.nanoTime();
 //            System.out.println("free memory: " + cleanCount / 1e6f + " " + cachedsize.get() / 1e6f + " " + (t2-t) / 1e6f);
             
             return cleanCount;
         }
     }
     
+    long maxPoolMemory;
     final PoolStorage storage;
     final AtomicLong totalAllocations;
-    long maxPoolMemory;
     final ReentrantLock createLock;
     
     public CudaMempool(long maxPoolMemory) {
@@ -194,15 +197,32 @@ public class CudaMempool {
             
             /* create new */
             long available = maxPoolMemory - totalAllocations.get();
-
+            
             if(available < size) {
-//                System.out.printf("creating: %.4f, %.4f %.4f %.4f\n", size / 1e6f, totalAllocations.get() / 1e6f, storage.cachedsize.get() / 1e6f, available / 1e6f);
                 totalAllocations.addAndGet(-storage.clean(size - available));
-            }
+            }            
+            
+            available = maxPoolMemory - totalAllocations.get();
+            
+            if(available < size)
+                System.out.println("Memory overflow");
+                        
+//            long freeMemory = CudaEngine.getFreeMemory(CudaEngine.getThreadDeviceId());
+//            System.out.printf("creating: %.4f, %.4f %.4f %.4f %.4f\n", 
+//                    size / 1e6f, 
+//                    totalAllocations.get() / 1e6f, 
+//                    storage.cachedsize.get() / 1e6f, 
+//                    available / 1e6f,
+//                    freeMemory / 1e6f);
             
             ptr = CudaUtil.createByte(size);
-//                System.out.println("creating: " + ptr);
-
+            
+//            long freeMemory2 = CudaEngine.getFreeMemory(CudaEngine.getThreadDeviceId());
+//            System.out.printf("        : %d %d %d\n", 
+//                    freeMemory - freeMemory2, 
+//                    size,
+//                    freeMemory - freeMemory2 - size);
+            
             totalAllocations.addAndGet(size);
             storage.register(ptr, size);
 

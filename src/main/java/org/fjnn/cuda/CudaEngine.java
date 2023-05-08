@@ -162,7 +162,7 @@ public class CudaEngine {
     public static cudaDeviceProp getDeviceProperties(int deviceId) {
         return DeviceList[deviceId].properties;
     }
-
+ 
     public static CUdeviceptr getMempool(long size) {
         return getMempool(getThreadDeviceId(), size);
     }

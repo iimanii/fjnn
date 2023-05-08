@@ -42,7 +42,8 @@ import run.timer;
 public class CudaUtil {
     
     public static final long FLOAT_SIZE = Sizeof.FLOAT;
-    public static int DEFAULT_MEM_ALIGN = 1024;
+    public static int DEFAULT_MEM_ALIGN = 256;
+    public static int DEFAULT_MEM_ALIGN_FLOAT = 256 / Sizeof.FLOAT;
     public static int PREFERRED_BLOCK_SIZE = 128;
     
     public static CUdeviceptr createFloat(long size) {

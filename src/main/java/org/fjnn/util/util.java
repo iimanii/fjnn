@@ -30,6 +30,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
 import java.util.zip.Inflater;
@@ -308,5 +311,38 @@ public class util {
             b_cols = max;
         
         return b_cols;
+    }
+    
+    public static int hashArray(double[] array, int multiplier) {
+        long hash = 17;
+        
+        for(int i=0; i < array.length; i++) {
+            hash = hash * 31 + Math.round(array[i] * multiplier);
+            hash %= Integer.MAX_VALUE;
+        }
+        
+        return (int) (hash % Integer.MAX_VALUE);
+    }
+    
+    public static int doubleArrayHash(double[] array) {
+        long hash = 17;
+
+        for (int i = 0; i < array.length; i++) {
+            hash = hash * 31 + Double.doubleToLongBits(array[i]);
+            hash %= Integer.MAX_VALUE;
+        }
+
+        return (int) (hash % Integer.MAX_VALUE);
+    }
+    
+    public static void waitForAll(List<Future<?>> futures) {
+        for(Future f : futures) {
+            try {
+                f.get();
+            } catch (InterruptedException | ExecutionException ex) {
+                ex.getCause().printStackTrace(System.out);
+                throw new RuntimeException("Shit happened: " + ex.toString());
+            }
+        }
     }
 }

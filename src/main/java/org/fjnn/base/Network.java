@@ -55,6 +55,10 @@ public abstract class Network {
         return properties.get(name);
     }
     
+    public final Object getOrDefault(String name, Object defaultValue) {
+        return properties.getOrDefault(name, defaultValue);
+    }
+    
     /**
      * 
      * @param name

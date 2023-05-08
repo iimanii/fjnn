@@ -27,7 +27,11 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import javax.naming.OperationNotSupportedException;
@@ -137,6 +141,7 @@ public class NeuralNetwork extends Network {
         
         layers[fromLayer].addConnection(toLayer, targetNeurons);
         
+        computeMemoryRequirements();
         return this;
     }
     
@@ -207,7 +212,23 @@ public class NeuralNetwork extends Network {
     @Override
     public void randomize(float min, float max) {
         for(Layer l : layers)
-            l.randomize(min, max);
+            l.initUniform(min, max);
+    }
+    
+    public void xavier() {
+        xavier(1);
+    }
+    public void xavier(int scalar) {
+        for(Layer l : layers)
+            l.xavier(scalar);
+    }
+    
+    public void kaiming() {
+        kaiming(1);
+    }
+    public void kaiming(int scalar) {
+        for(Layer l : layers)
+            l.kaiming(scalar);
     }
     
     /**
@@ -317,9 +338,19 @@ public class NeuralNetwork extends Network {
     }
 
     public JSONObject serialize() {
+        return serialize(new HashSet<>());
+    }
+
+    public JSONObject serialize(Set<String> ignoreProperties) {
         JSONObject obj = new JSONObject();
         
-        obj.put("properties", properties);
+        Map<String, Object> map = new HashMap<>();
+        
+        for(Map.Entry<String, Object> e : properties.entrySet())
+            if(!ignoreProperties.contains(e.getKey()))
+                map.put(e.getKey(), e.getValue());
+        
+        obj.put("properties", map);
         
         JSONArray array = new JSONArray();
         
@@ -330,7 +361,7 @@ public class NeuralNetwork extends Network {
         
         return obj;
     }
-
+    
     public static NeuralNetwork deserialize(JSONObject serialized) {
         JSONArray array = serialized.getJSONArray("layers");
         
@@ -366,6 +397,8 @@ public class NeuralNetwork extends Network {
     public void prepareGPU(int device) {
         if(gpuReady())
             throw new RuntimeException("GPU already initialized for connection");
+        
+        lockMemory(prepareMemReq, device);
         
         this.deviceId = device;
         
@@ -455,31 +488,13 @@ public class NeuralNetwork extends Network {
     }
     
     public float[] computeGPU(CUdeviceptr input, int count) {
-        Semaphore lock = CudaEngine.getMemLock(deviceId);
-        
-        if(lock == null)
-            throw new RuntimeException("Must specify maximum memory usage for device: " + deviceId);
-        
         long memory = getGPUComputeMemoryRequired(count);
-        int memoryKB = (int)Math.ceil(memory / 1024.0);
-        
-//        System.out.println("compute on gpu: " + deviceId);
-//        System.out.println("before " + lock.availablePermits() / 1024.0 + " " + CudaEngine.getFreeMemory(deviceId) / 1024.0 / 1024.0);
-        
-//        long waiting = lock.getQueueLength();
-//        if(waiting > 0)
-//            System.out.println("waiting: " + waiting);
-//        long beforeEntry = System.nanoTime();
-        lock.acquireUninterruptibly(memoryKB);
-//        long waitTime = Math.round((System.nanoTime() - beforeEntry) / 1e6);
-
-//        if(waitTime > 0)
-//            System.out.println("Waited for: " + waitTime);
+        lockMemory(memory, deviceId);
         
         try {
             return computeGPUUnsafe(input, count);
         } finally {
-            lock.release(memoryKB);
+            releaseMemory(memory);
         }
     }
     
@@ -526,25 +541,54 @@ public class NeuralNetwork extends Network {
         
         if(gpuReady())
             throw new RuntimeException("Network is gpu ready, please call freeGPU first");
-            
+        
         this.deviceId = a.deviceId;
+            
+        /* 1x prepare gpu + 3x rng arrays */
+        lockMemory(prepareMemReq * 4, deviceId);
         
-        CudaEngine.prepareThread(deviceId);        
-        CUstream stream = CudaEngine.aquireStream(deviceId);
-        curandGenerator generator = CudaEngine.getCurandGenerator(deviceId);
-        
+        try {
+            CudaEngine.prepareThread(deviceId);        
+            CUstream stream = CudaEngine.aquireStream(deviceId);
+            curandGenerator generator = CudaEngine.getCurandGenerator(deviceId);
+
+            for(int i=0; i < layers.length; i++)
+                layers[i].crossOverMutateGPU(a.getLayer(i), b.getLayer(i), min, max, mutation, nocopy, stream, generator);
+
+            JCudaDriver.cuStreamSynchronize(stream);
+            CudaEngine.releaseStream(deviceId, stream);
+
+            for(int i=0; i < layers.length; i++)
+                layers[i].freeGPURng();
+
+            CudaEngine.finalizeThread();
+        } finally {
+            releaseMemory(prepareMemReq * 3);
+        }
+    }
+    
+    public void clipWeights(float min, float max) {
         for(int i=0; i < layers.length; i++)
-            layers[i].crossOverMutateGPU(a.getLayer(i), b.getLayer(i), min, max, mutation, nocopy, stream, generator);
-        
-        JCudaDriver.cuStreamSynchronize(stream);
-        CudaEngine.releaseStream(deviceId, stream);
-        
-        for(int i=0; i < layers.length; i++)
-            layers[i].freeGPURng();
-        
-        CudaEngine.finalizeThread();
+            layers[i].clipWeights(min, max);
     }
 
+    public void clipWeightsGPU(float min, float max) {
+        if(gpuReady())
+            throw new RuntimeException("Network is gpu ready, please call freeGPU first");
+        
+        CudaEngine.prepareThread(deviceId);
+        CUstream stream = CudaEngine.aquireStream(deviceId);
+
+        for(int i=0; i < layers.length; i++)
+            layers[i].clipWeightsGPU(min, max, stream);
+
+        JCudaDriver.cuStreamSynchronize(stream);
+        CudaEngine.releaseStream(deviceId, stream);
+
+        CudaEngine.finalizeThread();
+    }
+    
+    
     public void crossOverMutate(NeuralNetwork a, NeuralNetwork b, NeuralNetwork min, NeuralNetwork max, double mutation) {
         for(int i=0; i < layers.length; i++)
             layers[i].crossOverMutate(a.getLayer(i), b.getLayer(i), min.getLayer(i), max.getLayer(i), mutation);
@@ -604,8 +648,29 @@ public class NeuralNetwork extends Network {
     public void freeGPU() {
         for(Layer l : layers)
             l.freeGPU(deviceId);
-
+        
+        releaseMemory(prepareMemReq);
+        
         deviceId = -1;
+    }
+    
+    private void lockMemory(long size, int deviceId) {
+        Semaphore lock = CudaEngine.getMemLock(deviceId);
+        
+        if(lock == null)
+            throw new RuntimeException("Must specify maximum memory usage for device: " + deviceId);
+
+        int memoryKB = (int)Math.ceil(size / 1024.0);
+        
+        lock.acquireUninterruptibly(memoryKB);        
+    }
+    
+    private void releaseMemory(long size) {
+        Semaphore lock = CudaEngine.getMemLock(deviceId);
+        
+        int memoryKB = (int)Math.ceil(size / 1024.0);
+        
+        lock.release(memoryKB);
     }
     
     /**

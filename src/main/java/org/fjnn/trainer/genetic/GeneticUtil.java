@@ -26,9 +26,12 @@ package org.fjnn.trainer.genetic;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadLocalRandom;
 import org.fjnn.base.Network;
 import org.fjnn.network.NeuralNetwork;
 import org.fjnn.util.Rng;
+import org.fjnn.util.util;
 
 /**
  *
@@ -98,7 +101,7 @@ public class GeneticUtil {
         if(avoid != null)
             copy.remove(avoid);
 
-        Collections.shuffle(copy);
+        Collections.shuffle(copy, ThreadLocalRandom.current());
         
         List<NeuralNetwork> selected = new ArrayList<>(copy.subList(0, size));
         

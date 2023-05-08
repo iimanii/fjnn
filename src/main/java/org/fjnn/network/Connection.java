@@ -87,6 +87,9 @@ public class Connection {
     
     boolean disableBias;
 
+    /* memory requirement for prepare gpu */
+    final long weightsLength;
+    
     Connection(int neurons, int links) {
         this(neurons, links, true);
     }
@@ -99,6 +102,12 @@ public class Connection {
             this.weights = new float[neurons * links];
             this.biases = new float[links];
         }
+        
+        long lengthWeights = CudaUtil.alignLength(neurons * links, CudaUtil.DEFAULT_MEM_ALIGN_FLOAT);
+        long lengthBias = links;
+        long lengthTotal = lengthWeights + lengthBias;
+        
+        weightsLength = lengthTotal;
     }
     
     private Connection(int neurons, int links, float[] weights, float[] biases) {
@@ -109,6 +118,12 @@ public class Connection {
         
         if(this.biases.length != links || this.weights.length != links * neurons)
             throw new RuntimeException("Inconsistent connection");
+        
+        long lengthWeights = CudaUtil.alignLength(neurons * links, CudaUtil.DEFAULT_MEM_ALIGN_FLOAT);
+        long lengthBias = links;
+        long lengthTotal = lengthWeights + lengthBias;
+        
+        weightsLength = lengthTotal;
     }
     
     Connection copy(boolean copyWeights, boolean creatWeights) {
@@ -230,7 +245,7 @@ public class Connection {
     }
     
     long getMemoryRequirements() {
-        return (neurons * links + links) * FLOAT_SIZE;
+        return weightsLength * FLOAT_SIZE;
     }
     
     void prepareGPU(CUstream stream) {                
@@ -268,13 +283,13 @@ public class Connection {
         if(weightsGPU != null || biasesGPU != null)
             throw new RuntimeException("GPU already initialized for connection");
         
-        long lengthWeights = CudaUtil.alignLength(neurons * links, CudaUtil.DEFAULT_MEM_ALIGN);
+        long lengthWeights = CudaUtil.alignLength(neurons * links, CudaUtil.DEFAULT_MEM_ALIGN_FLOAT);
         long lengthBias = links;
         long lengthTotal = lengthWeights + lengthBias;
         
         weightsGPU = CudaEngine.getMempoolFloat(lengthTotal);
         biasesGPU = weightsGPU.withByteOffset(lengthWeights * CudaUtil.FLOAT_SIZE);
-//        biasesGPU = //CudaUtil.createFloat(lengthBias);        
+//        biasesGPU = //CudaUtil.createFloat(lengthBias);
     }
     
     public float getWeight(int from, int to) {
@@ -364,7 +379,7 @@ public class Connection {
         gpuReady = false;
     } 
 
-    public void randomize(float min, float max) {
+    public void initUniform(float min, float max) {
         int len = neurons * links;
         
         for(int i=0; i < len; i++)
@@ -375,6 +390,19 @@ public class Connection {
         
         nativeReady = false;
         gpuReady = false;
+    }
+    
+    public void initGaussian(float mean, float sd) {
+        int len = neurons * links;
+        
+        for(int i=0; i < len; i++)
+            weights[i] = (float) Rng.gaussian(mean, sd);
+        
+        for(int i=0; i < links; i++)
+            biases[i] = (float) Rng.gaussian(mean, sd);
+        
+        nativeReady = false;
+        gpuReady = false;        
     }
 
     void freeCPU() {
@@ -416,22 +444,18 @@ public class Connection {
     void crossOverMutateGPU(Connection a, Connection b, float min, float max, double mutation, boolean nocopy, CUstream stream, curandGenerator generator) {
         /* mutate weights */
         initGPUWeights();
-        
-        int lengthWeights = (int) CudaUtil.alignLength(neurons * links, CudaUtil.DEFAULT_MEM_ALIGN);
-        int lengthBias = links;
-        int lengthTotal = lengthWeights + lengthBias;
 
-        rngPool = CudaEngine.getMempoolFloat(lengthTotal * 3);
-        CUdeviceptr rngMutate = rngPool.withByteOffset(lengthTotal * CudaUtil.FLOAT_SIZE);
-        CUdeviceptr rngCrossover = rngPool.withByteOffset(2 * lengthTotal * CudaUtil.FLOAT_SIZE);
+        rngPool = CudaEngine.getMempoolFloat(weightsLength * 3);
+        CUdeviceptr rngMutate = rngPool.withByteOffset(weightsLength * CudaUtil.FLOAT_SIZE);
+        CUdeviceptr rngCrossover = rngPool.withByteOffset(2 * weightsLength * CudaUtil.FLOAT_SIZE);
         
         synchronized(generator) {
             JCurand.curandSetStream(generator, new cudaStream_t(stream));
-            JCurand.curandGenerateUniform(generator, rngPool, lengthTotal * 3);
+            JCurand.curandGenerateUniform(generator, rngPool, weightsLength * 3);
         }
         
         /* mutate weights and biases in one kernel launch */
-        CudaFunctions.CrossoverMutate(a.weightsGPU, b.weightsGPU, weightsGPU, lengthTotal, min, max, mutation, 
+        CudaFunctions.CrossoverMutate(a.weightsGPU, b.weightsGPU, weightsGPU, weightsLength, min, max, mutation, 
                                       rngCrossover, rngMutate, rngPool, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
         
         
@@ -447,6 +471,33 @@ public class Connection {
         
         nativeReady = false;
         gpuReady = true;
+    }
+    
+    void clipWeights(float min, float max) {
+        for(int i=0; i < weights.length; i++) {
+            float w = weights[i];
+            
+            if(w > max)
+                weights[i] = max;
+            else if(w < min)
+                weights[i] = min;
+        }
+        
+        for(int i=0; i < biases.length; i++) {
+            float w = biases[i];
+            
+            if(w > max)
+                biases[i] = max;
+            else if(w < min)
+                biases[i] = min;
+        }
+
+        nativeReady = false;
+        gpuReady = false;
+    }
+    
+    void clipWeightsGPU(float min, float max, CUstream stream) {
+        CudaFunctions.ClipWeights(weightsGPU, weightsLength, min, max, stream);
     }
     
     JSONObject serialize() {

@@ -121,11 +121,32 @@ public class Layer {
         return new ArrayList<>(connections.values());
     }
 
-    public void randomize(float min, float max) {
+    public void initUniform(float min, float max) {
         for(Connection c : connections.values())
-            c.randomize(min, max);
+            c.initUniform(min, max);
+    }
+    
+    public void initGaussian(float mean, float sd) {
+        for(Connection c : connections.values())
+            c.initGaussian(mean, sd);
     }
 
+    public void xavier(int scalar) {
+        for(Connection c : connections.values()) {
+            float variance = 2.0f / (c.neurons + c.links);
+            float sd = (float) Math.sqrt(variance) * scalar;
+            c.initGaussian(0, sd);
+        }
+    }
+
+    public void kaiming(int scalar) {
+        for(Connection c : connections.values()) {
+            float variance = 2.0f / c.neurons;
+            float sd = (float) Math.sqrt(variance) * scalar;
+            c.initGaussian(0, sd);
+        }
+    }
+    
     protected void feedForward(float[] input, float[][] result) {
         if(activation != null)
             activation.compute(input);
@@ -342,6 +363,24 @@ public class Layer {
         }
     }
 
+    void clipWeights(float min, float max) {
+        /* crossover mutate all connections */
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
+            Connection c = e.getValue();
+            
+            c.clipWeights(min, max);
+        }
+    }
+    
+    void clipWeightsGPU(float min, float max, CUstream stream) {
+        /* crossover mutate all connections */
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
+            Connection c = e.getValue();
+            
+            c.clipWeightsGPU(min, max, stream);
+        }
+    }
+
     protected void freeGPU(int deviceId) {
         for(Connection c : connections.values())
             c.freeGPU(deviceId);
@@ -391,7 +430,6 @@ public class Layer {
     public boolean hasBias() {
         return getConnection().hasBias();
     }
-
 
     public static class crossOverMutateResult {
         public int forcePick_A;

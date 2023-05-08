@@ -23,11 +23,14 @@
  */
 package org.fjnn.trainer.genetic;
 
+import org.json.JSONObject;
+
 /**
  *
  * @author ahmed
  */
 public class GeneticTrainerConfig {
+    public static final float DEFAULT_MUTATION_AMOUNT = 2;
     
     public static enum SelectionCriteria {
         fitness,
@@ -54,12 +57,21 @@ public class GeneticTrainerConfig {
     boolean useTournamentSelection;
     
     boolean useStaticMutation;
-    double staticMutationValue;    
+    double mutationChance;
+    float mutationAmount = DEFAULT_MUTATION_AMOUNT;
+    
+    boolean allowEqualSolutions;
+    
+    int eliteLimit;
+    
+    boolean clipWeights;
+    float clipMin;
+    float clipMax;
     
     int startingID;
     int startingGeneration;
     int startingEpoch;
-
+    
     public GeneticTrainerConfig(ComputeMode mode, SelectionCriteria criteria) {
         this(mode, criteria, -1);
     }
@@ -78,15 +90,35 @@ public class GeneticTrainerConfig {
         return this;
     }
     
-    public GeneticTrainerConfig useStaticMutation(double value) {
+    public GeneticTrainerConfig setMutationChance(double value) {
         this.useStaticMutation = true;
-        this.staticMutationValue = value;
+        this.mutationChance = value;
+        
+        return this;
+    }    
+    
+    public GeneticTrainerConfig setMutationAmount(float value) {
+        this.mutationAmount = value;
         
         return this;
     }    
     
     public GeneticTrainerConfig setCrossoverMode(ComputeMode mode) {
         this.crossover = mode;
+        
+        return this;
+    }
+    
+    public GeneticTrainerConfig setClipWeights(float min, float max) {
+        this.clipWeights = true;
+        this.clipMin = min;
+        this.clipMax = max;
+        
+        return this;
+    }
+    
+    public GeneticTrainerConfig setEliteLimit(int eliteLimit) {
+        this.eliteLimit = eliteLimit;
         
         return this;
     }
@@ -101,5 +133,9 @@ public class GeneticTrainerConfig {
         if(useTournamentSelection)
             if(tournametSelectionSize > poolsize || tournametSelectionSize < 2)
                 throw new RuntimeException("Invalid tournament size: " + tournametSelectionSize);
+    }
+    
+    public void setAllowEqualSolution(boolean allow) {
+        this.allowEqualSolutions = allow;
     }
 }

@@ -38,6 +38,7 @@ import jcuda.driver.CUstream_flags;
 import jcuda.driver.JCudaDriver;
 import jcuda.jcublas.JCublas2;
 import jcuda.jcublas.cublasHandle;
+import static jcuda.jcublas.cublasMath.CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION;
 import jcuda.jcurand.JCurand;
 import jcuda.jcurand.curandGenerator;
 import jcuda.jcurand.curandRngType;
@@ -61,6 +62,7 @@ public class CudaDevice {
     private final curandGenerator curandGenerator;
     private final int cublasMemRequirement;
     
+    protected CudaPool pool;
     protected Semaphore memlock;    
     protected final CudaMempool mempool;
     protected final cudaDeviceProp properties;
@@ -93,8 +95,8 @@ public class CudaDevice {
         
         JCudaDriver.cuMemGetInfo(free, total);
         
-        cublasHandle = new cublasHandle();
-        JCublas2.cublasCreate(cublasHandle);
+        cublasHandle tempCublas = new cublasHandle();
+        JCublas2.cublasCreate(tempCublas);
         
         mempool = new CudaMempool(free[0]);
         memlock = new Semaphore((int) Math.floor(free[0] / 1024.0), true);
@@ -103,6 +105,7 @@ public class CudaDevice {
         
         long[] free_after = new long[1];
         
+        cublasHandle = new cublasHandle();
         JCublas2.cublasCreate(cublasHandle);
         JCudaDriver.cuMemGetInfo(free_after, total);
         
@@ -110,6 +113,9 @@ public class CudaDevice {
         
         System.out.println("CUBLAS memory usage: " +  (cublasMemRequirement / 1e6f)); 
         
+        JCublas2.cublasDestroy(tempCublas);
+        
+//        JCublas2.cublasSetMathMode(cublasHandle, CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION);
         JCudaDriver.cuCtxPopCurrent(context);
     }
         
