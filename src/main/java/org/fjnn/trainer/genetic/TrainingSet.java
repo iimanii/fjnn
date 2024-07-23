@@ -25,6 +25,7 @@ package org.fjnn.trainer.genetic;
 
 import java.nio.FloatBuffer;
 import jcuda.driver.CUdeviceptr;
+import org.fjnn.base.NetworkInput;
 
 /**
  *
@@ -42,14 +43,17 @@ public abstract class TrainingSet {
         }
     }
     
-    public abstract float[] getInput(int batch);
-    public abstract float[] getAllInput();
+    public abstract NetworkInput getInput(int batch);
+    public abstract NetworkInput getAllInput();
     
-    public abstract FloatBuffer getBufferInput(int batch);
-    public abstract FloatBuffer getAllBufferInput();
-    
-    public abstract CUdeviceptr getGPUInput(int deviceId, int batch);
-    public abstract CUdeviceptr getAllGPUInput(int deviceId);
+//    public abstract float[] getInput(int batch);
+//    public abstract float[] getAllInput();
+//    
+//    public abstract FloatBuffer getBufferInput(int batch);
+//    public abstract FloatBuffer getAllBufferInput();
+//    
+    public abstract NetworkInput getGPUInput(int deviceId, int batch);
+    public abstract NetworkInput getAllGPUInput(int deviceId);
     
     public abstract int getCount(int batch);
     public abstract int getAllCount();

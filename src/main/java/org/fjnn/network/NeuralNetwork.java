@@ -23,6 +23,7 @@
  */
 package org.fjnn.network;
 
+import org.fjnn.base.Network;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
@@ -46,7 +47,7 @@ import jcuda.jcurand.curandGenerator;
 import jcuda.jcurand.curandRngType;
 import jcuda.runtime.cudaStream_t;
 import org.fjnn.activation.Activation;
-import org.fjnn.base.Network;
+import org.fjnn.base.NetworkInput;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaUtil;
 import org.fjnn.network.Layer.crossOverMutateResult;
@@ -59,17 +60,11 @@ import org.json.JSONObject;
  *
  * @author ahmed
  */
-public class NeuralNetwork extends Network {
+public class NeuralNetwork extends Network<NeuralNetwork> {
     Layer[] layers;
     
     /* index of last layer */
     int last;
-    
-    /* a network can only be built once */
-    boolean finalized;
-
-    /* device id for gpu to use */
-    int deviceId;
 
     /* memory requirement for prepare gpu */
     long prepareMemReq;
@@ -89,7 +84,6 @@ public class NeuralNetwork extends Network {
     public NeuralNetwork(int input, int output, Activation outputActivation) {
         super(input, output, outputActivation);
         
-        this.deviceId = -1;
         this.plan = new ArrayList<>();
     }
         
@@ -98,16 +92,12 @@ public class NeuralNetwork extends Network {
         
         this.layers = layers;
         this.finalized = true;
-        this.deviceId = -1;
         this.last = layers.length - 1;
 
         computeMemoryRequirements();
     }
     
-    public NeuralNetwork copy(boolean copyWeights) {
-        return copy(copyWeights, true);
-    }
-    
+    @Override
     public NeuralNetwork copy(boolean copyWeights, boolean createWeights) {
         Layer[] copied = new Layer[layers.length];
         
@@ -118,6 +108,7 @@ public class NeuralNetwork extends Network {
         return new NeuralNetwork(copied);
     }
     
+    @Override
     public void copyWeights(NeuralNetwork n) {
         for(int i=0; i < layers.length; i++) {
             layers[i].copyWeights(n.layers[i]);
@@ -200,8 +191,9 @@ public class NeuralNetwork extends Network {
     }
     
     /* total number of weights including bias */
-    public int getWeightsCount() {
-        int count = 0;
+    @Override
+    public long getWeightsCount() {
+        long count = 0;
         
         for(Layer l : layers)
             count += l.getWeightsCount();
@@ -235,16 +227,12 @@ public class NeuralNetwork extends Network {
      * @param input
      * @return Compute the output of the neural network on given input
      */
+    @Override
     public float[] compute(float[] input) {
-        float[][] results = new float[getLayerCount()][];
-        results[0] = util.copyArray(input);
-        
-        for(int i=0; i < layers.length; i++)
-            layers[i].feedForward(results[i], results);
-        
-        return results[last];
+        return compute(input, 1);
     }
     
+    @Override
     public float[] compute(float[] input, int count) {
         float[][] results = new float[getLayerCount()][];
         results[0] = util.copyArray(input);
@@ -255,23 +243,12 @@ public class NeuralNetwork extends Network {
         return results[last];
     }
     
+    @Override
     public float[] compute(FloatBuffer input) {
-        if(!nativeReady())
-            prepareCPU();
-        
-        FloatBuffer[] results = new FloatBuffer[getLayerCount()];
-        results[0] = input;
-        
-        for(int i=0; i < layers.length; i++)
-            layers[i].feedForward(results[i], results);
-            
-        float[] result = new float[outputSize];
-        results[last].rewind();
-        results[last].get(result);
-        
-        return result;
+        return compute(input, 1);
     }
     
+    @Override
     public float[] compute(FloatBuffer input, int count) {
         if(!nativeReady())
             prepareCPU();
@@ -319,6 +296,7 @@ public class NeuralNetwork extends Network {
         cpuFree = true;
     }
     
+    @Override
     public void ensureCPU() {
         if(!gpuReady())
             throw new RuntimeException("Network is not loaded to the GPU");
@@ -341,16 +319,9 @@ public class NeuralNetwork extends Network {
         return serialize(new HashSet<>());
     }
 
+    @Override
     public JSONObject serialize(Set<String> ignoreProperties) {
-        JSONObject obj = new JSONObject();
-        
-        Map<String, Object> map = new HashMap<>();
-        
-        for(Map.Entry<String, Object> e : properties.entrySet())
-            if(!ignoreProperties.contains(e.getKey()))
-                map.put(e.getKey(), e.getValue());
-        
-        obj.put("properties", map);
+       JSONObject obj = super.serialize(ignoreProperties);
         
         JSONArray array = new JSONArray();
         
@@ -376,6 +347,7 @@ public class NeuralNetwork extends Network {
         return result;
     }
     
+    @Override
     public boolean gpuReady() {
         boolean gpuReady = true;
         for(Layer l : layers)
@@ -383,17 +355,9 @@ public class NeuralNetwork extends Network {
         
         return gpuReady;
     }
+
     
-    static AtomicLong COUNTER = new AtomicLong();
-    
-    public void prepareGPU() {
-        if(gpuReady())
-            throw new RuntimeException("GPU already initialized for connection");
-        
-        int device = (int) (COUNTER.getAndIncrement() % CudaEngine.getDeviceCount());
-        prepareGPU(device);
-    }
-    
+    @Override
     public void prepareGPU(int device) {
         if(gpuReady())
             throw new RuntimeException("GPU already initialized for connection");
@@ -427,44 +391,56 @@ public class NeuralNetwork extends Network {
         prepareGPU(newDevice);
     }
     
-    public float[] computeGPU(CUdeviceptr input) {
-        if(!gpuReady())
-            throw new RuntimeException("Network is not loaded to the GPU, please call prepareGPU first");
-        
-        CudaEngine.prepareThread(deviceId);
-        
-        CUstream stream = CudaEngine.aquireStream(deviceId);
-        cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
-        
-        CUdeviceptr[] layerResults = new CUdeviceptr[getLayerCount()];
-        layerResults[0] = input;
-        
-        for(int i=0; i < layers.length; i++)
-            layers[i].feedForwardGPU(layerResults[i], layerResults, stream, handle);
-            
-        float[] result = CudaUtil.fromGPUFloat(layerResults[last], outputSize, stream);
-        
-        JCudaDriver.cuStreamSynchronize(stream);
-        
-        CudaEngine.releaseStream(deviceId, stream);
-        
-        for(int i=1; i < layerResults.length; i++)
-            CudaEngine.freeMempool(deviceId, layerResults[i]);
-        
-        CudaEngine.finalizeThread();
-        
-        return result;
+    public final float[] computeGPU(CUdeviceptr input) {
+        return computeGPU(input, 1);
     }
+    
+    public float[] computeGPU(CUdeviceptr input, int count) {
+        long memory = getGPUComputeMemoryRequired(count);
+        lockMemory(memory, deviceId);
+        
+        try {
+            return computeGPUUnsafe(input, count);
+        } finally {
+            releaseMemory(memory);
+        }
+    }
+    
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int count) {
+        long memory = getGPUComputeMemoryRequired(count);
+        lockMemory(memory, deviceId);
+        
+        try {
+            boolean prepareThread = CudaEngine.getThreadDeviceId() != deviceId;
 
+            if(prepareThread)
+               CudaEngine.prepareThread(deviceId);
+            
+            CUstream stream = CudaEngine.aquireStream(deviceId);
+            
+            computeGPUUnsafe(input, output, count, stream);
+            
+            CudaEngine.releaseStream(deviceId, stream);
+            
+            if(prepareThread)
+               CudaEngine.finalizeThread();
+            
+        } finally {
+            releaseMemory(memory);
+        }
+    }
+    
     public float[] computeGPUUnsafe(CUdeviceptr input, int count) {
         if(!gpuReady())
             throw new RuntimeException("Network is not loaded to the GPU, please call prepareGPU first");
         
-        CudaEngine.prepareThread(deviceId);
+        boolean prepareThread = CudaEngine.getThreadDeviceId() != deviceId;
+        
+        if(prepareThread)
+           CudaEngine.prepareThread(deviceId);
         
         CUstream stream = CudaEngine.aquireStream(deviceId);
         cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
-//        JCublas2.cublasCreate(handle);
 
         CUdeviceptr[] layerResults = new CUdeviceptr[getLayerCount()];
         layerResults[0] = input;
@@ -481,21 +457,39 @@ public class NeuralNetwork extends Network {
         for(int i=1; i < layerResults.length; i++)
             CudaEngine.freeMempool(deviceId, layerResults[i]);
         
-//        JCublas2.cublasDestroy(handle);
-        CudaEngine.finalizeThread();
+        if(prepareThread)
+           CudaEngine.finalizeThread();
         
         return result;
     }
     
-    public float[] computeGPU(CUdeviceptr input, int count) {
-        long memory = getGPUComputeMemoryRequired(count);
-        lockMemory(memory, deviceId);
+    public void computeGPUUnsafe(CUdeviceptr input, CUdeviceptr output, int count, CUstream stream) {
+        if(!gpuReady())
+            throw new RuntimeException("Network is not loaded to the GPU, please call prepareGPU first");
         
-        try {
-            return computeGPUUnsafe(input, count);
-        } finally {
-            releaseMemory(memory);
-        }
+        boolean prepareThread = CudaEngine.getThreadDeviceId() != deviceId;
+        
+        if(prepareThread)
+           CudaEngine.prepareThread(deviceId);
+        
+        cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
+
+        CUdeviceptr[] layerResults = new CUdeviceptr[getLayerCount()];
+        layerResults[0] = input;
+        layerResults[last] = output;
+        
+        JCudaDriver.cuMemsetD32Async(layerResults[last], 0, outputSize * count, stream);
+        
+        for(int i=0; i < layers.length; i++)
+            layers[i].feedForwardGPU(layerResults[i], count, layerResults, stream, handle);
+        
+        JCudaDriver.cuStreamSynchronize(stream);
+
+        for(int i=1; i < layerResults.length-1; i++)
+            CudaEngine.freeMempool(deviceId, layerResults[i]);
+        
+        if(prepareThread)
+           CudaEngine.finalizeThread();
     }
     
     public long getGPUComputeMemoryRequired(int inputcount) {
@@ -505,11 +499,41 @@ public class NeuralNetwork extends Network {
     public long getGPUPrepareMemoryRequired() {
         return prepareMemReq;
     }
+//    
+//    public double sumAbsWeightsGPU() {
+//        if(!gpuReady())
+//            throw new RuntimeException("Network is not loaded to the GPU, please call prepareGPU first");
+//        
+//        boolean prepareThread = CudaEngine.getThreadDeviceId() != deviceId;
+//        
+//        if(prepareThread)
+//           CudaEngine.prepareThread(deviceId);
+//        
+//        CUstream stream = CudaEngine.aquireStream(deviceId);
+//        float[][] results = new float[getLayerCount()][];
+//        
+//        for(int i=0; i < layers.length; i++) {
+//            results[i] = layers[i].sumAbsWeightsGPU(stream);
+//        }
+//        
+//        JCudaDriver.cuStreamSynchronize(stream);
+//        
+//        CudaEngine.releaseStream(deviceId, stream);
+//
+//        double result = 0;
+//        for(float[] a : results)
+//            for(float f : a)
+//                result += f;
+//        
+//        for(int i=0; i < layers.length; i++)
+//            CudaEngine.freeMempool(deviceId, layerResults[i]);
+//        
+//        if(prepareThread)
+//           CudaEngine.finalizeThread();
+//        
+//        return result;
+//    }
     
-    public int getGPUDeviceId() {
-        return deviceId;
-    }
-
     /* add neurons to layer */
     public void expandLayer(int layer, int neurons) {
         expandLayer(layer, neurons, 0);
@@ -527,11 +551,13 @@ public class NeuralNetwork extends Network {
         signature = null;
     }
     
+    @Override
     public void crossOverMutate(NeuralNetwork a, NeuralNetwork b, float min, float max, double mutation) {
         for(int i=0; i < layers.length; i++)
             layers[i].crossOverMutate(a.getLayer(i), b.getLayer(i), min, max, mutation);
     }
     
+    @Override
     public void crossOverMutateGPU(NeuralNetwork a, NeuralNetwork b, float min, float max, double mutation, boolean nocopy) {
         if(!a.gpuReady() || !b.gpuReady())
             throw new RuntimeException("Parent networks are not loaded to the GPU, please call prepareGPU first");
@@ -567,11 +593,13 @@ public class NeuralNetwork extends Network {
         }
     }
     
+    @Override
     public void clipWeights(float min, float max) {
         for(int i=0; i < layers.length; i++)
             layers[i].clipWeights(min, max);
     }
 
+    @Override
     public void clipWeightsGPU(float min, float max) {
         if(gpuReady())
             throw new RuntimeException("Network is gpu ready, please call freeGPU first");
@@ -586,8 +614,7 @@ public class NeuralNetwork extends Network {
         CudaEngine.releaseStream(deviceId, stream);
 
         CudaEngine.finalizeThread();
-    }
-    
+    }    
     
     public void crossOverMutate(NeuralNetwork a, NeuralNetwork b, NeuralNetwork min, NeuralNetwork max, double mutation) {
         for(int i=0; i < layers.length; i++)
@@ -610,8 +637,9 @@ public class NeuralNetwork extends Network {
         return result;
     }
     
-    public float compare(NeuralNetwork a) {
-        float score = 0;
+    @Override
+    public double compare(NeuralNetwork a) {
+        double score = 0;
         
         for(int i=0; i < a.getLayerCount(); i++)
             score += layers[i].compare(a.getLayer(i));
@@ -645,6 +673,7 @@ public class NeuralNetwork extends Network {
         return score;
     }
     
+    @Override
     public void freeGPU() {
         for(Layer l : layers)
             l.freeGPU(deviceId);
@@ -652,25 +681,6 @@ public class NeuralNetwork extends Network {
         releaseMemory(prepareMemReq);
         
         deviceId = -1;
-    }
-    
-    private void lockMemory(long size, int deviceId) {
-        Semaphore lock = CudaEngine.getMemLock(deviceId);
-        
-        if(lock == null)
-            throw new RuntimeException("Must specify maximum memory usage for device: " + deviceId);
-
-        int memoryKB = (int)Math.ceil(size / 1024.0);
-        
-        lock.acquireUninterruptibly(memoryKB);        
-    }
-    
-    private void releaseMemory(long size) {
-        Semaphore lock = CudaEngine.getMemLock(deviceId);
-        
-        int memoryKB = (int)Math.ceil(size / 1024.0);
-        
-        lock.release(memoryKB);
     }
     
     /**
@@ -782,5 +792,19 @@ public class NeuralNetwork extends Network {
         prepareMemReq = 0;
         for(Layer l : layers)
             prepareMemReq += l.getMemoryRequirements();
+    }
+
+    @Override
+    public float[] compute(NetworkInput input) {
+        switch(input.type) {
+            case float_array:
+                return compute(input.getInputArray(), input.count);
+            case floatbuffer_array:
+                return compute(input.getInputFloatBuffer(), input.count);
+            case deviceptr:
+                return computeGPU(input.getInputDevicePtr(), input.count);
+            default:
+                throw new RuntimeException("invalid input type for neuralnetwork: " + input.type);
+        }
     }
 }

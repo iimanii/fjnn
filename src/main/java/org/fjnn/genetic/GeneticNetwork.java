@@ -23,6 +23,7 @@
  */
 package org.fjnn.genetic;
 
+import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -35,19 +36,22 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.Stack;
 import java.util.concurrent.atomic.AtomicInteger;
+import jcuda.driver.CUdeviceptr;
 import org.fjnn.activation.Activation;
 import org.fjnn.base.Network;
+import org.fjnn.base.NetworkInput;
 import org.fjnn.genetic.GeneticConfig.mutation;
 import org.fjnn.genetic.GeneticNode.NodeType;
 import org.fjnn.network.Connection;
 import org.fjnn.network.NeuralNetwork;
 import org.fjnn.util.Rng;
+import org.json.JSONObject;
 
 /**
  *
  * @author ahmed
  */
-public class GeneticNetwork extends Network {
+public class GeneticNetwork extends Network<GeneticNetwork> {
     public List<GeneticNode> inputs;
     public List<GeneticNode> hidden;
     public List<GeneticNode> outputs;
@@ -87,7 +91,12 @@ public class GeneticNetwork extends Network {
     
     private NeuralNetwork network;
     private Map<String, mapping> networkMapping;
-    
+
+    @Override
+    public float[] compute(NetworkInput input) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
     static class mapping {
         final int layer;
         final int from;
@@ -1046,5 +1055,101 @@ public class GeneticNetwork extends Network {
             sum = hiddenActivation.compute(sum);
         
         return sum;
+    }
+    
+
+    @Override
+    public float[] compute(float[] input, int count) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public float[] compute(FloatBuffer input) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public float[] compute(FloatBuffer input, int count) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void clipWeights(float clipMin, float clipMax) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void ensureCPU() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public boolean gpuReady() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void prepareGPU(int deviceId) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void clipWeightsGPU(float clipMin, float clipMax) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void freeGPU() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+    
+    @Override
+    public void copyWeights(GeneticNetwork n) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public GeneticNetwork copy(boolean copyWeights, boolean createWeights) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public double compare(GeneticNetwork n0) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void crossOverMutate(GeneticNetwork n0, GeneticNetwork n1, float f, float mutationAmount, double m) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void crossOverMutateGPU(GeneticNetwork n0, GeneticNetwork n1, float min, float max, double mutation, boolean nocopy) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+    
+    @Override
+    public long getWeightsCount() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public long getGPUComputeMemoryRequired(int count) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public long getGPUPrepareMemoryRequired() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void kaiming() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public JSONObject serialize(Set<String> ignoreProperties) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 }

@@ -87,6 +87,8 @@ public abstract class Activation implements Serializable {
                 return new Step();
             case "tanh":
                 return new Tanh();
+            case "linear":
+                return new Linear();
         }
         
         if(name.toLowerCase().startsWith("complex"))

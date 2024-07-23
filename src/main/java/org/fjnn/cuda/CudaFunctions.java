@@ -36,6 +36,34 @@ import org.fjnn.util.util;
  */
 public class CudaFunctions {
     
+    public static void copyStride(CUdeviceptr src, CUdeviceptr dst, int stride, int spread, int count, CUstream stream) {
+        int device = CudaEngine.getThreadDeviceId();
+        int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+        
+        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACCUMULATE, "copy_stride", device);
+        
+        int blockSizeX = Math.min(threadsPerBlock, stride);
+        int blockSizeY = threadsPerBlock / blockSizeX;
+        int gridSizeY  = (stride - 1) / threadsPerBlock + 1;
+        
+        int gridSizeX = (count - 1) / blockSizeY + 1;
+        
+        Pointer kernelParameters = Pointer.to(
+            Pointer.to(src),
+            Pointer.to(dst),
+            Pointer.to(new int[]{stride}),
+            Pointer.to(new int[]{spread}),
+            Pointer.to(new int[]{count})
+        );
+        
+        JCudaDriver.cuLaunchKernel(function,
+            gridSizeX, gridSizeY, 1,            // Grid dimension
+            blockSizeX, blockSizeY, 1,          // Block dimension
+            0, stream,                          // Shared memory size and stream
+            kernelParameters, null              // Kernel- and extra parameters
+        );
+    }
+    
     public static void addStride(CUdeviceptr a, CUdeviceptr b, int stride, int count, CUstream stream) {
         addStride(a, b, stride, count, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
     }

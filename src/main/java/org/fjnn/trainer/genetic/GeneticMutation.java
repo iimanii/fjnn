@@ -7,6 +7,7 @@ package org.fjnn.trainer.genetic;
 
 import java.util.ArrayList;
 import java.util.List;
+import org.fjnn.base.Network;
 import org.fjnn.network.NeuralNetwork;
 import org.fjnn.util.SMA;
 import org.fjnn.util.statistics;
@@ -38,8 +39,8 @@ public class GeneticMutation {
         this.mutation.set(initialValue);
     }
     
-    public void update(List<NeuralNetwork> networks, String property) {
-        ArrayList<NeuralNetwork> copy = new ArrayList<>(networks);
+    public void update(List<? extends Network> networks, String property) {
+        ArrayList<Network> copy = new ArrayList<>(networks);
         
         GeneticUtil.sortDesc(copy, property);
         
@@ -50,7 +51,7 @@ public class GeneticMutation {
         double rate = networks.size() / 4;
         
         for(int i=0; i < networks.size(); i++) {
-            NeuralNetwork n = networks.get(i);
+            Network n = networks.get(i);
             if(!n.hasProperty(GeneticTrainer.MUTATION_PROP))
                 continue;
             

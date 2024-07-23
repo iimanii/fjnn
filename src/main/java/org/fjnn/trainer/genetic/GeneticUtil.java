@@ -48,11 +48,11 @@ public class GeneticUtil {
                 Double.compare((double)o2.getProperty(property), (double)o1.getProperty(property)));
     }
 
-    public static NeuralNetwork pickRandom(List<? extends NeuralNetwork> pool, String property) {
+    public static <T extends Network> T pickRandom(List<T> pool, String property) {
         return pickRandom(pool, property, null);
     }
-    public static NeuralNetwork pickRandom(List<? extends NeuralNetwork> pool, String property, Network avoid) {
-        NeuralNetwork n = null;
+    public static <T extends Network> T pickRandom(List<T> pool, String property, Network avoid) {
+        T n = null;
         
         double r = Rng.nextDouble();
 
@@ -83,7 +83,7 @@ public class GeneticUtil {
         return n;
     }
     
-    public static void incrementProperty(NeuralNetwork n, String property) {
+    public static void incrementProperty(Network n, String property) {
         synchronized(n) {
             if(!n.hasProperty(property))
                 n.setProperty(property, 0);
@@ -92,18 +92,18 @@ public class GeneticUtil {
         }
     }
 
-    public static NeuralNetwork tournamentPick(List<NeuralNetwork> pool, int size, String property) {
+    public static <T extends Network> T tournamentPick(List<T> pool, int size, String property) {
         return tournamentPick(pool, size, property, null);
     }
-    public static NeuralNetwork tournamentPick(List<NeuralNetwork> pool, int size, String property, NeuralNetwork avoid) {
-        List<NeuralNetwork> copy = new ArrayList<>(pool);
+    public static <T extends Network> T tournamentPick(List<T> pool, int size, String property, T avoid) {
+        List<T> copy = new ArrayList<>(pool);
         
         if(avoid != null)
             copy.remove(avoid);
 
         Collections.shuffle(copy, ThreadLocalRandom.current());
         
-        List<NeuralNetwork> selected = new ArrayList<>(copy.subList(0, size));
+        List<T> selected = new ArrayList<>(copy.subList(0, size));
         
         sortDesc(selected, property);
         

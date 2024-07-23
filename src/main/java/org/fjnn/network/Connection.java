@@ -136,20 +136,6 @@ public class Connection {
         return new Connection(neurons, links, wc, bc);
     }
     
-    void feedForward(float[] input, float[] result) {
-        for(int i=0; i < neurons; i++) {
-            int k = i * links;
-            
-            /* neurons */
-            for(int j=0; j < links; j++)
-                result[j] += input[i] * weights[k + j];
-        }
-        
-        for(int i=0; i < links; i++) {
-            result[i] += biases[i];
-        }
-    }
-    
     void feedForward(float[] input, int count, float[] result) {
         for(int c=0; c < count; c++) {
             int x = c * neurons;
@@ -169,44 +155,17 @@ public class Connection {
         }
     }
     
-    void feedForward(FloatBuffer input, FloatBuffer result) {
-        intrinsic.sgemv(input, result, weightsCPU, biasCPU, neurons, links);
-    }
-    
     void feedForward(FloatBuffer input, int count, FloatBuffer result) {
-        intrinsic.sgemm(input, count, result, weightsCPU, biasCPU, neurons, links);
-    }
-    
-    void feedForwardGPU(CUdeviceptr input, CUdeviceptr result, CUstream stream, cublasHandle handle) {
-        /* add bias to current result accumulator */
-        CudaFunctions.addStride(result, biasesGPU, links, 1, stream);
-        
-        Pointer p = Pointer.to(new float[]{1.0f});
-        
-        /* NOTE: cublas uses column-major format */
-        int m = links;
-        int n = neurons;
-        
-        CUdeviceptr a = weightsGPU;
-        CUdeviceptr x = input;        
-        CUdeviceptr y = result;
-
-        cudaStream_t stream0 = new cudaStream_t(stream);
-        synchronized(handle) {
-            JCublas2.cublasSetStream(handle, stream0);
-            /* Compute Vector Matrix Multiplication */
-            JCublas2.cublasSgemv(handle, cublasOperation.CUBLAS_OP_N, m, n, p, a, m, x, 1, p, y, 1);
-        }
+        if(count == 1)
+            intrinsic.sgemv(input, result, weightsCPU, biasCPU, neurons, links);
+        else
+            intrinsic.sgemm(input, count, result, weightsCPU, biasCPU, neurons, links);
     }
     
     void feedForwardGPU(CUdeviceptr input, int count, CUdeviceptr result, CUstream stream, cublasHandle handle) {
         /* add bias to current result accumulator */
         CudaFunctions.addStride(result, biasesGPU, links, count, stream);
         
-        
-//        System.out.printf("%d %d %d\n", count, neurons, links);
-//        CudaFunctions.MatrixMultiply(input, weightsGPU, result, count, neurons, links, 1, stream);
-
         Pointer p = Pointer.to(new float[]{1.0f});
         
         /* NOTE: cublas uses column-major format */
@@ -220,9 +179,19 @@ public class Connection {
 
         synchronized(handle) {
             JCublas2.cublasSetStream(handle, new cudaStream_t(stream));
+//            
+//            System.out.printf("%d %d %d\n", links, count, neurons);
+//            if(neurons == 300) {
+//                System.out.println(b);
+//                b = CudaUtil.createFloat(count * neurons);
+//            }
             
             /* Compute Matrix Multiplication */
-            JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_N, cublasOperation.CUBLAS_OP_N, m, n, k, p, a, m, b, k, p, c, m);
+            if(count == 1)
+                JCublas2.cublasSgemv(handle, cublasOperation.CUBLAS_OP_N, m, k, p, a, m, b, 1, p, c, 1);
+            else
+                JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_N, cublasOperation.CUBLAS_OP_N, m, n, k, p, a, m, b, k, p, c, m);
+//            JCudaDriver.cuStreamSynchronize(stream);    
         }
     }
     
@@ -522,8 +491,8 @@ public class Connection {
         return new Connection(neurons, links, weights, biases);
     }
     
-    float compare(Connection c) {
-        float score = 0;
+    double compare(Connection c) {
+        double score = 0;
         
         float[] wa = c.getWeights();
 
@@ -543,6 +512,11 @@ public class Connection {
     }
 
     void copyWeights(Connection connection) {
+        if(neurons != connection.neurons || links != connection.links)
+            throw new RuntimeException(
+                String.format("incompatible copy weights: %d:%d %d:%d",
+                            neurons, connection.neurons, links, connection.links));
+        
         weights = Arrays.copyOf(connection.weights, connection.weights.length);
         biases = Arrays.copyOf(connection.biases, connection.biases.length);
         

@@ -21,8 +21,9 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import jcuda.driver.CUdeviceptr;
+import org.fjnn.base.Network;
+import org.fjnn.base.NetworkInput;
 import org.fjnn.cuda.CudaEngine;
-import org.fjnn.network.NeuralNetwork;
 import org.fjnn.trainer.genetic.GeneticTrainerConfig.ComputeMode;
 import org.fjnn.trainer.genetic.TrainingSet.TrainingResult;
 import org.fjnn.util.Rng;
@@ -31,8 +32,9 @@ import org.fjnn.util.util;
 /**
  *
  * @author ahmed
+ * @param <T>
  */
-public class GeneticTrainer {
+public class GeneticTrainer <T extends Network> {
 
     public static class trainPerformance {
         public float computeTime;
@@ -55,13 +57,10 @@ public class GeneticTrainer {
     /* maximum networks in pool */
     public final int poolsize;
     
-    /* first network node to be submited */
-    public final NeuralNetwork initial;
-    
     final TrainingSet trainingSet;
     
     /* best performing network */
-    NeuralNetwork best;
+    T best;
             
     /* best fitness based on last epoch */
     private double bestFitness;
@@ -70,7 +69,7 @@ public class GeneticTrainer {
     private double averageFitness;
 
     /* mutated each generation */
-    List<NeuralNetwork> pool;
+    List<T> pool;
 
     /* how many times did we mutate / crossover */
     int generation;
@@ -94,6 +93,8 @@ public class GeneticTrainer {
     public static final String PARENT_PROP = "parent";
     public static final String PARENT_MUTATION_A = "parent-mutation-a";
     public static final String PARENT_MUTATION_B = "parent-mutation-b";
+    public static final String PARENT_GENERATION_A = "parent-generation-a";
+    public static final String PARENT_GENERATION_B = "parent-generation-b";
     public static final String GENERATION_PROP = "generation";
     public static final String FITNESS_PROP = "fitness";
     public static final String FITNESS_SQUARED_PROP = "fitness-squared";
@@ -109,11 +110,11 @@ public class GeneticTrainer {
     
     private boolean ownExecutor;
     
-    public GeneticTrainer(NeuralNetwork base, int poolsize, TrainingSet trainingSet, GeneticTrainerConfig config) {
+    public GeneticTrainer(T base, int poolsize, TrainingSet trainingSet, GeneticTrainerConfig config) {
         this(Arrays.asList(base), poolsize, trainingSet, config);
     }
     
-    public GeneticTrainer(List<NeuralNetwork> networks, int poolsize, TrainingSet trainingSet, GeneticTrainerConfig config) {
+    public GeneticTrainer(List<T> networks, int poolsize, TrainingSet trainingSet, GeneticTrainerConfig config) {
         config.checkTournamentSize(poolsize);
         
         this.poolsize = poolsize;
@@ -122,7 +123,6 @@ public class GeneticTrainer {
         this.threadPool = Executors.newCachedThreadPool();
         this.ownExecutor = true;
         this.trainingSet = trainingSet;
-        this.initial = networks.get(0);
         this.mutation = new GeneticMutation(5, 0.5, 0.00001, 1);
         this.config = config;
         this.generation = config.startingGeneration;
@@ -131,7 +131,7 @@ public class GeneticTrainer {
         /* first calculate all fitness */
         ArrayList<Future<?>> futures = new ArrayList<>();
         
-        for(NeuralNetwork n : networks) {
+        for(T n : networks) {
             if(!n.hasProperty(ID_PROP))
                 n.setProperty(ID_PROP, lastID.incrementAndGet());
             
@@ -144,7 +144,7 @@ public class GeneticTrainer {
         
         int missing = poolsize - networks.size();
         for(int i=0; i < missing; i++) {
-            NeuralNetwork n = this.initial.copy(false);
+            T n = (T)networks.get(0).copy(false);
             n.setProperty(ID_PROP, lastID.incrementAndGet());
             n.setProperty(GENERATION_PROP, generation);
             n.setProperty(MUTATION_PROP, 1.0);
@@ -152,7 +152,10 @@ public class GeneticTrainer {
             pool.add(n);
         }
         
-        for(NeuralNetwork n : pool) {
+        System.out.println("preprocessing... ");
+        long time = System.nanoTime();
+        
+        for(T n : pool) {
             if(!n.hasProperty(FITNESS_PROP)) {
                 futures.add(threadPool.submit(() -> {
                     TrainingResult output = compute(n, -1);
@@ -163,7 +166,10 @@ public class GeneticTrainer {
             }
         }
         
-        util.waitForAll(futures);        
+        util.waitForAll(futures);       
+        
+        long time_2 = System.nanoTime();
+        System.out.println("preprocessing done: " + (time_2 - time) / 1e6f); 
         
         copyOverallFitness(pool);
         
@@ -173,33 +179,28 @@ public class GeneticTrainer {
         this.averageFitness = calculateAverageFitness(pool, FITNESS_PROP);
     }
     
-    private TrainingResult compute(NeuralNetwork n, int batch) {
+    private TrainingResult compute(T n, int batch) {
         float[] result;
         
-        int batchsize = batch < 0 ? trainingSet.getAllCount() : trainingSet.getCount(batch);
-        
         switch(config.computeMode) {
-            case float_buffer:
-                FloatBuffer bufferInput = batch < 0 ? trainingSet.getAllBufferInput() : trainingSet.getBufferInput(batch);
-                result = n.compute(bufferInput, batchsize);
-                break;
             case gpu:
                 if(!n.gpuReady())
                     n.prepareGPU(config.deviceId);
                 
-                CUdeviceptr gpuInput = batch == -1 ? trainingSet.getAllGPUInput(config.deviceId) : trainingSet.getGPUInput(config.deviceId, batch);
-                result = n.computeGPU(gpuInput, batchsize);
+                NetworkInput gpuInput = batch == -1 ? trainingSet.getAllGPUInput(config.deviceId) : trainingSet.getGPUInput(config.deviceId, batch);
+                result = n.compute(gpuInput);
                 break;
             case gpu_all:
                 if(!n.gpuReady())
                     n.prepareGPU();
                 
                 gpuInput = batch < 0 ? trainingSet.getAllGPUInput(n.getGPUDeviceId()) : trainingSet.getGPUInput(n.getGPUDeviceId(), batch);
-                result = n.computeGPU(gpuInput, batchsize);
+                result = n.compute(gpuInput);
                 break;
             default:
-                float[] input = trainingSet.getInput(batch);
+                NetworkInput input = batch == -1 ? trainingSet.getAllInput() : trainingSet.getInput(batch);
                 result = n.compute(input);
+                break;
         }
         
         return batch < 0 ? trainingSet.calculateAllFitness(result) : trainingSet.calculateFitness(result, batch);
@@ -237,8 +238,8 @@ public class GeneticTrainer {
             
             /* crossover mutate */
             boolean crossOverGPU = config.crossover == ComputeMode.gpu && config.computeMode != ComputeMode.gpu_all;
-
-            List<NeuralNetwork> newGeneration = config.useTournamentSelection ? 
+            
+            List<T> newGeneration = config.useTournamentSelection ? 
                     createNewGenerationTS(maxMutation, config.tournametSelectionSize, property, crossOverGPU) : 
                     createNewGenerationRW(maxMutation, property, crossOverGPU);
 
@@ -246,8 +247,8 @@ public class GeneticTrainer {
             
             boolean cleanGPU = config.computeMode == ComputeMode.gpu || config.computeMode == ComputeMode.gpu_all;
 
-            if(config.eliteLimit > 0) {
-                ArrayList<NeuralNetwork> sort = new ArrayList<>(pool);
+            if(config.eliteLimit >= 0) {
+                ArrayList<T> sort = new ArrayList<>(pool);
                 GeneticUtil.sortDesc(sort, FITNESS_PROP);
                 
                 for(int j=0; j < config.eliteLimit; j++)
@@ -257,7 +258,7 @@ public class GeneticTrainer {
                     ArrayList<Future<?>> futures = new ArrayList<>();
                     
                     for(int j=config.eliteLimit; j < pool.size(); j++) {
-                        NeuralNetwork n = pool.get(j);
+                        T n = pool.get(j);
                         futures.add(threadPool.submit(() -> {
                             n.freeGPU();
                         }));
@@ -273,7 +274,7 @@ public class GeneticTrainer {
             
             int batchId = i;
             
-            for(NeuralNetwork n : newGeneration) {
+            for(T n : newGeneration) {
                 if(trainingSet.getBatchCount() > 1 || !n.hasProperty(FITNESS_PROP)) {
                     futures.add(threadPool.submit(() -> {                    
                         TrainingResult output = compute(n, batchId);
@@ -298,7 +299,7 @@ public class GeneticTrainer {
 
             if(crossOverGPU) {
                 for(int j=0; j < poolsize; j++) {
-                    NeuralNetwork n = newGeneration.get(j);
+                    T n = newGeneration.get(j);
                     futures.add(threadPool.submit(() -> {
                         n.ensureCPU();
                     }));
@@ -307,7 +308,7 @@ public class GeneticTrainer {
 
             if(cleanGPU) {
                 for(int j=poolsize; j < newGeneration.size(); j++) {
-                    NeuralNetwork n = newGeneration.get(j);
+                    T n = newGeneration.get(j);
                     futures.add(threadPool.submit(() -> {
                         n.freeGPU();
                     }));
@@ -323,7 +324,7 @@ public class GeneticTrainer {
 
         long time_4 = System.nanoTime();
         
-        ArrayList<NeuralNetwork> sort = new ArrayList<>(pool);  
+        ArrayList<T> sort = new ArrayList<>(pool);  
         if(trainingSet.getBatchCount() > 1) {
             /* calculate fitness for the pool over the whole dataset */
             calculateOverallFitness(sort);      
@@ -349,22 +350,22 @@ public class GeneticTrainer {
     }
     
     /* using tournament selection */
-    private List<NeuralNetwork> createNewGenerationTS(double maxMutation, int tournamentSize, String property, boolean gpu) {
-        List<NeuralNetwork> result = new ArrayList<>();
+    private List<T> createNewGenerationTS(double maxMutation, int tournamentSize, String property, boolean gpu) {
+        List<T> result = new ArrayList<>();
 
         ArrayList<Future<?>> futures = new ArrayList<>();
         
         /* crossover mutate */
         for(int i=0; i < poolsize; i++) {
-            NeuralNetwork n = best.copy(false, !gpu);
+            T n = (T)best.copy(false, !gpu);
             n.setProperty(ID_PROP, lastID.incrementAndGet());
             result.add(n);
             double m = maxMutation;//Rng.nextDouble(0, maxMutation);
             
             futures.add(threadPool.submit(() -> {
                 /* select parents */
-                NeuralNetwork n0 = GeneticUtil.tournamentPick(pool, tournamentSize, property);
-                NeuralNetwork n1 = GeneticUtil.tournamentPick(pool, tournamentSize, property, n0);
+                T n0 = GeneticUtil.tournamentPick(pool, tournamentSize, property);
+                T n1 = GeneticUtil.tournamentPick(pool, tournamentSize, property, n0);
             
                 if(gpu) {
                     n.crossOverMutateGPU(n0, n1, -config.mutationAmount, config.mutationAmount, m, true);
@@ -393,6 +394,8 @@ public class GeneticTrainer {
                 n.setProperty(PARENT_PROP, parent);
                 n.setProperty(PARENT_MUTATION_A, n0.getProperty(MUTATION_PROP));
                 n.setProperty(PARENT_MUTATION_B, n1.getProperty(MUTATION_PROP));
+                n.setProperty(PARENT_GENERATION_A, n0.getProperty(GENERATION_PROP));
+                n.setProperty(PARENT_GENERATION_B, n1.getProperty(GENERATION_PROP));
             }));
         }
 
@@ -402,8 +405,8 @@ public class GeneticTrainer {
     }
     
     /* using roulette wheel */
-    private List<NeuralNetwork> createNewGenerationRW(double maxMutation, String property, boolean gpu) {
-        List<NeuralNetwork> result = new ArrayList<>();
+    private List<T> createNewGenerationRW(double maxMutation, String property, boolean gpu) {
+        List<T> result = new ArrayList<>();
 
         ArrayList<Future<?>> futures = new ArrayList<>();
         
@@ -413,13 +416,13 @@ public class GeneticTrainer {
         
         /* crossover mutate */
         for(int i=0; i < poolsize; i++) {
-            NeuralNetwork n = best.copy(false, !gpu);
+            T n = (T)best.copy(false, !gpu);
             n.setProperty(ID_PROP, lastID.incrementAndGet());
             double m = maxMutation;//Rng.nextDouble(0, maxMutation);
             result.add(n);
             
-            NeuralNetwork n0 = GeneticUtil.pickRandom(pool, commulativeProprety);
-            NeuralNetwork n1 = GeneticUtil.pickRandom(pool, commulativeProprety, n0);
+            T n0 = GeneticUtil.pickRandom(pool, commulativeProprety);
+            T n1 = GeneticUtil.pickRandom(pool, commulativeProprety, n0);
             
             /* select parents */
             futures.add(threadPool.submit(() -> {
@@ -443,6 +446,8 @@ public class GeneticTrainer {
                 n.setProperty(PARENT_PROP, parent);
                 n.setProperty(PARENT_MUTATION_A, n0.getProperty(MUTATION_PROP));
                 n.setProperty(PARENT_MUTATION_B, n1.getProperty(MUTATION_PROP));
+                n.setProperty(PARENT_GENERATION_A, n0.getProperty(GENERATION_PROP));
+                n.setProperty(PARENT_GENERATION_B, n1.getProperty(GENERATION_PROP));
             }));
         }
 
@@ -451,10 +456,10 @@ public class GeneticTrainer {
         return result;        
     }
     
-    private void copyOverallFitness(List<NeuralNetwork> networks) {
+    private void copyOverallFitness(List<T >networks) {
         ArrayList<Future<?>> futures = new ArrayList<>();
         
-        for(NeuralNetwork n : networks) {
+        for(T n : networks) {
             futures.add(threadPool.submit(() -> {
                 n.setProperty(OVERALL_FITNESS_PROP, n.getProperty(FITNESS_PROP));
                 n.setProperty(OVERALL_DETAILED_FITNESS_PROP, n.getProperty(DETAILED_FITNESS_PROP));
@@ -464,10 +469,10 @@ public class GeneticTrainer {
         util.waitForAll(futures);
     }
     
-    private void calculateOverallFitness(List<NeuralNetwork> networks) {
+    private void calculateOverallFitness(List<T> networks) {
         ArrayList<Future<?>> futures = new ArrayList<>();
         
-        for(NeuralNetwork n : networks) {
+        for(T n : networks) {
             futures.add(threadPool.submit(() -> {
                 TrainingResult output = compute(n, -1);
 
@@ -479,11 +484,11 @@ public class GeneticTrainer {
         util.waitForAll(futures);
     }
 
-    private double calculateAverageFitness(List<NeuralNetwork> networks, String property) {
+    private double calculateAverageFitness(List<T> networks, String property) {
         double total = 0;
         double count = 0;
         
-        for(NeuralNetwork n : networks) {
+        for(T n : networks) {
             total += (double) n.getProperty(property);
             count++;
         }
@@ -491,10 +496,10 @@ public class GeneticTrainer {
         return total / count;
     }
 
-    private List<NeuralNetwork> filterEqualSolutions(List<NeuralNetwork> array, boolean cleanGPU, int minSize) {
+    private List<T> filterEqualSolutions(List<T> array, boolean cleanGPU, int minSize) {
         HashMap<Double, List> map = new HashMap<>();
         
-        for(NeuralNetwork n : array) {
+        for(T n : array) {
             double fitness = (double) n.getProperty(FITNESS_PROP);
             if(!map.containsKey(fitness))
                 map.put(fitness, new ArrayList<>());
@@ -506,16 +511,16 @@ public class GeneticTrainer {
         
         for(Map.Entry<Double, List> e : map.entrySet()) {
             futures.add(threadPool.submit(() -> {
-                List<NeuralNetwork> list = e.getValue();
+                List<T> list = e.getValue();
                 
                 if(list.size() == 1)
                     return list;
                 
-                List<NeuralNetwork> result = new ArrayList<>();
+                List<T> result = new ArrayList<>();
                 
                 List<Future<?>> f = new ArrayList<>();
 
-                for(NeuralNetwork n : list) {
+                for(T n : list) {
                     f.add(threadPool.submit(() -> {
                         double[] detailed = (double[])n.getProperty(DETAILED_FITNESS_PROP);
                         n.setProperty(DETAILED_FITNESS_HASH_PROP, util.doubleArrayHash(detailed));
@@ -528,7 +533,7 @@ public class GeneticTrainer {
                 
                 int filtered = 0;
                 
-                for(NeuralNetwork n : list) {
+                for(T n : list) {
                     int hash = (int) n.getProperty(DETAILED_FITNESS_HASH_PROP);
                     
                     if(!hashes.contains(hash)) {
@@ -545,9 +550,9 @@ public class GeneticTrainer {
             }));
         }
         
-        List<NeuralNetwork> result = new ArrayList<>();
+        List<T> result = new ArrayList<>();
         
-        for(Future<List<NeuralNetwork>> f : futures)
+        for(Future<List<T>> f : futures)
             try {
                 result.addAll(f.get());
             } catch (InterruptedException | ExecutionException ex) {
@@ -564,8 +569,8 @@ public class GeneticTrainer {
         if(minRemain > 0) {
             System.out.println("Adding min size: " + (minSize - result.size()));
             
-            ArrayList<NeuralNetwork> rest = new ArrayList<>(array);
-            for(NeuralNetwork n : result)
+            ArrayList<T> rest = new ArrayList<>(array);
+            for(T n : result)
                 rest.remove(n);
             
             Collections.shuffle(rest, ThreadLocalRandom.current());
@@ -578,7 +583,7 @@ public class GeneticTrainer {
         
         /* free gpu */
         if(cleanGPU)
-            for(NeuralNetwork n : array)
+            for(T n : array)
                 if(!result.contains(n))
                     freeFutures.add(threadPool.submit(() -> {
                         n.freeGPU();
@@ -596,7 +601,7 @@ public class GeneticTrainer {
     
     public double getDiversity() {
         double score = 0;
-        ArrayList<Future<Float>> futures = new ArrayList<>();
+        ArrayList<Future<Double>> futures = new ArrayList<>();
         
         int size = pool.size();
         for(int i=0; i < size; i++) {
@@ -610,7 +615,7 @@ public class GeneticTrainer {
             }
         }
         
-        for(Future<Float> f : futures)
+        for(Future<Double> f : futures)
             try {
                 score += f.get();
             } catch (ExecutionException | InterruptedException ex) {
@@ -619,10 +624,6 @@ public class GeneticTrainer {
         
         score /= (size * (size-1)) / 2;
         return score;
-    }
-    
-    public double getInitialFitness() {
-        return (double) initial.getProperty(FITNESS_PROP);
     }
     
     public double getBestFitness() {
@@ -634,11 +635,11 @@ public class GeneticTrainer {
         return averageFitness;
     }
     
-    public NeuralNetwork getBest() {
+    public T getBest() {
         return best;
     }
     
-    public List<NeuralNetwork> getPool() {
+    public List<T> getPool() {
         return new ArrayList<>(pool);
     }
     
@@ -646,7 +647,7 @@ public class GeneticTrainer {
         return mutation.get();
     }
     
-    private void randomize(NeuralNetwork n0, NeuralNetwork n1, double mutation) {
+    private void randomize(T n0, T n1, double mutation) {
         n0.crossOverMutate(n0, n1, -1, 1, mutation);
     }
 
@@ -677,7 +678,7 @@ public class GeneticTrainer {
         if(ownExecutor)
             threadPool.shutdown();
         
-        for(NeuralNetwork n : pool)
+        for(T n : pool)
             n.freeGPU();
     }
 

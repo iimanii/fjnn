@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import jcuda.driver.CUdeviceptr;
@@ -187,9 +188,9 @@ public class CudaMempool {
         if(ptr != null)
             return ptr;
         
-        createLock.lock();
         
         try {
+            createLock.tryLock(1, TimeUnit.MINUTES);
             ptr = storage.get(size);
 
             if(ptr != null)
@@ -227,6 +228,8 @@ public class CudaMempool {
             storage.register(ptr, size);
 
             return ptr;
+        } catch (InterruptedException ex) {
+            throw new RuntimeException(ex);
         } finally {
             createLock.unlock();
         }

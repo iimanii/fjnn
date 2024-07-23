@@ -45,6 +45,22 @@ __global__ void add_stride(float* a, float* b, int stride_size, long total_size)
 }
 
 extern "C"
+__global__ void copy_stride(float* src, float* dst, int stride_size, int spread_size, int count) {
+    int thread_index = threadIdx.x + blockIdx.y * blockDim.x;
+    
+    if(thread_index < stride_size) {
+        int stride_id = threadIdx.y + blockIdx.x * blockDim.y;
+        
+        if(stride_id < count) {
+            int src_index = stride_id * stride_size + thread_index;
+            int dst_index = stride_id * spread_size + thread_index;
+
+            dst[dst_index] = src[src_index];
+        }
+    }
+}
+
+extern "C"
 __global__ void add_stride_vectorized(float* a, float* b, int stride_size, long strides_count) {
     int threadIndex = threadIdx.x + blockIdx.x * blockDim.x;
     int b_index = threadIndex * 4;

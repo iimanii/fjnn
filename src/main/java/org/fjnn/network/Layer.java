@@ -147,21 +147,6 @@ public class Layer {
         }
     }
     
-    protected void feedForward(float[] input, float[][] result) {
-        if(activation != null)
-            activation.compute(input);
-        
-        for(Entry<Integer, Connection> e : connections.entrySet()) {
-            int toLayer = e.getKey();
-            Connection c = e.getValue();
-            
-            if(result[toLayer] == null)
-                result[toLayer] = new float[c.links];
-                
-            c.feedForward(input, result[toLayer]);
-        }
-    }
-    
     protected void feedForward(float[] input, int count, float[][] result) {
         if(activation != null)
             activation.compute(input, neurons, count);
@@ -174,21 +159,6 @@ public class Layer {
                 result[toLayer] = new float[c.links * count];
                 
             c.feedForward(input, count, result[toLayer]);
-        }
-    }
-    
-    protected void feedForward(FloatBuffer input, FloatBuffer[] result) {
-        if(activation != null)
-            activation.compute(input);
-        
-        for(Entry<Integer, Connection> e : connections.entrySet()) {
-            int layer = e.getKey();
-            Connection c = e.getValue();
-            
-            if(result[layer] == null)
-                result[layer] = ByteBuffer.allocateDirect(c.links * Float.BYTES).order(ByteOrder.nativeOrder()).asFloatBuffer();
-        
-            c.feedForward(input, result[layer]);
         }
     }
     
@@ -319,23 +289,6 @@ public class Layer {
         return total;
     }
     
-    protected void feedForwardGPU(CUdeviceptr input, CUdeviceptr[] result, CUstream stream, cublasHandle handle) {
-        if(activation != null)
-            activation.computeGPU(input, neurons, 1, stream);
-        
-        for(Entry<Integer, Connection> e : connections.entrySet()) {
-            int toLayer = e.getKey();
-            Connection c = e.getValue();
-            
-            if(result[toLayer] == null) {
-               result[toLayer] = CudaEngine.getMempoolFloat(c.links);
-               JCudaDriver.cuMemsetD32Async(result[toLayer], 0, c.links, stream);
-            }
-        
-            c.feedForwardGPU(input, result[toLayer], stream, handle);
-        }
-    }
-    
     protected void feedForwardGPU(CUdeviceptr input, int count, CUdeviceptr[] result, CUstream stream, cublasHandle handle) {
         if(activation != null)
             activation.computeGPU(input, neurons, count, stream);
@@ -431,6 +384,12 @@ public class Layer {
         return getConnection().hasBias();
     }
 
+//    void sumAbsWeightsGPU(CUdeviceptr ptr, CUstream stream) {
+//        result[toLayer] = CudaEngine.getMempoolFloat(connections.size());
+//        JCudaDriver.cuMemsetD32Async(result[toLayer], 0, c.links * count, stream);   
+//        = CudaUtil.fromGPUFloat(layerResults[i], layers[i].getConnections().size(), stream);
+//    }
+
     public static class crossOverMutateResult {
         public int forcePick_A;
         public int forcePick_B;
@@ -466,8 +425,8 @@ public class Layer {
 //        gpuReady = false;
     }
     
-    protected float compare(Layer l) {
-        float score = 0;
+    protected double compare(Layer l) {
+        double score = 0;
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             score += e.getValue().compare(l.getConnection(e.getKey()));
