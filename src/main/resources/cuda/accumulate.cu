@@ -60,6 +60,7 @@ __global__ void copy_stride(float* src, float* dst, int stride_size, int spread_
     }
 }
 
+
 extern "C"
 __global__ void add_stride_vectorized(float* a, float* b, int stride_size, long strides_count) {
     int threadIndex = threadIdx.x + blockIdx.x * blockDim.x;

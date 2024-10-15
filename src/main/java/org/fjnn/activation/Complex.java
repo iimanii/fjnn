@@ -46,7 +46,17 @@ public class Complex extends Activation {
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, int stride, int size, CUstream stream) {
+    public void computeGPU(CUdeviceptr ptr, long stride, long size, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public float derivative(float input) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void derivativeGPU(CUdeviceptr ptr, long stride, long size, CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
     

@@ -46,7 +46,7 @@ public class CudaMempool {
     static long DEFAULT_EXPIRY_MS = 60 * 1000;
 
     void free() {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        
     }
     
     static class ExpiringCUdeviceptr {
@@ -216,7 +216,7 @@ public class CudaMempool {
 //                    available / 1e6f,
 //                    freeMemory / 1e6f);
             
-            ptr = CudaUtil.createByte(size);
+            ptr = CudaUtil.create(size);
             
 //            long freeMemory2 = CudaEngine.getFreeMemory(CudaEngine.getThreadDeviceId());
 //            System.out.printf("        : %d %d %d\n", 

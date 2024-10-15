@@ -27,7 +27,6 @@ import java.io.Serializable;
 import java.nio.FloatBuffer;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
-import org.fjnn.cuda.CUdeviceptr2D;
 
 /**
  *
@@ -36,6 +35,8 @@ import org.fjnn.cuda.CUdeviceptr2D;
 public abstract class Activation implements Serializable {
     
     public abstract float compute(float input);
+    
+    public abstract float derivative(float input);
     
     public final void compute(float[] input) {
         compute(input, input.length, 1);
@@ -53,9 +54,11 @@ public abstract class Activation implements Serializable {
     
     public abstract void compute(FloatBuffer input, int stride, int count);
     
-    public abstract void computeGPU(CUdeviceptr ptr, int stride, int size, CUstream stream);
+    public abstract void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream);
     
-    public abstract void derivative(float[] input, int from, int to);
+    public abstract void derivative(float[] input, int stride, int count);
+    
+    public abstract void derivativeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream);
     
     public String toName() {
         return this.getClass().getSimpleName();

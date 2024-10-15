@@ -105,7 +105,7 @@ public class CudaPool {
     
     public CudaPool(long poolSize) {        
         size = poolSize;
-        pool = CudaUtil.createByte(poolSize);
+        pool = CudaUtil.create(poolSize);
         available = new AtomicLong(poolSize);
         memLock = new ReentrantLock(true);
         threadQueue = new LinkedList();

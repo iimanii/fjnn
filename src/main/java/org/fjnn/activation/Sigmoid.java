@@ -54,17 +54,32 @@ public class Sigmoid extends Activation {
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, int stride, int count, CUstream stream) {
-        CudaFunctions.Sigmoid(ptr, stride * count, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
+    public float derivative(float input) {
+        float sigmoid = (float) (1.0 / (1 + SafeExp(-input)));
+        return sigmoid * (1 - sigmoid);
     }
-
+    
+    @Override
+    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
+        CudaFunctions.Sigmoid(ptr, stride * count, stream);
+    }
+    
     @Override
     public void derivative(float[] input, int from, int to) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        /* sigmoid(x) * (1 - sigmoid(x)) */
+        for (int i = from; i < to; i++) {
+            float sigmoid = (float) (1.0 / (1 + SafeExp(-input[i])));
+            input[i] = sigmoid * (1 - sigmoid);
+        }
     }
 
     @Override
     public void compute(FloatBuffer input, int stride, int count) {
         intrinsic.Sigmoid(input, stride * count);
+    }
+
+    @Override
+    public void derivativeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
+        CudaFunctions.SigmoidPrime(ptr, stride * count, stream);
     }
 }

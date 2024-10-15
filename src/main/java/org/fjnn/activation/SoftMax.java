@@ -79,8 +79,8 @@ public class SoftMax extends Activation {
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, int stride, int count, CUstream stream) {
-        CudaFunctions.SoftMax(ptr, count, stride, stream);
+    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
+        CudaFunctions.SoftMax(ptr, stride, count, stream);
     }
 
     /*
@@ -95,5 +95,15 @@ public class SoftMax extends Activation {
     @Override
     public void compute(FloatBuffer input, int stride, int count) {
         intrinsic.SoftMax(input, stride, count);
+    }
+
+    @Override
+    public float derivative(float input) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void derivativeGPU(CUdeviceptr ptr, long stride, long size, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 }

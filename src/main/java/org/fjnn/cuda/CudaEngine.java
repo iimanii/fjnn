@@ -256,15 +256,15 @@ public class CudaEngine {
         
         return s.peek();
     }
-
-    public static CUstream aquireStream(int deviceId) {
-        return DeviceList[deviceId].aquireStream();
-    }
-
-    public static void releaseStream(int deviceId, CUstream stream) {
-        DeviceList[deviceId].releaseStream(stream);        
-    }
-    
+//
+//    public static CUstream aquireStream(int deviceId) {
+//        return DeviceList[deviceId].aquireStream();
+//    }
+//
+//    public static void releaseStream(int deviceId, CUstream stream) {
+//        DeviceList[deviceId].releaseStream(stream);        
+//    }
+//    
     /**
      * @param deviceId
      * @return Number of threads per block for the device attached to this thread

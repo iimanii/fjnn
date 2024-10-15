@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Ahmed Tarek.
+ * Copyright 2024 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,66 +21,43 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.activation;
+package org.fjnn.loss;
 
-import java.nio.FloatBuffer;
-import jcuda.Pointer;
 import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
-import jcuda.driver.JCudaDriver;
-import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CUdeviceptr2D;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
-import org.fjnn.util.intrinsic;
 
 /**
  *
  * @author ahmed
  */
-public class ReLU extends Activation {
-
-    @Override
-    public float compute(float input) {
-        return Math.max(0, input);
-    }
+public class MeanSquareError extends Loss {
     
+    // Compute the Mean Squared Error
     @Override
-    public void compute(float[] input, int stride, int count) {
-        for(int i=0; i < input.length; i++) {
-            if(input[i] < 0) {
-                input[i] = 0;
-            }
+    public float compute(float[] output, float[] expected) {
+        float sum = 0;
+        for (int i = 0; i < output.length; i++) {
+            float diff = output[i] - expected[i];
+            sum += diff * diff;
         }
+        return sum / (2 * output.length);
     }
 
+    // Compute the derivative of MSE with respect to the predicted values
     @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.ReLU(ptr, stride * count, stream);
-    }
-    
-    @Override
-    public void derivative(float[] input, int from, int to) {
-        for (int i = from; i < to; i++) {
-            input[i] = input[i] > 0 ? 1 : 0;
+    public float[] derivative(float[] output, float[] expected) {
+        float[] derivatives = new float[output.length];
+        for (int i = 0; i < output.length; i++) {
+            derivatives[i] = output[i] - expected[i];
         }
-    }
-
-    @Override
-    public float derivative(float input) {
-        return input > 0 ? 1 : 0;
+        return derivatives;
     }
     
     @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        intrinsic.ReLU(input, stride * count);
+    public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
+        CudaFunctions.MeanSquareErrorPrime(output, expected, result, size, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
     }
-
-    @Override
-    public void derivativeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.ReLUPrime(ptr, stride * count, stream);
-    }
-
 }
+

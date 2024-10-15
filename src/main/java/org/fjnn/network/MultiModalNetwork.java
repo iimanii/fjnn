@@ -243,7 +243,7 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
         
         try {
             int interOffset = 0;
-            CUstream stream = CudaEngine.aquireStream(deviceId);
+            CUstream stream = CudaUtil.createStream();
             List<CUdeviceptr> outputs = new ArrayList<>();
 
             for(int i=0; i < heads.length; i++) {
@@ -252,11 +252,11 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
                 CUdeviceptr currentOutput = CudaEngine.getMempoolFloat(n.getOutputSize() * count);
                 
 //                System.out.println("xyz " + currentInput + " " + currentOutput + " " + n.getInputSize() + " " + n.getInputSize() * count);
-                n.computeGPUUnsafe(currentInput, currentOutput, count, stream);
+                n.computeGPU(currentInput, currentOutput, count, stream);
                 
                 CUdeviceptr interDst = intermediate.withByteOffset(interOffset);
 //                System.out.println("xyz " + interDst + " " + n.getOutputSize() + " " + base.getInputSize() + " " + count);
-                CudaFunctions.copyStride(currentOutput, interDst, n.getOutputSize(), base.getInputSize(), count, stream);
+                CudaFunctions.vector.copyStride(currentOutput, interDst, n.getOutputSize(), base.getInputSize(), count, stream);
                 
                 outputs.add(currentOutput);
             
@@ -269,14 +269,14 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
             }
             
             JCudaDriver.cuStreamSynchronize(stream);
-            CudaEngine.releaseStream(deviceId, stream);
+            CudaUtil.freeStream(stream);
             
             for(CUdeviceptr ptr : outputs)
                 CudaEngine.freeMempool(deviceId, ptr);
 //            System.out.println("hags");
 //            util.printArray(CudaUtil.fromGPUFloat(intermediate, base.getInputSize() * count));
             
-            float[] result = base.computeGPUUnsafe(intermediate, count);
+            float[] result = base.computeGPU(intermediate, count);
             CudaEngine.freeMempool(deviceId, intermediate);
             
             if(prepareThread)

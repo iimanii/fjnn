@@ -26,14 +26,15 @@ package org.fjnn.cuda;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.util.HashMap;
+import java.util.Map;
 import jcuda.Pointer;
 import jcuda.Sizeof;
 import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
+import jcuda.driver.CUstream_flags;
 import jcuda.driver.JCudaDriver;
 import org.fjnn.util.util;
-import run.timer;
 
 /**
  *
@@ -46,42 +47,122 @@ public class CudaUtil {
     public static int DEFAULT_MEM_ALIGN_FLOAT = 256 / Sizeof.FLOAT;
     public static int PREFERRED_BLOCK_SIZE = 128;
     
-    public static CUdeviceptr createFloat(long size) {
-        CUdeviceptr ptr = new CUdeviceptr();
-        JCudaDriver.cuMemAlloc(ptr, size * FLOAT_SIZE);
+    public static Map<Integer, CudaMempool2> mempool = new HashMap<>();
+    
+    public static synchronized void initMemPool(long maxSize, int deviceId) {
+        if (mempool.containsKey(deviceId))
+            throw new IllegalStateException("Memory pool for device " + deviceId + " already exists.");
         
-        return ptr;
+        CudaMempool2 pool = new CudaMempool2(maxSize, deviceId);
+        mempool.put(deviceId, pool);
+    }
+    
+    public static synchronized void destroyMemPool(int deviceId) {
+        CudaMempool2 pool = mempool.get(deviceId);
+        
+        if (pool != null) {
+            pool.destroy();
+            mempool.remove(deviceId);
+        } else
+            throw new IllegalStateException("Memory pool for device " + deviceId + " doesn't exists.");
+    }
+    
+    public static CUdeviceptr getMemPoolAsync(long size, CUstream stream) {
+        return getMemPoolAsync(size, CudaEngine.getThreadDeviceId(), stream);
+    }
+    
+    public static CUdeviceptr getMemPoolAsync(long size, int deviceId, CUstream stream) {
+        CudaMempool2 pool = mempool.get(deviceId);
+        
+        if (pool == null)
+            throw new IllegalStateException("Memory pool for device " + deviceId + " not initialized.");
+        
+        return pool.get(size, stream);
+    }
+    
+    public static CUdeviceptr getMemPoolFloatAsync(long size, CUstream stream) {
+        return getMemPoolFloatAsync(size, CudaEngine.getThreadDeviceId(), stream);
+    }
+    
+    public static CUdeviceptr getMemPoolFloatAsync(long size, int deviceId, CUstream stream) {
+        CudaMempool2 pool = mempool.get(deviceId);
+        
+        if (pool == null)
+            throw new IllegalStateException("Memory pool for device " + deviceId + " not initialized.");
+
+        return pool.getFloat(size, stream);
+    }
+    
+    public static CUdeviceptr copyMemPoolAsync(CUdeviceptr src, long size, CUstream stream) {
+        CUdeviceptr dest = getMemPoolAsync(size, stream);
+        
+        JCudaDriver.cuMemcpyAsync(dest, src, size, stream);
+        
+        return dest;
+    }
+    
+    public static CUdeviceptr copyMemPoolFloatAsync(CUdeviceptr src, long size, CUstream stream) {
+        return copyAsync(src, size * FLOAT_SIZE, stream);
     }
 
-    public static CUdeviceptr createByte(long size) {
+    
+    public static CUdeviceptr create(long size) {
         CUdeviceptr ptr = new CUdeviceptr();
         JCudaDriver.cuMemAlloc(ptr, size);
         
         return ptr;
     }
     
-    public static CUdeviceptr createFloat(long size, int device) {
-        CudaEngine.prepareThread(device);
+    public static CUdeviceptr createAsync(long size, CUstream stream) {
         CUdeviceptr ptr = new CUdeviceptr();
-        JCudaDriver.cuMemAlloc(ptr, size * FLOAT_SIZE);
-        CudaEngine.finalizeThread();
+        JCudaDriver.cuMemAllocAsync(ptr, size, stream);
         
         return ptr;
     }
-
-    public static CUdeviceptr createByte(long size, int device) {
-        CudaEngine.prepareThread(device);
-        CUdeviceptr ptr = new CUdeviceptr();
-        JCudaDriver.cuMemAlloc(ptr, size);
-        CudaEngine.finalizeThread();
         
-        return ptr;
+    public static CUdeviceptr createFloat(long size) {
+        return create(size * FLOAT_SIZE);
     }
-
+    
+    public static CUdeviceptr createFloatAsync(long size, CUstream stream) {
+        return createAsync(size * FLOAT_SIZE, stream);
+    }
+    
+    
     public static void free(CUdeviceptr ptr) {
         JCudaDriver.cuMemFree(ptr);
     }
     
+    public static void freeAsync(CUdeviceptr ptr, CUstream stream) {
+        JCudaDriver.cuMemFreeAsync(ptr, stream);
+    }
+    
+    
+    public static CUdeviceptr copy(CUdeviceptr src, long size) {
+        CUdeviceptr dest = create(size);
+        
+        JCudaDriver.cuMemcpy(dest, src, size);
+        
+        return dest;
+    }
+    
+    public static CUdeviceptr copyAsync(CUdeviceptr src, long size, CUstream stream) {
+        CUdeviceptr dest = createAsync(size, stream);
+        
+        JCudaDriver.cuMemcpyAsync(dest, src, size, stream);
+        
+        return dest;
+    }
+    
+    public static CUdeviceptr copyFloat(CUdeviceptr src, long size) {
+        return copy(src, size * FLOAT_SIZE);
+    }
+    
+    public static CUdeviceptr copyFloatAsync(CUdeviceptr src, long size, CUstream stream) {
+        return copyAsync(src, size * FLOAT_SIZE, stream);
+    }
+
+    /* moving memory */
     public static CUdeviceptr toGPU(float[] array) {
         CUdeviceptr ptr = new CUdeviceptr();
         JCudaDriver.cuMemAlloc(ptr, array.length * FLOAT_SIZE);
@@ -89,29 +170,27 @@ public class CudaUtil {
         
         return ptr;
     }
-        
-    public static CUdeviceptr toGPU(float[] input, int device) {
-        CudaEngine.prepareThread(device);
-        CUdeviceptr ptr = toGPU(input);
-        CudaEngine.finalizeThread();
-        
-        return ptr;
-    }
-    
-    public static CUdeviceptr toGPU(float[][] input, int device) {
-        CudaEngine.prepareThread(device);
-        CUdeviceptr ptr = CudaUtil.toGPU(util.to1D(input, input[0].length));
-        CudaEngine.finalizeThread();
-        
-        return ptr;
-    }
     
     public static CUdeviceptr toGPU(float[] array, CUstream stream) {
         CUdeviceptr ptr = new CUdeviceptr();
-        JCudaDriver.cuMemAlloc(ptr, array.length * FLOAT_SIZE);
+        JCudaDriver.cuMemAllocAsync(ptr, array.length * FLOAT_SIZE, stream);
         JCudaDriver.cuMemcpyHtoDAsync(ptr, Pointer.to(array), array.length * FLOAT_SIZE, stream);
         
         return ptr;
+    }
+    
+    public static byte[] fromGPU(CUdeviceptr src, int size) {
+        byte[] array = new byte[size];
+        JCudaDriver.cuMemcpyDtoH(Pointer.to(array), src, size);
+        
+        return array;
+    }
+    
+    public static byte[] fromGPUAsync(CUdeviceptr src, int size, CUstream stream) {
+        byte[] array = new byte[size];
+        JCudaDriver.cuMemcpyDtoHAsync(Pointer.to(array), src, size, stream);
+        
+        return array;
     }
     
     public static float[] fromGPUFloat(CUdeviceptr src, int size) {
@@ -121,13 +200,26 @@ public class CudaUtil {
         return array;
     }
     
-    public static float[] fromGPUFloat(CUdeviceptr src, int size, CUstream stream) {
+    public static float[] fromGPUFloatAsync(CUdeviceptr src, int size, CUstream stream) {
         float[] array = new float[size];
         JCudaDriver.cuMemcpyDtoHAsync(Pointer.to(array), src, size * FLOAT_SIZE, stream);
         
         return array;
     }
+    
         
+    /* streams */
+    public static CUstream createStream() {
+        CUstream stream = new CUstream();
+        JCudaDriver.cuStreamCreate(stream, CUstream_flags.CU_STREAM_NON_BLOCKING);
+        return stream;
+    }
+    
+    public static void freeStream(CUstream stream) {
+        JCudaDriver.cuStreamDestroy(stream);
+    }
+    
+    /* float buffers */
     public static FloatBuffer toInputBuffer(float[] input) {
         FloatBuffer result = ByteBuffer.allocateDirect(input.length * Float.BYTES).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
         result.put(input);
@@ -181,8 +273,9 @@ public class CudaUtil {
         return array;
     }
     
-    public static void print(CUdeviceptr ptr, int length, CUstream stream) {
-        float[] temp = CudaUtil.fromGPUFloat(ptr, length, null);
+    /* other util functions */
+    public static void print(CUdeviceptr ptr, int length) {
+        float[] temp = CudaUtil.fromGPUFloat(ptr, length);
         
         for(float t : temp)
             System.out.print(t + " ");

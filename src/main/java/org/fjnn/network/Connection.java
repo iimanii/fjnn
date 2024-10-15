@@ -164,7 +164,7 @@ public class Connection {
     
     void feedForwardGPU(CUdeviceptr input, int count, CUdeviceptr result, CUstream stream, cublasHandle handle) {
         /* add bias to current result accumulator */
-        CudaFunctions.addStride(result, biasesGPU, links, count, stream);
+        CudaFunctions.vector.addStride(result, biasesGPU, links, count, stream);
         
         Pointer p = Pointer.to(new float[]{1.0f});
         
@@ -178,23 +178,130 @@ public class Connection {
         CUdeviceptr c = result;
 
         synchronized(handle) {
-            JCublas2.cublasSetStream(handle, new cudaStream_t(stream));
-//            
-//            System.out.printf("%d %d %d\n", links, count, neurons);
-//            if(neurons == 300) {
-//                System.out.println(b);
-//                b = CudaUtil.createFloat(count * neurons);
-//            }
+            cudaStream_t cudaStream = stream == null ? null : new cudaStream_t(stream);
+            JCublas2.cublasSetStream(handle, cudaStream);
             
             /* Compute Matrix Multiplication */
             if(count == 1)
                 JCublas2.cublasSgemv(handle, cublasOperation.CUBLAS_OP_N, m, k, p, a, m, b, 1, p, c, 1);
             else
                 JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_N, cublasOperation.CUBLAS_OP_N, m, n, k, p, a, m, b, k, p, c, m);
-//            JCudaDriver.cuStreamSynchronize(stream);    
         }
     }
     
+    ConnectionGradient backpropagate(float[] currentActivationDeltas, float[] nextPreActivationDeltas, float[] currentPostActivations, int count) {
+        ConnectionGradient gradient = new ConnectionGradient(neurons, links);
+                
+        for(int c=0; c < count; c++) {
+            int x = c * neurons;
+            int y = c * links;
+            
+            // Loop through each neuron in the current layer (l) to calculate weight gradient and update delta
+            for (int i = 0; i < neurons; i++) {
+                int k = i * links;
+
+                // Loop through each neuron in the next layer (l+1)
+                for (int j = 0; j < links; j++) {
+                    // Step 4: Weight Gradient
+                    // Equation: grad_W^{(l)}[i,j] = delta^{(l+1)}_j * a^{(l)}_i
+                    gradient.weightGradients[k + j] += nextPreActivationDeltas[y + j] * currentPostActivations[x + i];
+
+                    // Step 5: Accumulate Pre-Activation Delta for the current layer (l)
+                    // Equation: delta^{(l)}_i += delta^{(l+1)}_j * W^{(l)}[i,j]
+                    currentActivationDeltas[x + i] += nextPreActivationDeltas[y + j] * weights[k + j];
+                }
+            }
+
+            // Step 6: Bias Gradient (Separate loop, since biases are indexed by next layer neurons)
+            // Equation: grad_b^{(l+1)}_j = delta^{(l+1)}_j
+            for (int j = 0; j < links; j++)
+                gradient.biasGradients[j] += nextPreActivationDeltas[y + j];
+        }
+        
+        if(count > 1) {
+            for (int i = 0; i < gradient.weightGradients.length; i++)
+                gradient.weightGradients[i] /= count;
+
+            for (int i = 0; i < gradient.biasGradients.length; i++)
+                gradient.biasGradients[i] /= count;
+        }
+
+        return gradient;
+    }
+    
+    ConnectionGradientGPU backpropagateGPU(CUdeviceptr currentActivationDeltas, 
+                                           CUdeviceptr nextPreActivationDeltas, 
+                                           CUdeviceptr postActivation, 
+                                           int count,
+                                           boolean accumulateDeltas,
+                                           CUstream stream, 
+                                           cublasHandle handle) {        
+        ConnectionGradientGPU gradient = new ConnectionGradientGPU(neurons, links, stream);
+            
+        Pointer pAlpha = Pointer.to(new float[]{1.0f});
+        Pointer pBeta = Pointer.to(new float[]{0.0f});
+
+        // cuBLAS uses column-major format. Make sure the dimensions match accordingly
+        int m = links;         // Output size (links in current layer, which is nextPreActivationDeltas size)
+        int n = neurons;       // Batch size
+        int k = count;         // Batch size 
+
+        CUdeviceptr a = nextPreActivationDeltas;    // delta^{(l+1)}, size [links x count]
+        CUdeviceptr b = postActivation;             // a^{(l)},       size [neurons x count]
+        CUdeviceptr c = gradient.weightGradients;   // grad_W^{(l)},  size [links x neurons]
+
+        synchronized(handle) {
+            JCublas2.cublasSetStream(handle, new cudaStream_t(stream));
+
+            // Step 1: Compute the weight gradient using cuBLAS
+            // grad_W^{(l)} = delta^{(l+1)} * (a^{(l)})^T
+            JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_N, cublasOperation.CUBLAS_OP_T, 
+                                 m, n, k, 
+                                 pAlpha, a, m, b, n, 
+                                 pBeta, c, m);
+
+            // Step 2: Compute pre-activation deltas for current layer
+            // postActivationDeltas += W^{(l)}^T * delta^{(l+1)}
+            if(currentActivationDeltas != null) {
+                if(accumulateDeltas)
+                    pBeta = Pointer.to(new float[]{1.0f});
+                
+                CUdeviceptr d = currentActivationDeltas;  // activation delta, size [neurons x count]
+                JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_T, cublasOperation.CUBLAS_OP_N, 
+                                     n, k, m, 
+                                     pAlpha, weightsGPU, m, a, m, 
+                                     pBeta, d, n);
+            }
+
+            // Step 3: Compute bias gradients
+            // biasGradients = sum(delta^{(l+1)}, across batch)
+            CudaFunctions.vector.reduceSum(gradient.biasGradients, nextPreActivationDeltas, links, count, stream);
+
+            // Step 4: If count > 1, average the gradients
+            if (count > 1) {
+                Pointer alpha = Pointer.to(new float[]{1.0f / count});
+                JCublas2.cublasSscal(handle, neurons * links, alpha, gradient.weightGradients, 1);
+                JCublas2.cublasSscal(handle, links, alpha, gradient.biasGradients, 1);
+            }
+        }
+        
+        return gradient;
+    }
+
+    void updateWeightsGPU(ConnectionGradientGPU gradient, float learningRate, CUstream stream, cublasHandle handle) {
+        float alpha = -learningRate;
+        
+        synchronized(handle) {
+            JCublas2.cublasSetStream(handle, new cudaStream_t(stream));
+            
+            // Update biases using cuBLAS: weights = weights - learningRate * weightGradients
+            JCublas2.cublasSaxpy(handle, neurons * links, Pointer.to(new float[]{alpha}), gradient.weightGradients, 1, weightsGPU, 1);
+
+            // Update biases using cuBLAS: biases = biases - learningRate * biasGradients
+            JCublas2.cublasSaxpy(handle, links, Pointer.to(new float[]{alpha}), gradient.biasGradients, 1, biasesGPU, 1);
+        }
+    }
+
     void prepareCPU() {
         weightsCPU = ByteBuffer.allocateDirect(weights.length * Float.BYTES).order(ByteOrder.nativeOrder()).asFloatBuffer();
         weightsCPU.put(weights);
@@ -207,10 +314,15 @@ public class Connection {
 
     void ensureCPU(CUstream stream) {
         if(weights == null && weightsGPU != null)
-            weights = CudaUtil.fromGPUFloat(weightsGPU, neurons * links, stream);
+            weights = CudaUtil.fromGPUFloatAsync(weightsGPU, neurons * links, stream);
         
         if(biases == null && biasesGPU != null)
-            biases = CudaUtil.fromGPUFloat(biasesGPU, links, stream);
+            biases = CudaUtil.fromGPUFloatAsync(biasesGPU, links, stream);
+    }
+    
+    void updateWeightsFromGPU(CUstream stream) {
+        weights = CudaUtil.fromGPUFloatAsync(weightsGPU, neurons * links, stream);        
+        biases = CudaUtil.fromGPUFloatAsync(biasesGPU, links, stream);
     }
     
     long getMemoryRequirements() {
@@ -218,7 +330,7 @@ public class Connection {
     }
     
     void prepareGPU(CUstream stream) {                
-        initGPUWeights();
+        initGPU(stream);
         
         JCudaDriver.cuMemcpyHtoDAsync(weightsGPU, Pointer.to(weights), weights.length * FLOAT_SIZE, stream);
         JCudaDriver.cuMemcpyHtoDAsync(biasesGPU, Pointer.to(biases), biases.length * FLOAT_SIZE, stream);
@@ -226,12 +338,21 @@ public class Connection {
         gpuReady = true;
     }
 
-    void freeGPU(int deviceId) {
+    void freeGPU() {
         if(weightsGPU != null)
-            CudaEngine.freeMempool(deviceId, weightsGPU);
+            CudaUtil.free(weightsGPU);
         
-//        if(biasesGPU != null)
-//            JCudaDriver.cuMemFree(biasesGPU);
+        weightsGPU = null;
+        biasesGPU = null;
+        
+        freeGPURng();
+        
+        gpuReady = false;
+    }
+    
+    void freeGPU(CUstream stream) {
+        if(weightsGPU != null)
+            CudaUtil.freeAsync(weightsGPU, stream);
         
         weightsGPU = null;
         biasesGPU = null;
@@ -248,7 +369,7 @@ public class Connection {
         rngPool = null;
     }
     
-    private void initGPUWeights() {
+    private void initGPU(CUstream stream) {
         if(weightsGPU != null || biasesGPU != null)
             throw new RuntimeException("GPU already initialized for connection");
         
@@ -256,10 +377,22 @@ public class Connection {
         long lengthBias = links;
         long lengthTotal = lengthWeights + lengthBias;
         
-        weightsGPU = CudaEngine.getMempoolFloat(lengthTotal);
+        weightsGPU = CudaUtil.createFloatAsync(lengthTotal, stream);
         biasesGPU = weightsGPU.withByteOffset(lengthWeights * CudaUtil.FLOAT_SIZE);
-//        biasesGPU = //CudaUtil.createFloat(lengthBias);
     }
+    
+//    private void initGPUWeights() {
+//        if(weightsGPU != null || biasesGPU != null)
+//            throw new RuntimeException("GPU already initialized for connection");
+//        
+//        long lengthWeights = CudaUtil.alignLength(neurons * links, CudaUtil.DEFAULT_MEM_ALIGN_FLOAT);
+//        long lengthBias = links;
+//        long lengthTotal = lengthWeights + lengthBias;
+//        
+//        weightsGPU = CudaEngine.getMempoolFloat(lengthTotal);
+//        biasesGPU = weightsGPU.withByteOffset(lengthWeights * CudaUtil.FLOAT_SIZE);
+////        biasesGPU = //CudaUtil.createFloat(lengthBias);
+//    }
     
     public float getWeight(int from, int to) {
         if(from < 0 || from >= neurons)
@@ -412,7 +545,7 @@ public class Connection {
 
     void crossOverMutateGPU(Connection a, Connection b, float min, float max, double mutation, boolean nocopy, CUstream stream, curandGenerator generator) {
         /* mutate weights */
-        initGPUWeights();
+        initGPU(stream);
 
         rngPool = CudaEngine.getMempoolFloat(weightsLength * 3);
         CUdeviceptr rngMutate = rngPool.withByteOffset(weightsLength * CudaUtil.FLOAT_SIZE);
@@ -434,8 +567,8 @@ public class Connection {
 //                                      rngPool.withByteOffset(lengthWeights * CudaUtil.FLOAT_SIZE), 
 //                                      stream);
         if(!nocopy) {
-            weights = CudaUtil.fromGPUFloat(weightsGPU, neurons * links, stream);
-            biases = CudaUtil.fromGPUFloat(biasesGPU, links, stream);
+            weights = CudaUtil.fromGPUFloatAsync(weightsGPU, neurons * links, stream);
+            biases = CudaUtil.fromGPUFloatAsync(biasesGPU, links, stream);
         }
         
         nativeReady = false;

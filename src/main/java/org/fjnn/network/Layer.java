@@ -45,8 +45,12 @@ import jcuda.jcurand.JCurand;
 import jcuda.jcurand.curandGenerator;
 import org.fjnn.activation.Activation;
 import org.fjnn.cuda.CudaEngine;
+import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaModule;
 import org.fjnn.cuda.CudaUtil;
+import static org.fjnn.cuda.CudaUtil.FLOAT_SIZE;
+import org.fjnn.network.NeuralNetwork.FeedForwardResults;
+import org.fjnn.network.NeuralNetwork.FeedForwardResultsGPU;
 import org.fjnn.util.Rng;
 import org.fjnn.util.intrinsic;
 import org.fjnn.util.util;
@@ -67,13 +71,18 @@ public class Layer {
     
     public final Activation activation;
     
+    /* connections from this layer to next layers */
     final Map<Integer, Connection> connections;
+   
+    /* List of incoming connections .. for backpropagation */
+    final Map<Integer, Connection> reverseConnections;
     
     public Layer(int index, int neurons, Activation activation) {
         this.index = index;
         this.neurons = neurons;
         this.activation = activation;
         this.connections = new HashMap<>();
+        this.reverseConnections = new HashMap<>();
     }
 
     Layer copy(boolean copyWeights, boolean createWeights) {
@@ -81,6 +90,10 @@ public class Layer {
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             result.addConnection(e.getKey(), e.getValue().copy(copyWeights, createWeights));
+        }
+        
+        for(Entry<Integer, Connection> e : reverseConnections.entrySet()) {
+            result.addReverseConnection(e.getKey(), e.getValue().copy(copyWeights, createWeights));
         }
         
         return result;
@@ -92,7 +105,7 @@ public class Layer {
         }
     }
     
-    public void addConnection(int toLayer, int links) {
+    protected void addConnection(int toLayer, int links) {
         if(toLayer == index)
             throw new RuntimeException("Adding connection to the same layer");
         
@@ -102,13 +115,21 @@ public class Layer {
         connections.put(toLayer, new Connection(neurons, links));
     }
     
-    public void addConnection(int toLayer, Connection connection) {
+    protected void addConnection(int toLayer, Connection connection) {
         if(connections.containsKey(toLayer))
             throw new RuntimeException("Already connected to layer: " + toLayer);
         
         connections.put(toLayer, connection);
     }
     
+    protected void addReverseConnection(int fromLayer, Connection connection) {
+        if (reverseConnections.containsKey(fromLayer))
+            throw new RuntimeException("Already reverse connected to layer: " + fromLayer);
+        
+        reverseConnections.put(fromLayer, connection);
+    }
+        
+    /* returns connection to the next layer */
     public Connection getConnection() {
         return getConnection(index+1);
     }
@@ -117,10 +138,18 @@ public class Layer {
         return connections.get(toLayer);
     }
     
-    public List<Connection> getConnections() {
-        return new ArrayList<>(connections.values());
+    public Connection getReverseConnection(int fromLayer) {
+        return reverseConnections.get(fromLayer);
     }
-
+    
+    public Map<Integer, Connection> getConnections() {
+        return new HashMap<>(connections);
+    }
+    
+    public List<Connection> getReverseConnections() {
+        return new ArrayList<>(reverseConnections.values());
+    }
+    
     public void initUniform(float min, float max) {
         for(Connection c : connections.values())
             c.initUniform(min, max);
@@ -162,6 +191,28 @@ public class Layer {
         }
     }
     
+    protected void feedForward(FeedForwardResults activations) {
+        /* make a copy to perform activation on the array while keeping the original preActivation */
+        activations.postActivations[this.index] = util.copyArray(activations.preActivations[index]);
+        
+        int count = activations.count;
+        
+        if (activation != null)
+            activation.compute(activations.postActivations[this.index], neurons, count);
+
+        for (Map.Entry<Integer, Connection> e : connections.entrySet()) {
+            int toLayer = e.getKey();
+            Connection connection = e.getValue();
+
+            // Initialize space for the next layer's pre-activations if it hasn't been set yet
+            if (activations.preActivations[toLayer] == null)
+                activations.preActivations[toLayer] = new float[connection.links * count];
+
+            // Perform feedForward to the next layer's pre-activations
+            connection.feedForward(activations.postActivations[this.index], count, activations.preActivations[toLayer]);
+        }
+    }
+
     protected void feedForward(FloatBuffer input, int count, FloatBuffer[] result) {
         if(activation != null)
             activation.compute(input, neurons, count);
@@ -177,6 +228,59 @@ public class Layer {
         }
     }
     
+    public void backpropagate(FeedForwardResults activations, float[][] preActivationDeltas, Map<Integer, ConnectionGradient> connectionGradients) {
+        if(preActivationDeltas[this.index] != null)
+            throw new RuntimeException("issue with preActivation");
+        
+        // Step 1: Initialize the activation deltas for the current layer
+        float[] currentActivationDeltas = new float[this.neurons * activations.count];
+
+        // Step 2: Loop through each connection to the next layers
+        for (Map.Entry<Integer, Connection> entry : connections.entrySet()) {
+            int nextLayerIndex = entry.getKey();
+            Connection connection = entry.getValue();
+            float[] nextPreActivationDeltas = preActivationDeltas[nextLayerIndex];  // delta^{(l+1)}
+
+
+            // Step 3: Compute Weight and Bias Gradients and accumulate pre-activation deltas for the current layer
+            ConnectionGradient gradient = connection.backpropagate(currentActivationDeltas, nextPreActivationDeltas, activations.postActivations[this.index], activations.count);
+            connectionGradients.put(nextLayerIndex, gradient);
+        }
+
+        // Step 7: Convert Post-Activation Delta to Pre-Activation Delta for the current layer (l)
+        // Equation: delta^{(l)}_j = Delta a^{(l)}_j * sigma'(z^{(l)}_j)
+        if(activation != null) {
+            for (int j = 0; j < currentActivationDeltas.length; j++) {
+                currentActivationDeltas[j] *= activation.derivative(activations.preActivations[this.index][j]);
+            }
+        }
+        
+        preActivationDeltas[this.index] = currentActivationDeltas;
+    }
+
+    public void updateWeights(Map<Integer, ConnectionGradient> connectionGradients, float learningRate) {
+        // Loop through each connection of the current layer
+        for (Map.Entry<Integer, Connection> entry : connections.entrySet()) {
+            int nextLayerIndex = entry.getKey();
+            Connection connection = entry.getValue();
+
+            // Retrieve the gradient for this connection from the map
+            ConnectionGradient gradient = connectionGradients.get(nextLayerIndex);
+            if (gradient == null)
+                throw new RuntimeException("no gradient for connection " + index + " -> " + nextLayerIndex);
+
+            // Update weights
+            for (int i = 0; i < connection.weights.length; i++) {
+                connection.weights[i] -= learningRate * gradient.weightGradients[i];
+            }
+
+            // Update biases
+            for (int i = 0; i < connection.biases.length; i++) {
+                connection.biases[i] -= learningRate * gradient.biasGradients[i];
+            }
+        }
+    }
+
     public boolean nativeReady() {
         boolean nativeReady = true;
         for(Connection c : connections.values())
@@ -194,6 +298,11 @@ public class Layer {
     void ensureCPU(CUstream stream) {
         for(Connection c : connections.values())
             c.ensureCPU(stream);
+    }
+    
+    void updateWeightsFromGPU(CUstream stream) {
+        for(Connection c : connections.values())
+            c.updateWeightsFromGPU(stream);
     }
     
     protected void freeCPU() {
@@ -298,13 +407,121 @@ public class Layer {
             Connection c = e.getValue();
             
             if(result[toLayer] == null) {
-               result[toLayer] = CudaEngine.getMempoolFloat(c.links * count);
-               JCudaDriver.cuMemsetD32Async(result[toLayer], 0, c.links * count, stream);           
+               if(stream == null) {
+                    result[toLayer] = CudaUtil.createFloat(c.links * count);
+                    JCudaDriver.cuMemsetD32(result[toLayer], 0, c.links * count);                   
+               } else {
+                    result[toLayer] = CudaUtil.createFloatAsync(c.links * count, stream);
+                    JCudaDriver.cuMemsetD32Async(result[toLayer], 0, c.links * count, stream);
+               }
             }
             
             c.feedForwardGPU(input, count, result[toLayer], stream, handle);
         }
     }
+    
+    protected void feedForwardGPU(FeedForwardResultsGPU activations, CUstream stream, cublasHandle handle) {
+        int count = activations.count;
+        
+        if (activation != null) {
+            /* make a copy to perform activation on the array while keeping the original preActivation */
+            activations.postActivations[this.index] = CudaUtil.copyFloatAsync(activations.preActivations[index], neurons * count, stream);
+            
+            /* compute activation values */
+            activation.computeGPU(activations.postActivations[this.index], neurons, count, stream);
+        } else {
+            activations.postActivations[this.index] = activations.preActivations[this.index];
+        }
+
+        for (Map.Entry<Integer, Connection> e : connections.entrySet()) {
+            int toLayer = e.getKey();
+            Connection connection = e.getValue();
+
+            // Initialize space for the next layer's pre-activations if it hasn't been set yet
+            long size = connection.links * count;
+            
+            if (activations.preActivations[toLayer] == null) {
+                activations.preActivations[toLayer] = CudaUtil.createFloatAsync(size, stream);
+                JCudaDriver.cuMemsetD32Async(activations.preActivations[toLayer], 0, size, stream);
+            }
+
+            // Perform feedForward to the next layer's pre-activations
+            connection.feedForwardGPU(activations.postActivations[this.index], count, activations.preActivations[toLayer], stream, handle);
+        }
+    }
+
+    protected void backpropagateGPU(FeedForwardResultsGPU activations, CUdeviceptr[] preActivationDeltas, Map<Integer, ConnectionGradientGPU> connectionGradients, CUstream stream, cublasHandle handle) {
+        if(preActivationDeltas[this.index] != null)
+            throw new RuntimeException("issue with preActivation");
+        
+        long size = (long)this.neurons * activations.count;
+        
+        // Step 1: Initialize the activation deltas for the current layer only if it has incomming connections
+        CUdeviceptr currentActivationDeltas = null;
+        
+        if(!reverseConnections.isEmpty()) {
+            currentActivationDeltas = CudaUtil.createFloatAsync(size, stream);
+//            JCudaDriver.cuMemsetD32Async(currentActivationDeltas, 0, size, stream);
+        }
+
+        // initially set to false to initalize the array with deltas
+        // so we avoid using memset
+        boolean accumulateDeltas = false;
+        
+        // Step 2: Loop through each connection to the next layers        
+        for (Map.Entry<Integer, Connection> entry : connections.entrySet()) {
+            int nextLayerIndex = entry.getKey();
+            Connection connection = entry.getValue();
+            CUdeviceptr nextPreActivationDeltas = preActivationDeltas[nextLayerIndex];  // delta^{(l+1)}
+
+            // Step 3: Compute Weight and Bias Gradients and accumulate pre-activation deltas for the current layer
+            ConnectionGradientGPU gradient = connection.backpropagateGPU(currentActivationDeltas, 
+                                                                         nextPreActivationDeltas, 
+                                                                         activations.postActivations[this.index], 
+                                                                         activations.count,
+                                                                         accumulateDeltas,
+                                                                         stream,
+                                                                         handle);
+            connectionGradients.put(nextLayerIndex, gradient);
+            
+            /* start accumulating after first iteration */
+            accumulateDeltas = true;
+        }
+
+        // Step 7: Convert Post-Activation Delta to Pre-Activation Delta for the current layer (l)
+        // Equation: delta^{(l)}_j = Delta a^{(l)}_j * sigma'(z^{(l)}_j)
+        if(activation != null) {
+            CUdeviceptr derivative = CudaUtil.copyFloatAsync(activations.preActivations[this.index], size, stream);
+            activation.derivativeGPU(derivative, this.neurons, activations.count, stream);
+            
+            CudaFunctions.vector.multiply(currentActivationDeltas, derivative, currentActivationDeltas, size, stream);
+            CudaUtil.freeAsync(derivative, stream);
+            
+            /* can use preActivation[this.index] right away .. not used anywhere else */
+//            activation.derivativeGPU(activations.preActivations[this.index], this.neurons, activations.count, stream);
+//            CudaFunctions.vector.multiply(currentActivationDeltas, activations.preActivations[this.index], currentActivationDeltas, size, stream);
+        }
+        
+        preActivationDeltas[this.index] = currentActivationDeltas;
+
+    }
+
+    public void updateWeightsGPU(Map<Integer, ConnectionGradientGPU> connectionGradients, float learningRate, CUstream stream, cublasHandle handle) {
+        // Loop through each connection of the current layer
+        for (Map.Entry<Integer, Connection> entry : connections.entrySet()) {
+            int nextLayerIndex = entry.getKey();
+            Connection connection = entry.getValue();
+
+            // Retrieve the gradient for this connection from the map
+            ConnectionGradientGPU gradient = connectionGradients.get(nextLayerIndex);
+            
+            if (gradient == null)
+                throw new RuntimeException("no gradient for connection " + index + " -> " + nextLayerIndex);
+            
+            connection.updateWeightsGPU(gradient, learningRate, stream, handle);
+        }
+    }
+
     
     protected void crossOverMutateGPU(Layer a, Layer b, float min, float max, double mutation, boolean nocopy, CUstream stream, curandGenerator generator) {
         /* crossover mutate all connections */
@@ -334,9 +551,14 @@ public class Layer {
         }
     }
 
-    protected void freeGPU(int deviceId) {
+    protected void freeGPU() {
         for(Connection c : connections.values())
-            c.freeGPU(deviceId);
+            c.freeGPU();
+    }
+    
+    protected void freeGPU(CUstream stream) {
+        for(Connection c : connections.values())
+            c.freeGPU(stream);
     }
 
     protected void freeGPURng() {

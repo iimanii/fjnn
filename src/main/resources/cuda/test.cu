@@ -180,3 +180,14 @@ __global__ void slow(float* r, long size) {
     if(base + threadIdx.x < size)
         r[base + threadIdx.x] = base + threadIdx.x;
 }
+
+extern "C"
+__global__ void slowLoop(float* data) {
+    int idx = threadIdx.x;
+    float value = data[idx];
+    // Simulate a long computation by running a large loop
+    for (int i = 0; i < 10000000; i++) {
+        value = value + 0.0001f;
+    }
+    data[idx] = value;
+}

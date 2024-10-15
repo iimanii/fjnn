@@ -33,6 +33,7 @@ import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaModule;
 import org.fjnn.cuda.CUdeviceptr2D;
 import org.fjnn.cuda.CudaFunctions;
+import org.fjnn.cuda.CudaUtil;
 import org.fjnn.util.intrinsic;
 
 /**
@@ -53,7 +54,7 @@ public class Sin extends Activation {
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, int stride, int count, CUstream stream) {
+    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
         CudaFunctions.Sin(ptr, stride * count, stream);        
     }
 
@@ -65,5 +66,15 @@ public class Sin extends Activation {
     @Override
     public void compute(FloatBuffer input, int stride, int count) {
         intrinsic.Sin(input, stride * count);
+    }
+
+    @Override
+    public float derivative(float input) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void derivativeGPU(CUdeviceptr ptr, long stride, long size, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 }

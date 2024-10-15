@@ -41,13 +41,18 @@ import org.fjnn.util.util;
  * @author ahmed
  */
 public class CudaModule {
-    public static final String MODULE_MATRIX = "matrix";
-    public static final String MODULE_MATRIX_UNALIGNED = "matrix_unaligned";
+    public static final String UTIL_FILE = "util.h";
+    
+    public static final String MODULE_ACCUMULATE = "accumulate";
     public static final String MODULE_ACTIVATION = "activation";    
     public static final String MODULE_GENETIC = "genetic";    
-    public static final String MODULE_ACCUMULATE = "accumulate";    
-    public static final String UTIL_FILE = "util.h";
+    public static final String MODULE_LOSS = "loss";    
+    public static final String MODULE_VECTOR = "vector";   
+    public static final String MODULE_TEST = "test";    
+    
     public static final String MATRIX_HEADER = "matrix.h";
+    public static final String MODULE_MATRIX = "matrix";
+    public static final String MODULE_MATRIX_UNALIGNED = "matrix_unaligned";
     public static final String MATRIX_UNALIGNED_HEADER = "matrix_unaligned.h";
     
     public static String CUDA_COMPILER = "nvcc";

@@ -66,8 +66,8 @@ public class LeakyReLU extends Activation {
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, int stride, int count, CUstream stream) {
-        CudaFunctions.LeakyReLU(ptr, stride * count, alpha, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
+    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
+        CudaFunctions.LeakyReLU(ptr, stride * count, alpha, stream);
     }
     
     @Override
@@ -78,5 +78,15 @@ public class LeakyReLU extends Activation {
     @Override
     public void compute(FloatBuffer input, int stride, int count) {
         throw new UnsupportedOperationException("Not supported yet.");
+    }
+
+    @Override
+    public float derivative(float input) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void derivativeGPU(CUdeviceptr ptr, long stride, long size, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 }

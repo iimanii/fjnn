@@ -36,6 +36,14 @@ __global__ void ReLU(float* v, long size) {
     if(row < size && v[row] < 0.0f)
         v[row] = 0.0f;
 }
+extern "C"
+__global__ void ReLUPrime(float* v, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+
+    if (row < size) {
+        v[row] = v[row] > 0.0f ? 1.0f : 0.0f;
+    }
+}
 
 /**
  * Leaky Rectifier Linear Unit
@@ -49,6 +57,21 @@ __global__ void LeakyReLU(float* v, long size, float alpha) {
 }
 
 /**
+ * Gaussian Error Linear Unit (GELU)
+ * Using the tanh approximation for GELU
+ */
+extern "C"
+__global__ void GeLU(float* v, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+
+    if (row < size) {
+        float x = v[row];
+        // GELU formula: 0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3)))
+        v[row] = 0.5f * x * (1.0f + tanh(0.797885f * (x + 0.044715f * x * x * x)));
+    }
+}
+
+/**
  * Sigmoid
  */
 extern "C"
@@ -57,6 +80,16 @@ __global__ void Sigmoid(float* v, long size) {
     
     if(row < size)
         v[row] = 1.0 / (1 + safe_exp(-v[row]));
+}
+
+extern "C"
+__global__ void SigmoidPrime(float* v, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+
+    if (row < size) {
+        float sigmoid = 1.0f / (1.0f + safe_exp(-v[row]));
+        v[row] = sigmoid * (1.0f - sigmoid);
+    }
 }
 
 /**
@@ -81,6 +114,16 @@ __global__ void Tanh(float* v, long size) {
         v[row] = tanh(v[row]);
 }
 
+extern "C"
+__global__ void TanhPrime(float* v, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+
+    if (row < size) {
+        float tanhValue = tanh(v[row]);
+        v[row] = 1.0f - tanhValue * tanhValue;
+    }
+}
+
 /**
  * Step
  */
@@ -92,91 +135,6 @@ __global__ void Step(float* v, long size) {
         v[row] = v[row] >= 0 ? 1 : 0;
 }
 
-
-/**
- * SoftMax
- */
-template<const int BLOCK_SIZE>
-__forceinline__ 
-__device__ float reduceBlockMax(float array[BLOCK_SIZE], float value) {
-    unsigned tid = threadIdx.x;
-    
-    array[tid] = value;
-    __syncthreads();
-    
-#pragma unroll
-    for(int i = BLOCK_SIZE / 2; i > 32; i /= 2) {
-        if(tid < i)
-            array[tid] = max(array[tid], array[tid + i]);
-        
-        __syncthreads();        
-    }
-       
-    if(tid < 32) {
-        float v = array[tid];
-
-        if(BLOCK_SIZE >= 64) {
-            v = max(v, array[tid+32]);  __syncwarp();
-            array[tid] = v;             __syncwarp();
-        }
-
-        v = max(v, array[tid+16]);  __syncwarp();
-        array[tid] = v;             __syncwarp();
-        v = max(v, array[tid+8]);   __syncwarp();
-        array[tid] = v;             __syncwarp();
-        v = max(v, array[tid+4]);   __syncwarp();
-        array[tid] = v;             __syncwarp();
-        v = max(v, array[tid+2]);   __syncwarp();
-        array[tid] = v;             __syncwarp();
-        v = max(v, array[tid+1]);   __syncwarp();
-        array[tid] = v;
-    }
-    
-    __syncthreads();
-    
-    return array[0];
-}
-
-template<const int BLOCK_SIZE>
-__forceinline__ 
-__device__ float reduceBlockSum(float array[BLOCK_SIZE], float value) {
-    unsigned tid = threadIdx.x;
-    
-    array[tid] = value;
-    __syncthreads();
-    
-#pragma unroll
-    for(int i = BLOCK_SIZE / 2; i > 32; i /= 2) {
-        if(tid < i)        
-            array[tid] += array[tid + i];
-        
-        __syncthreads();
-    }
-       
-    if(tid < 32) {
-        float v = array[tid];
-        
-        if(BLOCK_SIZE >= 64) {
-            v += array[tid+32]; __syncwarp();
-            array[tid] = v;     __syncwarp();
-        }
-
-        v += array[tid+16]; __syncwarp();
-        array[tid] = v;     __syncwarp();
-        v += array[tid+8];  __syncwarp();
-        array[tid] = v;     __syncwarp();
-        v += array[tid+4];  __syncwarp();
-        array[tid] = v;     __syncwarp();
-        v += array[tid+2];  __syncwarp();
-        array[tid] = v;     __syncwarp();
-        v += array[tid+1];  __syncwarp();
-        array[tid] = v;
-    }
-    
-    __syncthreads();
-    
-    return array[0];
-}
 
 template<const int BLOCK_SIZE>
 __device__ void SoftMax(float* v, long size) {

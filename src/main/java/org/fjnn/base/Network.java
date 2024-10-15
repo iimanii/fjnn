@@ -193,7 +193,11 @@ public abstract class Network <T extends Network> {
         if(gpuReady())
             throw new RuntimeException("GPU already initialized for connection");
         
-        int device = (int) (COUNTER.getAndIncrement() % CudaEngine.getDeviceCount());
+        int device = CudaEngine.getThreadDeviceId();
+        
+        if(device == -1)
+           device = (int) (COUNTER.getAndIncrement() % CudaEngine.getDeviceCount());
+        
         prepareGPU(device);
     }
 
