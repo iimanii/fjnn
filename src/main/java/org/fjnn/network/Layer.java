@@ -27,35 +27,22 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import jcuda.Pointer;
-import jcuda.Sizeof;
 import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
-import jcuda.jcublas.JCublas2;
 import jcuda.jcublas.cublasHandle;
-import jcuda.jcublas.cublasOperation;
-import jcuda.jcurand.JCurand;
 import jcuda.jcurand.curandGenerator;
 import org.fjnn.activation.Activation;
-import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaFunctions;
-import org.fjnn.cuda.CudaModule;
 import org.fjnn.cuda.CudaUtil;
-import static org.fjnn.cuda.CudaUtil.FLOAT_SIZE;
-import org.fjnn.network.NeuralNetwork.FeedForwardResults;
+import org.fjnn.network.NeuralNetwork.NeuralNetworkFeedForwardResult;
 import org.fjnn.network.NeuralNetwork.FeedForwardResultsGPU;
 import org.fjnn.util.Rng;
-import org.fjnn.util.intrinsic;
 import org.fjnn.util.util;
-import org.json.JSONArray;
-import org.json.JSONObject;
 
 /**
  *
@@ -75,14 +62,14 @@ public class Layer {
     final Map<Integer, Connection> connections;
    
     /* List of incoming connections .. for backpropagation */
-    final Map<Integer, Connection> reverseConnections;
+    final List<Integer> reverseConnections;
     
     public Layer(int index, int neurons, Activation activation) {
         this.index = index;
         this.neurons = neurons;
         this.activation = activation;
         this.connections = new HashMap<>();
-        this.reverseConnections = new HashMap<>();
+        this.reverseConnections = new ArrayList<>();
     }
 
     Layer copy(boolean copyWeights, boolean createWeights) {
@@ -92,9 +79,8 @@ public class Layer {
             result.addConnection(e.getKey(), e.getValue().copy(copyWeights, createWeights));
         }
         
-        for(Entry<Integer, Connection> e : reverseConnections.entrySet()) {
-            result.addReverseConnection(e.getKey(), e.getValue().copy(copyWeights, createWeights));
-        }
+        for(Integer e : reverseConnections)
+            result.addReverseConnection(e);
         
         return result;
     }
@@ -122,11 +108,11 @@ public class Layer {
         connections.put(toLayer, connection);
     }
     
-    protected void addReverseConnection(int fromLayer, Connection connection) {
-        if (reverseConnections.containsKey(fromLayer))
+    protected void addReverseConnection(int fromLayer) {
+        if (reverseConnections.contains(fromLayer))
             throw new RuntimeException("Already reverse connected to layer: " + fromLayer);
         
-        reverseConnections.put(fromLayer, connection);
+        reverseConnections.add(fromLayer);
     }
         
     /* returns connection to the next layer */
@@ -138,17 +124,17 @@ public class Layer {
         return connections.get(toLayer);
     }
     
-    public Connection getReverseConnection(int fromLayer) {
-        return reverseConnections.get(fromLayer);
-    }
+//    public Connection getReverseConnection(int fromLayer) {
+//        return reverseConnections.get(fromLayer);
+//    }
     
     public Map<Integer, Connection> getConnections() {
         return new HashMap<>(connections);
     }
     
-    public List<Connection> getReverseConnections() {
-        return new ArrayList<>(reverseConnections.values());
-    }
+//    public List<Connection> getReverseConnections() {
+//        return new ArrayList<>(reverseConnections.values());
+//    }
     
     public void initUniform(float min, float max) {
         for(Connection c : connections.values())
@@ -191,7 +177,7 @@ public class Layer {
         }
     }
     
-    protected void feedForward(FeedForwardResults activations) {
+    protected void feedForward(NeuralNetworkFeedForwardResult activations) {
         /* make a copy to perform activation on the array while keeping the original preActivation */
         activations.postActivations[this.index] = util.copyArray(activations.preActivations[index]);
         
@@ -228,7 +214,7 @@ public class Layer {
         }
     }
     
-    public void backpropagate(FeedForwardResults activations, float[][] preActivationDeltas, Map<Integer, ConnectionGradient> connectionGradients) {
+    public void backpropagate(NeuralNetworkFeedForwardResult activations, float[][] preActivationDeltas, Map<Integer, ConnectionGradient> connectionGradients) {
         if(preActivationDeltas[this.index] != null)
             throw new RuntimeException("issue with preActivation");
         
@@ -334,37 +320,46 @@ public class Layer {
         return count;
     }
     
-    JSONObject serialize() {
-        JSONObject result = new JSONObject();
+    HashMap serialize() {
+        HashMap result = new HashMap();
         result.put("index", index);
         result.put("neurons", neurons);
-        result.put("activation", activation == null ? JSONObject.NULL : activation.toName());
+        result.put("activation", activation == null ? null : activation.toName());
         
-        JSONArray array = new JSONArray();
+        List<HashMap> array = new ArrayList<>();
         result.put("connections", array);
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
-            JSONObject connection = e.getValue().serialize();
+            HashMap connection = e.getValue().serialize();
             connection.put("toLayer", e.getKey());
-            array.put(connection);
+            array.add(connection);
         }
+        
+        List<Integer> reverse = new ArrayList<>(reverseConnections);
+        result.put("reverseConnections", reverse);
         
         return result;
     }
     
-    static Layer deserialize(JSONObject object) {
-        int index = object.getInt("index");
-        int neurons = object.getInt("neurons");
-        Activation activation = Activation.fromName(object.optString("activation"));
+    static Layer deserialize(HashMap object) {
+        int index = (Integer)object.get("index");
+        int neurons = (Integer)object.get("neurons");
+        Activation activation = Activation.fromName((String)object.get("activation"));
         
         Layer layer = new Layer(index, neurons, activation);
         
-        JSONArray connections = object.getJSONArray("connections");
+        List<HashMap> connections = (List)object.get("connections");
         
-        for(int i=0; i < connections.length(); i++) {
-            JSONObject connection = connections.getJSONObject(i);
-            int toLayer = connection.getInt("toLayer");
+        for(int i=0; i < connections.size(); i++) {
+            HashMap connection = connections.get(i);
+            int toLayer = (Integer)connection.get("toLayer");
             layer.addConnection(toLayer, Connection.deserialize(connection));
+        }
+        
+        List<Integer> reverse = (List) object.get("reverseConnections");
+
+        for(int i : reverse) {
+            layer.addReverseConnection(i);
         }
         
         return layer;
@@ -425,7 +420,7 @@ public class Layer {
         
         if (activation != null) {
             /* make a copy to perform activation on the array while keeping the original preActivation */
-            activations.postActivations[this.index] = CudaUtil.copyFloatAsync(activations.preActivations[index], neurons * count, stream);
+            activations.postActivations[this.index] = CudaUtil.copyFloatAsync(activations.preActivations[this.index], neurons * count, stream);
             
             /* compute activation values */
             activation.computeGPU(activations.postActivations[this.index], neurons, count, stream);

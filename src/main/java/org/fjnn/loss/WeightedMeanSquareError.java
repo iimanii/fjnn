@@ -32,18 +32,26 @@ import org.fjnn.cuda.CudaUtil;
  *
  * @author ahmed
  */
-public class MeanSquareError extends Loss {
+public class WeightedMeanSquareError extends Loss {
+
+    float[] weights;
+    CUdeviceptr weightsGPU;
+
+    public WeightedMeanSquareError(float[] weights, CUdeviceptr weightsGPU) {
+        this.weights = weights;
+        this.weightsGPU = weightsGPU;
+    }
     
     // Compute the Mean Squared Error
     @Override
     public float compute(float[] output, float[] expected) {
-        if(output.length != expected.length)
+        if(output.length != expected.length || output.length != weights.length)
             throw new RuntimeException();
         
         float sum = 0;
         for (int i = 0; i < output.length; i++) {
             float diff = output[i] - expected[i];
-            sum += diff * diff;
+            sum += weights[i] * diff * diff;
         }
         return sum / (2 * output.length);
     }
@@ -51,12 +59,12 @@ public class MeanSquareError extends Loss {
     // Compute the derivative of MSE with respect to the predicted values
     @Override
     public float[] derivative(float[] output, float[] expected) {
-        if(output.length != expected.length)
+        if(output.length != expected.length || output.length != weights.length)
             throw new RuntimeException();
         
         float[] derivatives = new float[output.length];
         for (int i = 0; i < output.length; i++) {
-            derivatives[i] = output[i] - expected[i];
+            derivatives[i] = weights[i] * (output[i] - expected[i]);
         }
         return derivatives;
     }

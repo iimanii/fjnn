@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Ahmed Tarek.
+ * Copyright 2024 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,29 +21,41 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#include <cuda.h>
-#include <cuda_runtime_api.h>
-
-#include "util.h"
+package org.fjnn.base;
 
 /**
- * Mean Square Error derivative
+ *
+ * @author ahmed
  */
-extern "C"
-__global__ void MeanSquareErrorPrime(float* output, float* expected, float* result, long size) {
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    
-    if(i < size)
-        result[i] = output[i] - expected[i];
+import java.util.ArrayList;
+import java.util.List;
+import jcuda.driver.CUstream;
+
+public class FeedForwardContextGPU {
+    private final List<FeedForwardResultGPU> results;
+
+    public FeedForwardContextGPU() {
+        this.results = new ArrayList<>();
+    }
+
+    public void addResult(FeedForwardResultGPU result) {
+        results.add(result);
+    }
+
+    public FeedForwardResultGPU getResult(int index) {
+        return results.get(index);
+    }
+
+    public void free() {
+        for (FeedForwardResultGPU result : results) {
+            result.free();
+        }
+    }
+
+    public void freeAsync(CUstream stream) {
+        for (FeedForwardResultGPU result : results) {
+            result.freeAsync(stream);
+        }
+    }
 }
 
-/**
- * Weighted Mean Square Error derivative
- */
-extern "C"
-__global__ void WeightedMeanSquareErrorPrime(float* output, float* expected, float* weights, float* result, long size) {
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    
-    if(i < size)
-        result[i] = weights[i] * (output[i] - expected[i]);
-}

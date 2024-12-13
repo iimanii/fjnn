@@ -49,31 +49,31 @@ public class Linear extends Activation {
     
     @Override
     public void compute(float[] input, int stride, int count) {
-        
+        // do nothing        
     }
 
     @Override
     public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        
+        // do nothing        
     }
     
     @Override
     public void derivative(float[] input, int from, int to) {
-        throw new UnsupportedOperationException("Not supported yet.");
+        // do nothing
     }
 
     @Override
     public void compute(FloatBuffer input, int stride, int count) {
-
+        // do nothing
     }
 
     @Override
     public float derivative(float input) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        return input;
     }
 
     @Override
     public void derivativeGPU(CUdeviceptr ptr, long stride, long size, CUstream stream) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        // do nothing
     }
 }

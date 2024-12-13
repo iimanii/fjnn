@@ -134,7 +134,4 @@ An example of this can be found in test/examples
 
 # Contribution
 
--   Documentation
--   Implementing backpropagation
--   Improving serialization method for storing / loading neural networks
 -   Creating Unit tests

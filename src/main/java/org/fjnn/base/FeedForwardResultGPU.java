@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Ahmed Tarek.
+ * Copyright 2024 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,29 +21,27 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#include <cuda.h>
-#include <cuda_runtime_api.h>
+package org.fjnn.base;
 
-#include "util.h"
-
-/**
- * Mean Square Error derivative
- */
-extern "C"
-__global__ void MeanSquareErrorPrime(float* output, float* expected, float* result, long size) {
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    
-    if(i < size)
-        result[i] = output[i] - expected[i];
-}
+import jcuda.driver.CUdeviceptr;
+import jcuda.driver.CUstream;
 
 /**
- * Weighted Mean Square Error derivative
+ *
+ * @author ahmed
  */
-extern "C"
-__global__ void WeightedMeanSquareErrorPrime(float* output, float* expected, float* weights, float* result, long size) {
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
+public abstract class FeedForwardResultGPU {
+    final int sample_size;
+    final int sample_count;
+    final CUdeviceptr output;
+
+    public FeedForwardResultGPU(int sample_size, int sample_count, CUdeviceptr output) {
+        this.sample_size = sample_size;
+        this.sample_count = sample_count;
+        this.output = output;
+    }
     
-    if(i < size)
-        result[i] = weights[i] * (output[i] - expected[i]);
+    public abstract void free();
+
+    public abstract void freeAsync(CUstream stream);
 }

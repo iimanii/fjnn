@@ -389,6 +389,32 @@ public class CudaFunctions {
         );
     }
     
+    public static void WeightedMeanSquareErrorPrime(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr weights, CUdeviceptr result, long size, int threadsPerBlock, CUstream stream) {
+        int device = CudaEngine.getThreadDeviceId();
+        
+        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "WeightedMeanSquareErrorPrime", device);
+        
+        Pointer kernelParameters = Pointer.to(
+            Pointer.to(output),
+            Pointer.to(expected),
+            Pointer.to(weights),
+            Pointer.to(result),
+            Pointer.to(new long[]{size})
+        );
+        
+        int blockSizeX = (int)Math.min(threadsPerBlock, size);
+        long gridSizeX = (size - 1) / blockSizeX + 1;
+        
+        if(gridSizeX > Integer.MAX_VALUE)
+            throw new RuntimeException();
+        
+        JCudaDriver.cuLaunchKernel(function,
+        (int)gridSizeX, 1, 1,      // Grid dimension
+            blockSizeX, 1, 1,      // Block dimension
+            0, stream,             // Shared memory size and stream
+            kernelParameters, null // Kernel- and extra parameters
+        );
+    }
     
     /* utility functions */
     public static void MatrixMultiply(CUdeviceptr a, CUdeviceptr b, CUdeviceptr r, int rows_a, int cols_a, int cols_b, float alpha, CUstream stream) {

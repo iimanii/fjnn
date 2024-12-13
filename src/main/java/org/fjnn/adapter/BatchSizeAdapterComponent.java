@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Ahmed Tarek.
+ * Copyright 2024 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,29 +21,33 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#include <cuda.h>
-#include <cuda_runtime_api.h>
+package org.fjnn.adapter;
 
-#include "util.h"
-
-/**
- * Mean Square Error derivative
- */
-extern "C"
-__global__ void MeanSquareErrorPrime(float* output, float* expected, float* result, long size) {
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    
-    if(i < size)
-        result[i] = output[i] - expected[i];
-}
+import org.fjnn.base.FeedForwardResult;
+import org.fjnn.base.ModelComponent;
 
 /**
- * Weighted Mean Square Error derivative
+ *
+ * @author ahmed
  */
-extern "C"
-__global__ void WeightedMeanSquareErrorPrime(float* output, float* expected, float* weights, float* result, long size) {
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    
-    if(i < size)
-        result[i] = weights[i] * (output[i] - expected[i]);
+public class BatchSizeAdapterComponent implements ModelComponent {
+    private final int inputBatchSize;       // Expected input batch size
+    private final int targetBatchSize;      // Target batch size for the next component
+
+    public BatchSizeAdapterComponent(int inputBatchSize, int targetBatchSize) {
+        this.inputBatchSize = inputBatchSize;
+        this.targetBatchSize = targetBatchSize;
+    }
+
+    @Override
+    public FeedForwardResult feedForward(float[] inputs, int batchSize) {
+        // Check if the input batch size matches the expected value
+        if (batchSize != inputBatchSize) {
+            throw new IllegalArgumentException("Input batch size mismatch. Expected: " + inputBatchSize + ", but got: " + batchSize);
+        }
+
+        // Pass inputs directly with the new batch size
+        return new BatchSizeAdapterResult(inputs, targetBatchSize);
+    }
 }
+

@@ -34,7 +34,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.fjnn.activation.Activation;
 import org.fjnn.cuda.CudaEngine;
-import org.json.JSONObject;
 
 /**
  *
@@ -133,8 +132,8 @@ public abstract class Network <T extends Network> {
         return finalized;
     }
     
-    public JSONObject serialize(Set<String> ignoreProperties) {
-         JSONObject obj = new JSONObject();
+    public HashMap serialize(Set<String> ignoreProperties) {
+        HashMap result = new HashMap();
         
         Map<String, Object> map = new HashMap<>();
         
@@ -142,10 +141,10 @@ public abstract class Network <T extends Network> {
             if(!ignoreProperties.contains(e.getKey()))
                 map.put(e.getKey(), e.getValue());
         
-        obj.put("properties", map);
-        obj.put("type", this.getClass().getName());
+        result.put("properties", map);
+        result.put("type", this.getClass().getName());
         
-        return obj;
+        return result;
     }
     
     /**

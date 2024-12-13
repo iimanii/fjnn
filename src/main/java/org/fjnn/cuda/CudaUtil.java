@@ -166,17 +166,27 @@ public class CudaUtil {
     public static CUdeviceptr toGPU(float[] array) {
         CUdeviceptr ptr = new CUdeviceptr();
         JCudaDriver.cuMemAlloc(ptr, array.length * FLOAT_SIZE);
-        JCudaDriver.cuMemcpyHtoD(ptr, Pointer.to(array), array.length * FLOAT_SIZE);
+        
+        toGPU(array, ptr);
         
         return ptr;
     }
     
-    public static CUdeviceptr toGPU(float[] array, CUstream stream) {
+    public static void toGPU(float[] array, CUdeviceptr ptr) {
+        JCudaDriver.cuMemcpyHtoD(ptr, Pointer.to(array), array.length * FLOAT_SIZE);
+    }
+    
+    public static CUdeviceptr toGPUAsync(float[] array, CUstream stream) {
         CUdeviceptr ptr = new CUdeviceptr();
         JCudaDriver.cuMemAllocAsync(ptr, array.length * FLOAT_SIZE, stream);
-        JCudaDriver.cuMemcpyHtoDAsync(ptr, Pointer.to(array), array.length * FLOAT_SIZE, stream);
+        
+        toGPUAsync(array, ptr, stream);
         
         return ptr;
+    }
+    
+    public static void toGPUAsync(float[] array, CUdeviceptr ptr, CUstream stream) {
+        JCudaDriver.cuMemcpyHtoDAsync(ptr, Pointer.to(array), array.length * FLOAT_SIZE, stream);
     }
     
     public static byte[] fromGPU(CUdeviceptr src, int size) {

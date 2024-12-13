@@ -37,6 +37,8 @@ import jcuda.driver.JCudaDriver;
 import jcuda.jcublas.cublasHandle;
 import jcuda.jcurand.curandGenerator;
 import org.fjnn.activation.Activation;
+import org.fjnn.base.FeedForwardResult;
+import org.fjnn.base.ModelComponent;
 import org.fjnn.base.NetworkInput;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaFunctions;
@@ -44,14 +46,12 @@ import org.fjnn.cuda.CudaUtil;
 import org.fjnn.loss.Loss;
 import org.fjnn.network.Layer.crossOverMutateResult;
 import org.fjnn.util.util;
-import org.json.JSONArray;
-import org.json.JSONObject;
 
 /**
  *
  * @author ahmed
  */
-public class NeuralNetwork extends Network<NeuralNetwork> {
+public class NeuralNetwork extends Network<NeuralNetwork> implements ModelComponent {
     Layer[] layers;
     
     /* index of last layer */
@@ -128,7 +128,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         sourceLayer.addConnection(toLayer, targetNeurons);
         
         // Add reverse connection from target to source (incoming)
-        targetLayer.addReverseConnection(fromLayer, sourceLayer.getConnection(toLayer));
+        targetLayer.addReverseConnection(fromLayer);//, sourceLayer.getConnection(toLayer));
     
         computeMemoryRequirements();
         return this;
@@ -155,7 +155,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
             prev.addConnection(layer.index, layer.neurons);
 
             // Also add the reverse connection from the current layer to the previous layer
-            layer.addReverseConnection(prev.index, prev.getConnection(layer.index));
+            layer.addReverseConnection(prev.index);//, prev.getConnection(layer.index));
 
             layers[layer.index] = layer;            
             prev = layer;
@@ -168,7 +168,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         prev.addConnection(i, outputSize);
 
         // Also add the reverse connection from output layer to the previous layer
-        layers[i].addReverseConnection(prev.index, prev.getConnection(i));
+        layers[i].addReverseConnection(prev.index);//, prev.getConnection(i));
 
         last = i;
 
@@ -277,24 +277,27 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         return result;
     }
     
-    static public class FeedForwardResults {
+    static public class NeuralNetworkFeedForwardResult extends FeedForwardResult {
         public final int count;
         public final float[][] preActivations;   // Stores z_x (pre-activation) for each layer
         public final float[][] postActivations;  // Stores a_x (post-activation) for each layer
 
-        public FeedForwardResults(int layerCount, int count) {
-            this.count = count;
+        public NeuralNetworkFeedForwardResult(int layerCount, int sample_count) {
+            super(sample_count);
+            this.count = sample_count;
             this.preActivations = new float[layerCount][];
             this.postActivations = new float[layerCount][];
         }
         
+        @Override
         public float[] result() {
             return postActivations[postActivations.length-1];
         }
     }
     
-    public FeedForwardResults feedForward(float[] input, int count) {
-        FeedForwardResults activations = new FeedForwardResults(getLayerCount(), count);
+    @Override
+    public NeuralNetworkFeedForwardResult feedForward(float[] input, int count) {
+        NeuralNetworkFeedForwardResult activations = new NeuralNetworkFeedForwardResult(getLayerCount(), count);
         activations.preActivations[0] = input;
         
         for (int i = 0; i < layers.length; i++)
@@ -324,11 +327,11 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         }
     }
     
-    public void backpropagate(FeedForwardResults output, float[] target, float learningRate, Loss lossFunction) {
+    public void backpropagate(NeuralNetworkFeedForwardResult output, float[] target, float learningRate, Loss lossFunction) {
         backpropagateDebug(output, target, learningRate, lossFunction);
     }
     
-    public debugOutput backpropagateDebug(FeedForwardResults output, float[] target, float learningRate, Loss lossFunction) {
+    public debugOutput backpropagateDebug(NeuralNetworkFeedForwardResult output, float[] target, float learningRate, Loss lossFunction) {
         float[] result = output.result();
         float[] deltaLoss = lossFunction.derivative(result, target);
         
@@ -484,18 +487,19 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         FeedForwardResultsGPU activations = new FeedForwardResultsGPU(getLayerCount(), count);
         activations.preActivations[0] = input;
 
-        for(int i=0; i < layers.length; i++)
+        for(int i=0; i < layers.length; i++) {
             layers[i].feedForwardGPU(activations, stream, handle);
+        }
         
         return activations;
     }
     
-    public static class debugOutputGPU {
+    public static class backpropagateOutputGPU {
         public final int count;
         public final CUdeviceptr[] preActivationDeltas;
         public final List<Map<Integer, ConnectionGradientGPU>> layerConnectionGradients;
 
-        public debugOutputGPU(CUdeviceptr[] preActivationDeltas, List<Map<Integer, ConnectionGradientGPU>> layerConnectionGradients, int count) {
+        public backpropagateOutputGPU(CUdeviceptr[] preActivationDeltas, List<Map<Integer, ConnectionGradientGPU>> layerConnectionGradients, int count) {
             this.count = count;
             this.preActivationDeltas = preActivationDeltas;
             this.layerConnectionGradients = layerConnectionGradients;
@@ -522,7 +526,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         backpropagateGPUDebug(output, target, learningRate, lossFunction, stream).freeAsync(stream);
     }
     
-    public debugOutputGPU backpropagateGPUDebug(FeedForwardResultsGPU output, CUdeviceptr target, float learningRate, Loss lossFunction, CUstream stream) {
+    public backpropagateOutputGPU backpropagateGPUDebug(FeedForwardResultsGPU output, CUdeviceptr target, float learningRate, Loss lossFunction, CUstream stream) {
         checkGPUContext();
         
         cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
@@ -567,7 +571,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         
         JCudaDriver.cuStreamSynchronize(stream);
         
-        return new debugOutputGPU(preActivationDeltas, layerConnectionGradients, output.count);
+        return new backpropagateOutputGPU(preActivationDeltas, layerConnectionGradients, output.count);
     }
     
     @Override
@@ -964,35 +968,48 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         CudaEngine.finalizeThread();
     }
 
-    public JSONObject serialize() {
+    public HashMap serialize() {
         return serialize(new HashSet<>());
     }
 
     @Override
-    public JSONObject serialize(Set<String> ignoreProperties) {
-       JSONObject obj = super.serialize(ignoreProperties);
+    public HashMap serialize(Set<String> ignoreProperties) {
+        HashMap obj = super.serialize(ignoreProperties);
         
-        JSONArray array = new JSONArray();
+        List<HashMap> array = new ArrayList<>();
         
         obj.put("layers", array);
         
         for(Layer l: layers)
-            array.put(l.serialize());
+            array.add(l.serialize());
         
         return obj;
     }
     
-    public static NeuralNetwork deserialize(JSONObject serialized) {
-        JSONArray array = serialized.getJSONArray("layers");
+    public static NeuralNetwork deserialize(Map serialized) {
+        List<HashMap> array = (List)serialized.get("layers");
         
-        Layer[] layers = new Layer[array.length()];
+        Layer[] layers = new Layer[array.size()];
         
-        for(int i=0; i < array.length(); i++)
-            layers[i] = Layer.deserialize(array.getJSONObject(i));
+        for(int i=0; i < array.size(); i++)
+            layers[i] = Layer.deserialize(array.get(i));
+        
+        /* check reverse connections */
+        for(int i=0; i < layers.length; i++) {
+            Layer sourceLayer = layers[i];
+            for(int j : sourceLayer.connections.keySet()) {
+                Layer targetLayer = layers[j];
+                
+                if(!targetLayer.reverseConnections.contains(i)) {
+                    System.out.printf("adding reverse connection: %d <- %d\n", j, i);
+                    targetLayer.addReverseConnection(i);
+                }
+            }
+        }
         
         NeuralNetwork result = new NeuralNetwork(layers);
         
-        result.properties.putAll(serialized.getJSONObject("properties").toMap());
+        result.properties.putAll((HashMap)serialized.get("properties"));
         return result;
     }
     

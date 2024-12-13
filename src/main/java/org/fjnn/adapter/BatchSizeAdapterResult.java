@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Ahmed Tarek.
+ * Copyright 2024 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,29 +21,26 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#include <cuda.h>
-#include <cuda_runtime_api.h>
+package org.fjnn.adapter;
 
-#include "util.h"
-
-/**
- * Mean Square Error derivative
- */
-extern "C"
-__global__ void MeanSquareErrorPrime(float* output, float* expected, float* result, long size) {
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    
-    if(i < size)
-        result[i] = output[i] - expected[i];
-}
+import org.fjnn.base.FeedForwardResult;
 
 /**
- * Weighted Mean Square Error derivative
+ *
+ * @author ahmed
  */
-extern "C"
-__global__ void WeightedMeanSquareErrorPrime(float* output, float* expected, float* weights, float* result, long size) {
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    
-    if(i < size)
-        result[i] = weights[i] * (output[i] - expected[i]);
+public class BatchSizeAdapterResult extends FeedForwardResult {
+    private final float[] output;
+
+    public BatchSizeAdapterResult(float[] output, int adjustedBatchSize) {
+        super(adjustedBatchSize);
+        
+        this.output = output;
+    }
+
+    @Override
+    public float[] result() {
+        return output;
+    }
 }
+

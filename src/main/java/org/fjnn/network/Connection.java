@@ -27,6 +27,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.util.Arrays;
+import java.util.HashMap;
 import jcuda.Pointer;
 import jcuda.Sizeof;
 import jcuda.driver.CUdeviceptr;
@@ -45,8 +46,6 @@ import static org.fjnn.cuda.CudaUtil.FLOAT_SIZE;
 import org.fjnn.util.Rng;
 import org.fjnn.util.intrinsic;
 import org.fjnn.util.util;
-import org.json.JSONObject;
-import run.timer;
 
 /**
  *
@@ -184,8 +183,10 @@ public class Connection {
             /* Compute Matrix Multiplication */
             if(count == 1)
                 JCublas2.cublasSgemv(handle, cublasOperation.CUBLAS_OP_N, m, k, p, a, m, b, 1, p, c, 1);
-            else
-                JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_N, cublasOperation.CUBLAS_OP_N, m, n, k, p, a, m, b, k, p, c, m);
+            else {
+                int status = JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_N, cublasOperation.CUBLAS_OP_N, m, n, k, p, a, m, b, k, p, c, m);
+//                System.err.println("cublasSgemm status: " + status + " " + JCublas2.cublasGetStatusName(status));
+            }
         }
     }
     
@@ -602,8 +603,8 @@ public class Connection {
         CudaFunctions.ClipWeights(weightsGPU, weightsLength, min, max, stream);
     }
     
-    JSONObject serialize() {
-        JSONObject result = new JSONObject();
+    HashMap serialize() {
+        HashMap result = new HashMap();
 
         result.put("neurons", neurons);
         result.put("links", links);
@@ -614,12 +615,12 @@ public class Connection {
         return result;
     }
     
-    static Connection deserialize(JSONObject obj) {
-        int neurons = obj.getInt("neurons");
-        int links = obj.getInt("links");
+    static Connection deserialize(HashMap obj) {
+        int neurons = (Integer)obj.get("neurons");
+        int links = (Integer)obj.get("links");
         
-        float[] weights = util.toFloatArray(util.decompress(util.base64decode(obj.getString("weights"))));
-        float[] biases = util.toFloatArray(util.decompress(util.base64decode(obj.getString("biases"))));
+        float[] weights = util.toFloatArray(util.decompress(util.base64decode((String)obj.get("weights"))));
+        float[] biases = util.toFloatArray(util.decompress(util.base64decode((String)obj.get("biases"))));
         
         return new Connection(neurons, links, weights, biases);
     }

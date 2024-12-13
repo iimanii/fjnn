@@ -25,6 +25,7 @@ package org.fjnn.network;
 
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
 import jcuda.driver.CUdeviceptr;
@@ -36,8 +37,6 @@ import org.fjnn.base.NetworkInput;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
-import org.json.JSONArray;
-import org.json.JSONObject;
 
 /**
  *
@@ -368,32 +367,32 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
     }
 
     @Override
-    public JSONObject serialize(Set<String> ignoreProperties) {
-       JSONObject obj = super.serialize(ignoreProperties);
+    public HashMap serialize(Set<String> ignoreProperties) {
+        HashMap obj = super.serialize(ignoreProperties);
         
-        JSONArray arr = new JSONArray();
+        List arr = new ArrayList();
         obj.put("inputs", arr);
         
         for(NeuralNetwork n : heads)
-            arr.put(n.serialize(ignoreProperties));
+            arr.add(n.serialize(ignoreProperties));
         
         obj.put("base", base.serialize(ignoreProperties));
         
         return obj;
     }
     
-    public static MultiModalNetwork deserialize(JSONObject serialized) {
-        JSONArray arr = serialized.getJSONArray("inputs");
+    public static MultiModalNetwork deserialize(HashMap serialized) {
+        List<HashMap> arr = (List)serialized.get("inputs");
         
-        NeuralNetwork[] inputs = new NeuralNetwork[arr.length()];
-        for(int i=0; i < arr.length(); i++)
-            inputs[i] = NeuralNetwork.deserialize(arr.getJSONObject(i));
+        NeuralNetwork[] inputs = new NeuralNetwork[arr.size()];
+        for(int i=0; i < arr.size(); i++)
+            inputs[i] = NeuralNetwork.deserialize(arr.get(i));
         
-        NeuralNetwork base = NeuralNetwork.deserialize(serialized.getJSONObject("base"));
+        NeuralNetwork base = NeuralNetwork.deserialize((HashMap)serialized.get("base"));
         
         MultiModalNetwork result = new MultiModalNetwork(inputs, base);
         
-        result.properties.putAll(serialized.getJSONObject("properties").toMap());
+        result.properties.putAll((HashMap)serialized.get("properties"));
         return result;
     }
 

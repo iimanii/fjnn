@@ -36,7 +36,6 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.Stack;
 import java.util.concurrent.atomic.AtomicInteger;
-import jcuda.driver.CUdeviceptr;
 import org.fjnn.activation.Activation;
 import org.fjnn.base.Network;
 import org.fjnn.base.NetworkInput;
@@ -45,7 +44,6 @@ import org.fjnn.genetic.GeneticNode.NodeType;
 import org.fjnn.network.Connection;
 import org.fjnn.network.NeuralNetwork;
 import org.fjnn.util.Rng;
-import org.json.JSONObject;
 
 /**
  *
@@ -1149,7 +1147,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
     }
 
     @Override
-    public JSONObject serialize(Set<String> ignoreProperties) {
+    public HashMap serialize(Set<String> ignoreProperties) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 }

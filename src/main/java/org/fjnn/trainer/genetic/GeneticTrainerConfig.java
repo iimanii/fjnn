@@ -23,8 +23,6 @@
  */
 package org.fjnn.trainer.genetic;
 
-import org.json.JSONObject;
-
 /**
  *
  * @author ahmed
