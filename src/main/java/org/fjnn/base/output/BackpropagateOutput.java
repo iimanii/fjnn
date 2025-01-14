@@ -21,33 +21,22 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.adapter;
-
-import org.fjnn.base.FeedForwardResult;
-import org.fjnn.base.ModelComponent;
+package org.fjnn.base.output;
 
 /**
  *
  * @author ahmed
  */
-public class BatchSizeAdapterComponent implements ModelComponent {
-    private final int inputBatchSize;       // Expected input batch size
-    private final int targetBatchSize;      // Target batch size for the next component
+public abstract class BackpropagateOutput {
+    public final int batchSize;
+    public final int batchCount;
+    public final int totalSize;
 
-    public BatchSizeAdapterComponent(int inputBatchSize, int targetBatchSize) {
-        this.inputBatchSize = inputBatchSize;
-        this.targetBatchSize = targetBatchSize;
+    public BackpropagateOutput(int batchSize, int batchCount) {
+        this.batchSize = batchSize;
+        this.batchCount = batchCount;
+        this.totalSize = batchSize * batchSize;
     }
-
-    @Override
-    public FeedForwardResult feedForward(float[] inputs, int batchSize) {
-        // Check if the input batch size matches the expected value
-        if (batchSize != inputBatchSize) {
-            throw new IllegalArgumentException("Input batch size mismatch. Expected: " + inputBatchSize + ", but got: " + batchSize);
-        }
-
-        // Pass inputs directly with the new batch size
-        return new BatchSizeAdapterResult(inputs, targetBatchSize);
-    }
+    
+    public abstract float[] deltaLoss();
 }
-

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2024 ahmed.
+ * Copyright 2018 Ahmed Tarek.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,18 +21,29 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.base;
+#include <cuda.h>
+#include <cuda_runtime_api.h>
+
+#include "util.h"
 
 /**
- *
- * @author ahmed
+ * Mean Square Error derivative
  */
-public abstract class FeedForwardResult {
-    final int sample_count;
-
-    public FeedForwardResult(int sample_count) {
-        this.sample_count = sample_count;
-    }
+extern "C"
+__global__ void MeanSquareErrorPrime(float* output, float* expected, float* result, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
     
-    public abstract float[] result();
+    if(i < size)
+        result[i] = output[i] - expected[i];
+}
+
+/**
+ * Weighted Mean Square Error derivative
+ */
+extern "C"
+__global__ void WeightedMeanSquareErrorPrime(float* output, float* expected, float* weights, float* result, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(i < size)
+        result[i] = weights[i] * (output[i] - expected[i]);
 }

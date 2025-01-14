@@ -37,6 +37,83 @@ import org.fjnn.util.util;
 public class CudaFunctions {
     
     public static class vector {
+        public static void scale(CUdeviceptr a, float factor, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "scale", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(a),
+                Pointer.to(new float[]{factor}),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+    
+        public static void add(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "add", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(a),
+                Pointer.to(b),
+                Pointer.to(c),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+        
+        public static void multiply(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "multiply", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(a),
+                Pointer.to(b),
+                Pointer.to(c),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+        
         public static void copyStride(CUdeviceptr src, CUdeviceptr dst, int stride, int spread, int count, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
             int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
@@ -97,54 +174,36 @@ public class CudaFunctions {
             );
         }
         
-        public static void scale(CUdeviceptr a, float factor, long size, CUstream stream) {
-            int device = CudaEngine.getThreadDeviceId();
-
-            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "scale", device);
-
-            Pointer kernelParameters = Pointer.to(
-                Pointer.to(a),
-                Pointer.to(new float[]{factor}),
-                Pointer.to(new long[]{size})
-            );
-
-            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
-            long gridSizeX = (size - 1) / blockSizeX + 1;
-
-            if(gridSizeX > Integer.MAX_VALUE)
-                throw new RuntimeException();
-
-            JCudaDriver.cuLaunchKernel(function,
-            (int)gridSizeX, 1, 1,      // Grid dimension
-                blockSizeX, 1, 1,      // Block dimension
-                0, stream,             // Shared memory size and stream
-                kernelParameters, null // Kernel- and extra parameters
-            );
+        public static void addStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, int stride, int count, CUstream stream) {
+            addStride(a, b, c, stride, count, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
         }
-    
-        public static void multiply(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long size, CUstream stream) {
+        
+        public static void addStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, int stride, int count, int threadsPerBlock, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
-            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "multiply", device);
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "add_stride", device);
+
+            int blockSizeX = Math.min(threadsPerBlock, stride);
+            int blockSizeY = threadsPerBlock / blockSizeX;
+            int gridSizeX = (stride - 1) / threadsPerBlock + 1;
+
+            int blocksCount = (count - 1) / blockSizeY + 1;
+            int gridSizeY = Math.min(CudaEngine.getMaxGridSize(device)[1], blocksCount);
+            int gridSizeZ = (blocksCount - 1) / gridSizeY + 1;
 
             Pointer kernelParameters = Pointer.to(
                 Pointer.to(a),
                 Pointer.to(b),
                 Pointer.to(c),
-                Pointer.to(new long[]{size})
+                Pointer.to(new int[]{stride}),
+                Pointer.to(new long[]{(long)count * stride})
             );
 
-            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
-            long gridSizeX = (size - 1) / blockSizeX + 1;
-
-            if(gridSizeX > Integer.MAX_VALUE)
-                throw new RuntimeException();
-
             JCudaDriver.cuLaunchKernel(function,
-            (int)gridSizeX, 1, 1,      // Grid dimension
-                blockSizeX, 1, 1,      // Block dimension
-                0, stream,             // Shared memory size and stream
-                kernelParameters, null // Kernel- and extra parameters
+                gridSizeX, gridSizeY, gridSizeZ,    // Grid dimension
+                blockSizeX, blockSizeY, 1,          // Block dimension
+                0, stream,                          // Shared memory size and stream
+                kernelParameters, null              // Kernel- and extra parameters
             );
         }
         

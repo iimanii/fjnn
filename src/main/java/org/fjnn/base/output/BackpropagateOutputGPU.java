@@ -21,26 +21,29 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.adapter;
+package org.fjnn.base.output;
 
-import org.fjnn.base.FeedForwardResult;
+import jcuda.driver.CUdeviceptr;
+import jcuda.driver.CUstream;
 
 /**
  *
  * @author ahmed
  */
-public class BatchSizeAdapterResult extends FeedForwardResult {
-    private final float[] output;
+public abstract class BackpropagateOutputGPU {
+    public final int batchSize;
+    public final int batchCount;
+    public final int totalSize;
 
-    public BatchSizeAdapterResult(float[] output, int adjustedBatchSize) {
-        super(adjustedBatchSize);
-        
-        this.output = output;
+    public BackpropagateOutputGPU(int batchSize, int batchCount) {
+        this.batchSize = batchSize;
+        this.batchCount = batchCount;
+        this.totalSize = batchSize * batchCount;
     }
+    
+    public abstract CUdeviceptr deltaLoss();
+    
+    public abstract void free();
 
-    @Override
-    public float[] result() {
-        return output;
-    }
+    public abstract void freeAsync(CUstream stream);
 }
-

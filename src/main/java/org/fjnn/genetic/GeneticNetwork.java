@@ -36,11 +36,18 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.Stack;
 import java.util.concurrent.atomic.AtomicInteger;
+import jcuda.driver.CUdeviceptr;
+import jcuda.driver.CUstream;
 import org.fjnn.activation.Activation;
 import org.fjnn.base.Network;
 import org.fjnn.base.NetworkInput;
+import org.fjnn.base.output.BackpropagateOutput;
+import org.fjnn.base.output.BackpropagateOutputGPU;
+import org.fjnn.base.output.FeedForwardOutput;
+import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.genetic.GeneticConfig.mutation;
 import org.fjnn.genetic.GeneticNode.NodeType;
+import org.fjnn.loss.Loss;
 import org.fjnn.network.Connection;
 import org.fjnn.network.NeuralNetwork;
 import org.fjnn.util.Rng;
@@ -92,6 +99,26 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
 
     @Override
     public float[] compute(NetworkInput input) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public FeedForwardOutput feedForward(float[] input, int batchCount) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public FeedForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchCount, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss, float learningRate) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, float learningRate, CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
@@ -1087,7 +1114,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
     }
 
     @Override
-    public void prepareGPU(int deviceId) {
+    protected void prepareGPU0(CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
@@ -1097,7 +1124,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
     }
 
     @Override
-    public void freeGPU() {
+    protected void freeGPU0(CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
     

@@ -39,8 +39,8 @@ import jcuda.jcurand.curandGenerator;
 import org.fjnn.activation.Activation;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
-import org.fjnn.network.NeuralNetwork.NeuralNetworkFeedForwardResult;
-import org.fjnn.network.NeuralNetwork.FeedForwardResultsGPU;
+import org.fjnn.network.outputs.NeuralNetworkForwardOutput;
+import org.fjnn.network.outputs.NeuralNetworkForwardOutputGPU;
 import org.fjnn.util.Rng;
 import org.fjnn.util.util;
 
@@ -177,11 +177,11 @@ public class Layer {
         }
     }
     
-    protected void feedForward(NeuralNetworkFeedForwardResult activations) {
+    protected void feedForward(NeuralNetworkForwardOutput activations) {
         /* make a copy to perform activation on the array while keeping the original preActivation */
         activations.postActivations[this.index] = util.copyArray(activations.preActivations[index]);
         
-        int count = activations.count;
+        int count = activations.batchCount;
         
         if (activation != null)
             activation.compute(activations.postActivations[this.index], neurons, count);
@@ -214,12 +214,13 @@ public class Layer {
         }
     }
     
-    public void backpropagate(NeuralNetworkFeedForwardResult activations, float[][] preActivationDeltas, Map<Integer, ConnectionGradient> connectionGradients) {
+    public void backpropagate(NeuralNetworkForwardOutput activations, float[] currentActivationDeltas, float[][] preActivationDeltas, Map<Integer, ConnectionGradient> connectionGradients) {
         if(preActivationDeltas[this.index] != null)
             throw new RuntimeException("issue with preActivation");
         
         // Step 1: Initialize the activation deltas for the current layer
-        float[] currentActivationDeltas = new float[this.neurons * activations.count];
+        if(currentActivationDeltas == null)
+           currentActivationDeltas = new float[this.neurons * activations.batchCount];
 
         // Step 2: Loop through each connection to the next layers
         for (Map.Entry<Integer, Connection> entry : connections.entrySet()) {
@@ -227,9 +228,8 @@ public class Layer {
             Connection connection = entry.getValue();
             float[] nextPreActivationDeltas = preActivationDeltas[nextLayerIndex];  // delta^{(l+1)}
 
-
             // Step 3: Compute Weight and Bias Gradients and accumulate pre-activation deltas for the current layer
-            ConnectionGradient gradient = connection.backpropagate(currentActivationDeltas, nextPreActivationDeltas, activations.postActivations[this.index], activations.count);
+            ConnectionGradient gradient = connection.backpropagate(currentActivationDeltas, nextPreActivationDeltas, activations.postActivations[this.index], activations.batchCount);
             connectionGradients.put(nextLayerIndex, gradient);
         }
 
@@ -415,8 +415,8 @@ public class Layer {
         }
     }
     
-    protected void feedForwardGPU(FeedForwardResultsGPU activations, CUstream stream, cublasHandle handle) {
-        int count = activations.count;
+    protected void feedForwardGPU(NeuralNetworkForwardOutputGPU activations, CUstream stream, cublasHandle handle) {
+        int count = activations.batchCount;
         
         if (activation != null) {
             /* make a copy to perform activation on the array while keeping the original preActivation */
@@ -445,16 +445,14 @@ public class Layer {
         }
     }
 
-    protected void backpropagateGPU(FeedForwardResultsGPU activations, CUdeviceptr[] preActivationDeltas, Map<Integer, ConnectionGradientGPU> connectionGradients, CUstream stream, cublasHandle handle) {
+    protected void backpropagateGPU(NeuralNetworkForwardOutputGPU activations, CUdeviceptr currentActivationDeltas, CUdeviceptr[] preActivationDeltas, Map<Integer, ConnectionGradientGPU> connectionGradients, CUstream stream, cublasHandle handle) {
         if(preActivationDeltas[this.index] != null)
             throw new RuntimeException("issue with preActivation");
         
-        long size = (long)this.neurons * activations.count;
+        long size = (long)this.neurons * activations.batchCount;
         
         // Step 1: Initialize the activation deltas for the current layer only if it has incomming connections
-        CUdeviceptr currentActivationDeltas = null;
-        
-        if(!reverseConnections.isEmpty()) {
+        if(currentActivationDeltas == null && !reverseConnections.isEmpty()) {
             currentActivationDeltas = CudaUtil.createFloatAsync(size, stream);
 //            JCudaDriver.cuMemsetD32Async(currentActivationDeltas, 0, size, stream);
         }
@@ -473,7 +471,7 @@ public class Layer {
             ConnectionGradientGPU gradient = connection.backpropagateGPU(currentActivationDeltas, 
                                                                          nextPreActivationDeltas, 
                                                                          activations.postActivations[this.index], 
-                                                                         activations.count,
+                                                                         activations.batchCount,
                                                                          accumulateDeltas,
                                                                          stream,
                                                                          handle);
@@ -487,7 +485,7 @@ public class Layer {
         // Equation: delta^{(l)}_j = Delta a^{(l)}_j * sigma'(z^{(l)}_j)
         if(activation != null) {
             CUdeviceptr derivative = CudaUtil.copyFloatAsync(activations.preActivations[this.index], size, stream);
-            activation.derivativeGPU(derivative, this.neurons, activations.count, stream);
+            activation.derivativeGPU(derivative, this.neurons, activations.batchCount, stream);
             
             CudaFunctions.vector.multiply(currentActivationDeltas, derivative, currentActivationDeltas, size, stream);
             CudaUtil.freeAsync(derivative, stream);
@@ -546,10 +544,10 @@ public class Layer {
         }
     }
 
-    protected void freeGPU() {
-        for(Connection c : connections.values())
-            c.freeGPU();
-    }
+//    protected void freeGPU() {
+//        for(Connection c : connections.values())
+//            c.freeGPU();
+//    }
     
     protected void freeGPU(CUstream stream) {
         for(Connection c : connections.values())

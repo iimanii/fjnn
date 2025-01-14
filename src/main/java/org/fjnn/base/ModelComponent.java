@@ -23,12 +23,132 @@
  */
 package org.fjnn.base;
 
+import org.fjnn.base.output.FeedForwardOutputGPU;
+import org.fjnn.base.output.FeedForwardOutput;
+import jcuda.driver.CUdeviceptr;
+import jcuda.driver.CUstream;
+import jcuda.driver.JCudaDriver;
+import org.fjnn.base.output.BackpropagateOutput;
+import org.fjnn.base.output.BackpropagateOutputGPU;
+import org.fjnn.cuda.CudaEngine;
+import org.fjnn.cuda.CudaUtil;
+import org.fjnn.loss.Loss;
+
 /**
  *
  * @author ahmed
  */
-public interface ModelComponent {
+public abstract class ModelComponent {
+    /* device id for gpu to use */
+    protected int deviceId = -1;
+    
+    public final int getGPUDeviceId() {
+        return deviceId;
+    }
+    
+    public FeedForwardOutput feedForward(float[] input, int batchSize, int batchCount) {
+        if(batchSize != getInputSize())
+            throw new RuntimeException("Invalid batch size " + batchSize + " != " + getInputSize());
+        
+        return feedForward(input, batchCount);
+    }
+    public abstract FeedForwardOutput feedForward(float[] input, int batchCount);
+    
+    public final FeedForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchSize, int batchCount, CUstream stream) {
+        checkGPUContext();
+        
+        if(batchSize != getInputSize())
+            throw new RuntimeException("Invalid batch size " + batchSize + " != " + getInputSize());
+        
+        return feedForwardGPU(input, batchCount, stream);
+    }
+    public abstract FeedForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchCount, CUstream stream);
+    
+    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss, int deltaLossSize, int deltaLossCount, float learningRate) {
+        if(output.batchSize != deltaLossSize || getOutputSize() != deltaLossSize)
+            throw new RuntimeException("Invalid batch size " + deltaLossSize + " != " + getInputSize());
+        
+        if(output.batchCount != deltaLossCount)
+            throw new RuntimeException("Invalid batch count " + deltaLossCount + " != " + output.batchCount);
+        
+        return backpropagate(output, deltaLoss, learningRate);
+    }
+    protected abstract BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss, float learningRate);
+    
+    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, int deltaLossSize, int deltaLossCount, float learningRate, CUstream stream) {
+        if(output.batchSize != deltaLossSize || getOutputSize() != deltaLossSize)
+            throw new RuntimeException("Invalid batch size " + deltaLossSize + " != " + getInputSize());
+        
+        if(output.batchCount != deltaLossCount)
+            throw new RuntimeException("Invalid batch count " + deltaLossCount + " != " + output.batchCount);
+        
+        return backpropagateGPU(output, deltaLoss, learningRate, stream);
+    }
+    protected abstract BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, float learningRate, CUstream stream);
+    
+    public abstract boolean gpuReady();
+    
+    public final void prepareGPU() {
+        prepareGPU(null);
+    }
+    public final void prepareGPU(CUstream stream) {
+        if(gpuReady())
+            throw new RuntimeException("GPU already initialized for this component");        
+        
+        boolean invalidThreadId = CudaEngine.getThreadDeviceId() == -1;
+        
+        if (invalidThreadId)
+            throw new RuntimeException("Invalid cuda context, must call CudaEngine.prepareThread(...)");
+        
+        if(stream == null) {
+            stream = CudaUtil.createStream();
+            
+            prepareGPU0(stream);
 
-    FeedForwardResult feedForward(float[] inputs, int batchSize);
+            JCudaDriver.cuStreamSynchronize(stream);
+            
+            CudaUtil.freeStream(stream);
+        } else {            
+            prepareGPU0(stream);
+        }
+        
+        deviceId = CudaEngine.getThreadDeviceId();
+    }    
+    protected abstract void prepareGPU0(CUstream stream);
+
+    public final void freeGPU() {
+        freeGPU(null);
+    }
+    public final void freeGPU(CUstream stream) {
+        if(!gpuReady())
+            throw new RuntimeException("Calling freeGPU on a compoenet that is not loaded to GPU");
+
+        if(stream == null) {
+            stream = CudaUtil.createStream();
+            
+            freeGPU0(stream);
+
+            JCudaDriver.cuStreamSynchronize(stream);
+            
+            CudaUtil.freeStream(stream);
+        } else {            
+            freeGPU0(stream);
+        }
+        
+        deviceId = -1;
+    }
+    protected abstract void freeGPU0(CUstream stream);
+    
+    protected void checkGPUContext() {
+        if (!gpuReady())
+            throw new RuntimeException("Component is not loaded to the GPU, please call prepareGPU first");
+
+        boolean invalidThreadId = CudaEngine.getThreadDeviceId() != deviceId;
+
+        if (invalidThreadId)
+            throw new RuntimeException("Invalid cuda context for device: " + deviceId + " must call CudaEngine.prepareThread(...)");
+    }
+    
+    public abstract int getInputSize();
+    public abstract int getOutputSize();
 }
-

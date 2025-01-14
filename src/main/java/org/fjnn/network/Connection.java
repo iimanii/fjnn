@@ -339,17 +339,17 @@ public class Connection {
         gpuReady = true;
     }
 
-    void freeGPU() {
-        if(weightsGPU != null)
-            CudaUtil.free(weightsGPU);
-        
-        weightsGPU = null;
-        biasesGPU = null;
-        
-        freeGPURng();
-        
-        gpuReady = false;
-    }
+//    void freeGPU() {
+//        if(weightsGPU != null)
+//            CudaUtil.free(weightsGPU);
+//        
+//        weightsGPU = null;
+//        biasesGPU = null;
+//        
+//        freeGPURng();
+//        
+//        gpuReady = false;
+//    }
     
     void freeGPU(CUstream stream) {
         if(weightsGPU != null)
@@ -434,7 +434,7 @@ public class Connection {
     
     public void setWeights(float[] values) {
         if(values.length != weights.length)
-            throw new RuntimeException();
+            throw new RuntimeException("new weights " + values.length + " != " + weights.length);
         
         weights = Arrays.copyOf(values, values.length);
         

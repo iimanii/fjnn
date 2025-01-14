@@ -21,28 +21,41 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.base;
+package org.fjnn.base.output;
 
 /**
  *
  * @author ahmed
  */
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
-public class FeedForwardContext {
-    private final List<FeedForwardResult> results;
+public class BackpropagateOutputMap {
+    private final Map<Integer, BackpropagateOutput> results;
+    private final float[] deltaLoss;
 
-    public FeedForwardContext() {
-        this.results = new ArrayList<>();
+    public BackpropagateOutputMap(float[] deltaLoss) {
+        this.results = new HashMap<>();
+        this.deltaLoss = deltaLoss;
     }
 
-    public void addResult(FeedForwardResult result) {
-        results.add(result);
+    public void addOutput(int index, BackpropagateOutput result) {
+        if (results.containsKey(index))
+            throw new IllegalArgumentException("Output at index " + index + " already exists.");
+
+        results.put(index, result);
     }
 
-    public FeedForwardResult getResult(int index) {
+    public BackpropagateOutput getOutput(int index) {
         return results.get(index);
+    }
+    
+    public float[] deltaLoss() {
+        return deltaLoss;
+    }
+    
+    public int size() {
+        return results.size();
     }
 }
 

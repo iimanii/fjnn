@@ -31,24 +31,23 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import org.fjnn.activation.Activation;
+import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.cuda.CudaEngine;
 
 /**
  *
  * @author ahmed
  * @param <T>
+ * @param <K>
  */
 
-public abstract class Network <T extends Network> {
+public abstract class Network <T extends Network> extends ModelComponent {
     protected final Map<String, Object> properties;
     protected final int inputSize;
     protected final int outputSize;
     protected final Activation outputActivation;
     
-    /* device id for gpu to use */
-    protected int deviceId;
     
     /* a network can only be built once */
     protected boolean finalized;
@@ -58,7 +57,6 @@ public abstract class Network <T extends Network> {
         this.inputSize = inputSize;
         this.outputSize = outputSize;
         this.outputActivation = outputActivation;
-        this.deviceId = -1;
         
         if(inputSize == 0 || outputSize == 0)
             throw new RuntimeException("invalid input / output: " + inputSize + " " + outputSize);
@@ -184,34 +182,9 @@ public abstract class Network <T extends Network> {
     public abstract void ensureCPU();
     
     /* GPU Stuff */
-    static AtomicLong COUNTER = new AtomicLong();
-    
-    public abstract boolean gpuReady();
-    
-    public final void prepareGPU() {
-        if(gpuReady())
-            throw new RuntimeException("GPU already initialized for connection");
-        
-        int device = CudaEngine.getThreadDeviceId();
-        
-        if(device == -1)
-           device = (int) (COUNTER.getAndIncrement() % CudaEngine.getDeviceCount());
-        
-        prepareGPU(device);
-    }
-
-    public abstract void prepareGPU(int deviceId);
-
-    public final int getGPUDeviceId() {
-        return deviceId;
-    }
-    
     public abstract void crossOverMutateGPU(T n0, T n1, float min, float max, double mutation, boolean nocopy);
     
     public abstract void clipWeightsGPU(float clipMin, float clipMax);
-
-    public abstract void freeGPU();
-    
     
     protected void lockMemory(long size, int deviceId) {
         Semaphore lock = CudaEngine.getMemLock(deviceId);
@@ -229,7 +202,7 @@ public abstract class Network <T extends Network> {
     }
     
     protected void releaseMemory(long size) {
-        Semaphore lock = CudaEngine.getMemLock(deviceId);
+        Semaphore lock = CudaEngine.getMemLock(getGPUDeviceId());
         
         int memoryKB = (int)Math.ceil(size / 1024.0);
         

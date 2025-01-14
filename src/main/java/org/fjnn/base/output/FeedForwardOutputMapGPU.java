@@ -21,41 +21,56 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.base;
+package org.fjnn.base.output;
 
 /**
  *
  * @author ahmed
  */
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 
-public class FeedForwardContextGPU {
-    private final List<FeedForwardResultGPU> results;
+public class FeedForwardOutputMapGPU {
+    private final Map<Integer, FeedForwardOutputGPU> results;
 
-    public FeedForwardContextGPU() {
-        this.results = new ArrayList<>();
+    public FeedForwardOutputMapGPU() {
+        this.results = new HashMap<>();
     }
 
-    public void addResult(FeedForwardResultGPU result) {
-        results.add(result);
+    public void addOutput(int index, FeedForwardOutputGPU result) {
+        if (results.containsKey(index))
+            throw new IllegalArgumentException("Output at index " + index + " already exists.");
+
+        results.put(index, result);
     }
 
-    public FeedForwardResultGPU getResult(int index) {
+    public FeedForwardOutputGPU getOutput(int index) {
         return results.get(index);
     }
 
     public void free() {
-        for (FeedForwardResultGPU result : results) {
-            result.free();
+        for (FeedForwardOutputGPU output : results.values()) {
+            output.free();
         }
     }
 
     public void freeAsync(CUstream stream) {
-        for (FeedForwardResultGPU result : results) {
-            result.freeAsync(stream);
+        for (FeedForwardOutputGPU output : results.values()) {
+            output.freeAsync(stream);
         }
+    }
+    
+    
+    public int size() {
+        return results.size();
+    }
+    
+    public CUdeviceptr output() {
+        return results.get(results.size()-1).output();
     }
 }
 

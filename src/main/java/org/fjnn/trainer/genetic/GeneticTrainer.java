@@ -184,8 +184,11 @@ public class GeneticTrainer <T extends Network> {
         
         switch(config.computeMode) {
             case gpu:
-                if(!n.gpuReady())
-                    n.prepareGPU(config.deviceId);
+                if(!n.gpuReady()) {
+                    CudaEngine.prepareThread(config.deviceId);
+                    n.prepareGPU();
+                    CudaEngine.finalizeThread();
+                }
                 
                 NetworkInput gpuInput = batch == -1 ? trainingSet.getAllGPUInput(config.deviceId) : trainingSet.getGPUInput(config.deviceId, batch);
                 result = n.compute(gpuInput);

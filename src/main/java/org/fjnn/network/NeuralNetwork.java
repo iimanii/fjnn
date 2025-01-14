@@ -23,6 +23,10 @@
  */
 package org.fjnn.network;
 
+import org.fjnn.network.outputs.NeuralNetworkBackpropagateOutput;
+import org.fjnn.network.outputs.NeuralNetworkForwardOutput;
+import org.fjnn.network.outputs.NeuralNetworkForwardOutputGPU;
+import org.fjnn.network.outputs.NeuralNetworkBackpropagateOutputGPU;
 import org.fjnn.base.Network;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
@@ -37,11 +41,10 @@ import jcuda.driver.JCudaDriver;
 import jcuda.jcublas.cublasHandle;
 import jcuda.jcurand.curandGenerator;
 import org.fjnn.activation.Activation;
-import org.fjnn.base.FeedForwardResult;
-import org.fjnn.base.ModelComponent;
+import org.fjnn.base.output.FeedForwardOutput;
 import org.fjnn.base.NetworkInput;
+import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
 import org.fjnn.loss.Loss;
 import org.fjnn.network.Layer.crossOverMutateResult;
@@ -51,7 +54,7 @@ import org.fjnn.util.util;
  *
  * @author ahmed
  */
-public class NeuralNetwork extends Network<NeuralNetwork> implements ModelComponent {
+public class NeuralNetwork extends Network<NeuralNetwork> {
     Layer[] layers;
     
     /* index of last layer */
@@ -277,27 +280,10 @@ public class NeuralNetwork extends Network<NeuralNetwork> implements ModelCompon
         return result;
     }
     
-    static public class NeuralNetworkFeedForwardResult extends FeedForwardResult {
-        public final int count;
-        public final float[][] preActivations;   // Stores z_x (pre-activation) for each layer
-        public final float[][] postActivations;  // Stores a_x (post-activation) for each layer
-
-        public NeuralNetworkFeedForwardResult(int layerCount, int sample_count) {
-            super(sample_count);
-            this.count = sample_count;
-            this.preActivations = new float[layerCount][];
-            this.postActivations = new float[layerCount][];
-        }
-        
-        @Override
-        public float[] result() {
-            return postActivations[postActivations.length-1];
-        }
-    }
     
     @Override
-    public NeuralNetworkFeedForwardResult feedForward(float[] input, int count) {
-        NeuralNetworkFeedForwardResult activations = new NeuralNetworkFeedForwardResult(getLayerCount(), count);
+    public NeuralNetworkForwardOutput feedForward(float[] input, int count) {
+        NeuralNetworkForwardOutput activations = new NeuralNetworkForwardOutput(getOutputSize(), count, getLayerCount());
         activations.preActivations[0] = input;
         
         for (int i = 0; i < layers.length; i++)
@@ -317,35 +303,21 @@ public class NeuralNetwork extends Network<NeuralNetwork> implements ModelCompon
      *  6. After processing the entire batch, update weights and biases using the accumulated gradients and the learning rate.
      *  7. Clear the accumulated gradients after the update.
      */
-    public static class debugOutput {
-        public final float[][] preActivationDeltas;
-        public final List<Map<Integer, ConnectionGradient>> layerConnectionGradients;
-
-        public debugOutput(float[][] preActivationDeltas, List<Map<Integer, ConnectionGradient>> layerConnectionGradients) {
-            this.preActivationDeltas = preActivationDeltas;
-            this.layerConnectionGradients = layerConnectionGradients;
-        }
-    }
-    
-    public void backpropagate(NeuralNetworkFeedForwardResult output, float[] target, float learningRate, Loss lossFunction) {
-        backpropagateDebug(output, target, learningRate, lossFunction);
-    }
-    
-    public debugOutput backpropagateDebug(NeuralNetworkFeedForwardResult output, float[] target, float learningRate, Loss lossFunction) {
-        float[] result = output.result();
+    public NeuralNetworkBackpropagateOutput backpropagate(NeuralNetworkForwardOutput output, float[] target, float learningRate, Loss lossFunction) {
+        float[] result = output.output();
         float[] deltaLoss = lossFunction.derivative(result, target);
         
-        float[][] preActivationDeltas = new float[layers.length][];
-
-        // Step 2: Convert post-activation delta to pre-activation delta for the output layer
-        float[] outputPreActivationDeltas = new float[deltaLoss.length];
-        float[] preActivationResult = output.preActivations[last];
+        return backpropagate(output, deltaLoss, learningRate);
+    }
+    
+    @Override
+    public NeuralNetworkBackpropagateOutput backpropagate(FeedForwardOutput feedforward, float[] deltaLoss, float learningRate) {
+        if(!(feedforward instanceof NeuralNetworkForwardOutput))
+            throw new RuntimeException("Invalid feedforward output");
         
-        Layer outputLayer = layers[last];
-        for (int i = 0; i < deltaLoss.length; i++) {
-            outputPreActivationDeltas[i] = deltaLoss[i] * outputLayer.activation.derivative(preActivationResult[i]);
-        }
-        preActivationDeltas[layers.length - 1] = outputPreActivationDeltas;  // Store the pre-activation delta for the output layer
+        NeuralNetworkForwardOutput output = (NeuralNetworkForwardOutput)feedforward;
+        
+        float[][] preActivationDeltas = new float[layers.length][];
 
         // Step 3: Initialize the ConnectionGradient Map to store gradients for all connections
         List<Map<Integer, ConnectionGradient>> layerConnectionGradients = new ArrayList<>();
@@ -353,10 +325,14 @@ public class NeuralNetwork extends Network<NeuralNetwork> implements ModelCompon
             layerConnectionGradients.add(new HashMap<>());
         }
 
-        // Step 4: Backpropagate through all hidden layers, excluding the output layer
-        for (int i = layers.length - 2; i >= 0; i--) {  // Start from the second last layer and move backward (excluding output layer)
+        // Step 1: Initialize the activation deltas for the output layer
+        float[] currentActivationDeltas = deltaLoss;
+
+        // Step 4: Backpropagate through all hidden layers
+        for (int i = layers.length - 1; i >= 0; i--) {
             Layer currentLayer = layers[i];
-            currentLayer.backpropagate(output, preActivationDeltas, layerConnectionGradients.get(i));
+            currentLayer.backpropagate(output, currentActivationDeltas, preActivationDeltas, layerConnectionGradients.get(i));
+            currentActivationDeltas = null;
         }
 
         // Step 5: Update weights and biases using the accumulated gradients for each layer
@@ -365,7 +341,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> implements ModelCompon
             currentLayer.updateWeights(layerConnectionGradients.get(i), learningRate);
         }
         
-        return new debugOutput(preActivationDeltas, layerConnectionGradients);
+        return new NeuralNetworkBackpropagateOutput(preActivationDeltas, layerConnectionGradients, getInputSize(), output.batchCount);
     }
     
     /*
@@ -381,6 +357,8 @@ public class NeuralNetwork extends Network<NeuralNetwork> implements ModelCompon
     
     public float[] computeGPU(CUdeviceptr input, int count, boolean memlock) {
         long memory = getGPUComputeMemoryRequired(count);
+        
+        int deviceId = getGPUDeviceId();
         
         if(memlock)
             lockMemory(memory, deviceId);
@@ -426,65 +404,11 @@ public class NeuralNetwork extends Network<NeuralNetwork> implements ModelCompon
             CudaUtil.freeAsync(layerResults[i], stream);
     }
     
-    static public class FeedForwardResultsGPU {
-        public final int count;
-        public final int layers;
-        public final CUdeviceptr[] preActivations;   // Stores z_x (pre-activation) for each layer
-        public final CUdeviceptr[] postActivations;  // Stores a_x (post-activation) for each layer
-        public final boolean[] zeroed;  // Stores a_x (post-activation) for each layer
-
-        public FeedForwardResultsGPU(int layerCount, int count) {
-            this.count = count;
-            this.layers = layerCount;
-            this.preActivations = new CUdeviceptr[layerCount];
-            this.postActivations = new CUdeviceptr[layerCount];
-            this.zeroed = new boolean[layerCount];
-        }
-        
-        public CUdeviceptr result() {
-            return postActivations[postActivations.length-1];
-        }
-        
-        public void free() {
-            /* do not free input (preActivations[0] / postActivation[0]) */
-            for(int i=1; i < preActivations.length; i++) {
-                CudaUtil.free(preActivations[i]);
-                
-                if(preActivations[i] != postActivations[i])
-                    CudaUtil.free(postActivations[i]);
-                
-                preActivations[i] = null;
-                postActivations[i] = null;
-            }
-            
-            preActivations[0] = null;
-            postActivations[0] = null;
-        }
-        
-        public void freeAsync(CUstream stream) {
-            /* do not free input (preActivations[0] / postActivation[0]) */
-            for(int i=1; i < preActivations.length; i++) {
-//                System.out.println(i + " " + preActivations[i] + " " + postActivations[i]);
-                CudaUtil.freeAsync(preActivations[i], stream);
-                
-                if(preActivations[i] != postActivations[i])
-                    CudaUtil.freeAsync(postActivations[i], stream);
-                
-                preActivations[i] = null;
-                postActivations[i] = null;
-            }
-            
-            preActivations[0] = null;
-            postActivations[0] = null;
-        }
-    }
-    
-    public FeedForwardResultsGPU feedForwardGPU(CUdeviceptr input, int count, CUstream stream) {
-        checkGPUContext();
-
+    @Override
+    public NeuralNetworkForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchCount, CUstream stream) {
         cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
         
-        FeedForwardResultsGPU activations = new FeedForwardResultsGPU(getLayerCount(), count);
+        NeuralNetworkForwardOutputGPU activations = new NeuralNetworkForwardOutputGPU(getOutputSize(), batchCount, getLayerCount());
         activations.preActivations[0] = input;
 
         for(int i=0; i < layers.length; i++) {
@@ -494,62 +418,33 @@ public class NeuralNetwork extends Network<NeuralNetwork> implements ModelCompon
         return activations;
     }
     
-    public static class backpropagateOutputGPU {
-        public final int count;
-        public final CUdeviceptr[] preActivationDeltas;
-        public final List<Map<Integer, ConnectionGradientGPU>> layerConnectionGradients;
-
-        public backpropagateOutputGPU(CUdeviceptr[] preActivationDeltas, List<Map<Integer, ConnectionGradientGPU>> layerConnectionGradients, int count) {
-            this.count = count;
-            this.preActivationDeltas = preActivationDeltas;
-            this.layerConnectionGradients = layerConnectionGradients;
-        }
-        
-        public void freeAsync(CUstream stream) {
-            // Free preActivationDeltas
-            for (CUdeviceptr deltaPtr : preActivationDeltas) {
-                if (deltaPtr != null)
-                    CudaUtil.freeAsync(deltaPtr, stream);
-            }
-
-            // Free connection gradient weights and biases
-            for (Map<Integer, ConnectionGradientGPU> connectionGradients : layerConnectionGradients) {
-                for (ConnectionGradientGPU gradient : connectionGradients.values()) {
-                    CudaUtil.freeAsync(gradient.weightGradients, stream);
-                    CudaUtil.freeAsync(gradient.biasGradients, stream);
-                }
-            }
-        }
-    }
-        
-    public void backpropagateGPU(FeedForwardResultsGPU output, CUdeviceptr target, float learningRate, Loss lossFunction, CUstream stream) {
-        backpropagateGPUDebug(output, target, learningRate, lossFunction, stream).freeAsync(stream);
+    public void backpropagateGPU(NeuralNetworkForwardOutputGPU output, CUdeviceptr truth, float learningRate, Loss lossFunction, CUstream stream) {
+        backpropagateGPUDebug(output, truth, learningRate, lossFunction, stream).freeAsync(stream);
     }
     
-    public backpropagateOutputGPU backpropagateGPUDebug(FeedForwardResultsGPU output, CUdeviceptr target, float learningRate, Loss lossFunction, CUstream stream) {
+    public NeuralNetworkBackpropagateOutputGPU backpropagateGPUDebug(NeuralNetworkForwardOutputGPU output, CUdeviceptr truth, float learningRate, Loss lossFunction, CUstream stream) {
         checkGPUContext();
+        
+        // Step 1: Get result and calculate delta loss on GPU
+        long totalOutputSize = outputSize * output.batchCount;
+        CUdeviceptr outputPtr = output.output();
+        CUdeviceptr deltaLoss = CudaUtil.createFloatAsync(totalOutputSize, stream);
+        
+        lossFunction.derivativeGPU(outputPtr, truth, deltaLoss, totalOutputSize, stream);
+        
+        return backpropagateGPU(output, deltaLoss, learningRate, stream);
+    }
+    
+    @Override
+    public NeuralNetworkBackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU feedforward, CUdeviceptr deltaLoss, float learningRate, CUstream stream) {
+        if(!(feedforward instanceof NeuralNetworkForwardOutputGPU))
+            throw new RuntimeException("Invalid feedforward output");
+        
+        NeuralNetworkForwardOutputGPU output = (NeuralNetworkForwardOutputGPU) feedforward;
         
         cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
         
         CUdeviceptr[] preActivationDeltas = new CUdeviceptr[layers.length];
-        
-        // Step 1: Get result and calculate delta loss on GPU
-        long totalOutputSize = outputSize * output.count;
-        CUdeviceptr outputPtr = output.result();
-        CUdeviceptr deltaLoss = CudaUtil.createFloatAsync(totalOutputSize, stream);
-        
-        lossFunction.derivativeGPU(outputPtr, target, deltaLoss, totalOutputSize, stream);
-        
-        // Step 2: Convert post-activation delta to pre-activation delta for output layer
-        Layer outputLayer = layers[last];
-        CUdeviceptr outputPreActivationDeltas = CudaUtil.copyFloatAsync(output.preActivations[last], totalOutputSize, stream);  // Allocate memory for deltas on GPU
-        outputLayer.activation.derivativeGPU(outputPreActivationDeltas, outputSize, output.count, stream);
-        
-        // multiply by deltaLoss
-        CudaFunctions.vector.multiply(outputPreActivationDeltas, deltaLoss, outputPreActivationDeltas, totalOutputSize, stream);
-        preActivationDeltas[last] = outputPreActivationDeltas;
-        
-        CudaUtil.freeAsync(deltaLoss, stream);
         
         // Step 3: Store gradients for all connections in GPU memory
         List<Map<Integer, ConnectionGradientGPU>> layerConnectionGradients = new ArrayList<>();
@@ -557,10 +452,13 @@ public class NeuralNetwork extends Network<NeuralNetwork> implements ModelCompon
             layerConnectionGradients.add(new HashMap<>());
         }
         
+        CUdeviceptr currentActivationDeltas = deltaLoss;
+                
         // Step 4: Backpropagate through all hidden layers, excluding output layer
-        for (int i = layers.length - 2; i >= 0; i--) {
+        for (int i = layers.length - 1; i >= 0; i--) {
             Layer currentLayer = layers[i];
-            currentLayer.backpropagateGPU(output, preActivationDeltas, layerConnectionGradients.get(i), stream, handle);
+            currentLayer.backpropagateGPU(output, currentActivationDeltas, preActivationDeltas, layerConnectionGradients.get(i), stream, handle);
+            currentActivationDeltas = null;
         }
 
         // Step 5: Update weights and biases using accumulated gradients
@@ -571,7 +469,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> implements ModelCompon
         
         JCudaDriver.cuStreamSynchronize(stream);
         
-        return new backpropagateOutputGPU(preActivationDeltas, layerConnectionGradients, output.count);
+        return new NeuralNetworkBackpropagateOutputGPU(preActivationDeltas, layerConnectionGradients, getInputSize(), output.batchCount);
     }
     
     @Override
@@ -770,22 +668,11 @@ public class NeuralNetwork extends Network<NeuralNetwork> implements ModelCompon
     }
     
     @Override
-    public void freeGPU() {
-        for(Layer l : layers)
-            l.freeGPU();
-        
-        releaseMemory(weightsMemReq);
-        
-        deviceId = -1;
-    }
-    
-    public void freeGPU(CUstream stream) {
+    protected void freeGPU0(CUstream stream) {
         for(Layer l : layers)
             l.freeGPU(stream);
         
         releaseMemory(weightsMemReq);
-        
-        deviceId = -1;
     }
     
     /**
@@ -1023,27 +910,13 @@ public class NeuralNetwork extends Network<NeuralNetwork> implements ModelCompon
     }
 
     @Override
-    public void prepareGPU(int device) {
-        if(gpuReady())
-            throw new RuntimeException("GPU already initialized for connection");
-        
-        boolean invalidThreadId = CudaEngine.getThreadDeviceId() != device;
-
-        if(invalidThreadId)
-            throw new RuntimeException("Invalid cuda context for device: " + device + " must call CudaEngine.prepareThread(...)");
+    public void prepareGPU0(CUstream stream) {
+        int device = CudaEngine.getThreadDeviceId();
         
         lockMemory(weightsMemReq, device);
-        
-        this.deviceId = device;
-
-        CUstream stream = CudaUtil.createStream();
 
         for(Layer l : layers)
             l.prepareGPU(stream);
-
-        JCudaDriver.cuStreamSynchronize(stream);
-
-        CudaUtil.freeStream(stream);
     }
     
     public void moveGPU(int newDevice) {
@@ -1054,17 +927,11 @@ public class NeuralNetwork extends Network<NeuralNetwork> implements ModelCompon
             throw new RuntimeException("Moving GPU to same device");
             
         freeGPU();
-        prepareGPU(newDevice);
-    }
-    
-    private void checkGPUContext() {
-        if (!gpuReady())
-            throw new RuntimeException("Network is not loaded to the GPU, please call prepareGPU first");
-
-        boolean invalidThreadId = CudaEngine.getThreadDeviceId() != deviceId;
-
-        if (invalidThreadId)
-            throw new RuntimeException("Invalid cuda context for device: " + deviceId + " must call CudaEngine.prepareThread(...)");
-    }
-    
+        
+        CudaEngine.prepareThread(newDevice);
+        
+        prepareGPU();
+        
+        CudaEngine.finalizeThread();
+    }    
 }

@@ -34,9 +34,15 @@ import jcuda.driver.JCudaDriver;
 import org.fjnn.activation.Activation;
 import org.fjnn.base.Network;
 import org.fjnn.base.NetworkInput;
+import org.fjnn.base.output.BackpropagateOutput;
+import org.fjnn.base.output.BackpropagateOutputGPU;
+import org.fjnn.base.output.FeedForwardOutput;
+import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
+import org.fjnn.loss.Loss;
+import org.fjnn.network.outputs.NeuralNetworkForwardOutputGPU;
 
 /**
  *
@@ -210,15 +216,15 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
         return base.gpuReady();
     }
 
-    @Override
-    public void prepareGPU(int deviceId) {
-        for(int i=0; i < heads.length; i++) {
-            heads[i].prepareGPU(deviceId);
-        }
-        
-        base.prepareGPU(deviceId);
-        this.deviceId = deviceId;
-    }
+//    @Override
+//    public void prepareGPU(int deviceId) {
+//        for(int i=0; i < heads.length; i++) {
+//            heads[i].prepareGPU(deviceId);
+//        }
+//        
+//        base.prepareGPU(deviceId);
+//        this.deviceId = deviceId;
+//    }
 
     
     /**
@@ -231,12 +237,12 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
     public float[] computeGPU(CUdeviceptr[] input, int count) {
         long memory = getGPUInternalComputeMemoryRequired(count);
         memory += getGPUComputeMemoryRequired(count);
-        lockMemory(memory, deviceId);
+        lockMemory(memory, getGPUDeviceId());
         
-        boolean prepareThread = CudaEngine.getThreadDeviceId() != deviceId;
+        boolean prepareThread = CudaEngine.getThreadDeviceId() != getGPUDeviceId();
         
         if(prepareThread)
-           CudaEngine.prepareThread(deviceId);
+           CudaEngine.prepareThread(getGPUDeviceId());
         
         CUdeviceptr intermediate = CudaEngine.getMempoolFloat(base.getInputSize() * count);
         
@@ -271,12 +277,12 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
             CudaUtil.freeStream(stream);
             
             for(CUdeviceptr ptr : outputs)
-                CudaEngine.freeMempool(deviceId, ptr);
+                CudaEngine.freeMempool(getGPUDeviceId(), ptr);
 //            System.out.println("hags");
 //            util.printArray(CudaUtil.fromGPUFloat(intermediate, base.getInputSize() * count));
             
             float[] result = base.computeGPU(intermediate, count);
-            CudaEngine.freeMempool(deviceId, intermediate);
+            CudaEngine.freeMempool(getGPUDeviceId(), intermediate);
             
             if(prepareThread)
                CudaEngine.finalizeThread();
@@ -305,14 +311,14 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
         base.clipWeightsGPU(clipMin, clipMax);
     }
 
-    @Override
-    public void freeGPU() {
-        for(int i=0; i < heads.length; i++) {
-            heads[i].freeGPU();
-        }
-        
-        base.freeGPU();
-    }
+//    @Override
+//    public void freeGPU() {
+//        for(int i=0; i < heads.length; i++) {
+//            heads[i].freeGPU();
+//        }
+//        
+//        base.freeGPU();
+//    }
 
     private long getGPUInternalComputeMemoryRequired(int count) {
         return 2 * base.getInputSize() * count * CudaUtil.FLOAT_SIZE;
@@ -410,5 +416,35 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
     
     public NeuralNetwork getBase() {
         return base;
+    }
+
+    @Override
+    public FeedForwardOutput feedForward(float[] input, int batchCount) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public FeedForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchCount, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    protected void prepareGPU0(CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    protected void freeGPU0(CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss, float learningRate) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, float learningRate, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 }
