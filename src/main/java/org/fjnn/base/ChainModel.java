@@ -190,8 +190,6 @@ public class ChainModel {
         
     // Perform a backward pass through all components
     public BackpropagateOutputMapGPU backpropagateGPU(FeedForwardOutputMapGPU context, CUdeviceptr truth, int batchSize, int batchCount, Loss lossFunction, float learningRate, CUstream stream) {
-        BackpropagateOutputMapGPU result = new BackpropagateOutputMapGPU();
-        
         // Step 1: Get result and calculate delta loss on GPU
         long totalOutputSize = batchSize * batchCount;
         CUdeviceptr outputPtr = context.output();
@@ -201,9 +199,14 @@ public class ChainModel {
         int deltaLossSize = batchSize;
         int deltaLossCount = batchCount;
         
+        BackpropagateOutputMapGPU result = new BackpropagateOutputMapGPU(deltaLoss);
+        
+        /* make a copy */
+        deltaLoss = CudaUtil.copyFloatAsync(deltaLoss, totalOutputSize, stream);
+        
         for (int i = components.size() - 1; i >= 0; i--) {
             BackpropagateOutputGPU output = components.get(i).backpropagateGPU(context.getOutput(i), deltaLoss, deltaLossSize, deltaLossCount, learningRate, stream);
-            deltaLoss = output.deltaLoss();
+            deltaLoss = CudaUtil.copyFloatAsync(output.deltaLoss(), output.batchSize * output.batchCount, stream);
             deltaLossSize = output.batchSize;
             deltaLossCount = output.batchCount;
             
@@ -234,5 +237,25 @@ public class ChainModel {
     // Retrieve the list of components
     public List<ModelComponent> getComponents() {
         return new ArrayList<>(components);
+    }
+    
+    // Retrieve the list of components
+    public ModelComponent getComponent(int index) {
+        return components.get(index);
+    }
+    
+    public ChainModel copy() {
+        ChainModel chainCopy = new ChainModel(currentBatchSize);
+
+        // Copy the component list
+        for(ModelComponent component : components) {
+            chainCopy.components.add(component.copy());
+        }
+
+        // Copy the current state
+        chainCopy.currentBatchSize = this.currentBatchSize;
+        chainCopy.currentMultiplier = this.currentMultiplier;
+
+        return chainCopy;
     }
 }

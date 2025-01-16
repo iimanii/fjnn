@@ -1,14 +1,13 @@
 # Fast Java Neural Network library
 
-Lightweight neural networks implementation
-
-Supports execution on multiple GPUs
-
-Includes an implementation for NEAT
+Lightweight neural networks implementation supporting:
+- CPU and GPU execution with multi-GPU support
+- Chain model architecture for complex networks
+- Genetic Algorithm / NEAT implementation
 
 http://nn.cs.utexas.edu/downloads/papers/stanley.ec02.pdf
 
-# How to use
+# Installation
 
 Include fjnn jar found in target (or compile your own version)
 Must include jcuda for GPU usage
@@ -20,104 +19,128 @@ Initialize
     int hiddensize = 10;
     int outputsize = 2;
 
-    NeuralNetwork network = new NeuralNetwork(false);
-
-    /* input */
-    network.addLayer(inputsize, null, true);
+    NeuralNetwork network = new NeuralNetwork(inputSize, outputSize, new Sigmoid());
+    network.addHiddenLayer(hiddenSize, new ReLU());
 
     /* hidden layers */
     for(int i=0; i < 3; i++)
         network.addLayer(hiddensize, new Sigmoid(), true);
 
-    network.addLayer(outputsize, new SoftMax(), true);
-    
     /* must call build*/
     network.build();
+    
+    /* Initialize weights */
+    network.xavier();
 
     // network.setWeight(...)
     // network.setBias(...)
-    // network.compute(inputData)
 
+    // Feed forward
+    float[] result = network.compute(inputData);
+
+    // Backpropagation 
+    float[] truth = new float[outputSize];
+    float learningRate = 0.1f;
+    BackpropagateOutput backpropResult = network.backpropagate(feedforwardResult, truth, Loss.MeanSquareError, learningRate);
+
+    // Access results
+    float[] output = feedforwardResult.output();
+    float[] deltaLoss = backpropResult.deltaLoss();
 ```
 
 # Using GPU (must include Cuda libraries)
 ```
-    /* must be called before anything */
+    /* initialize the cuda engine */
     CudaEngine.init();
+
+    // utility functions to get info about the system
+    int deviceCount = CudaEngine.getDeviceCount();
+    System.out.println("GPU " + 0 + ":");
+    System.out.println("Multiprocessors: " + CudaEngine.getMultiProcessorCount(0));
+    System.out.println("Clock Rate: " + CudaEngine.getDeviceProperties(0).clockRate / 1e3f + " MHz");
+    System.out.println("Free Memory: " + CudaEngine.getFreeMemory(0) / 1e9f + " GB");
     
     // Initialization code here
     NeuralNetwork ...
     
-    // Must call prepare GPU after chaning any of the weights / biases
-    // you can optionally select a device for multiple GPU systems
-    network.prepareGPU(2);
+    // Select GPU device for current thread .. must be called before any GPU operations on the current thread
+    CudaEngine.prepareThread(0);
+    
 
-    float[] result = network.computeGPU(inputData);
+    // Transfer weights to GPU
+    network.prepareGPU();
 
-    // call when you are done with the network to free GPU resources
+    // Perform GPU forward pass and backpropagation using streams
+    CUstream stream = CudaUtil.createStream();
+
+    CUdeviceptr inputGPU = CudaUtil.toGPUAsync(input, stream);
+
+    NeuralNetworkForwardOutputGPU feedforwardResultGPU = network.feedForwardGPU(inputGPU, 1, stream);
+
+    // GPU Backpropagation
+    float[] truth = new float[outputSize];
+    CUdeviceptr targetGPU = CudaUtil.toGPUAsync(target, stream);
+    float learningRate = 0.1f;
+    
+    // This call will automatically update the weights with gradients
+    BackpropagateOutputGPU backpropResultGPU = network.backpropagateGPU(feedforwardResultGPU, truth, Loss.MeanSquareError, learningRate);
+
+    feedforwardResultGPU.freeAsync(stream);
+    backpropResultGPU.freeAsync(stream);
+
+    JCudaDriver.cuStreamSynchronize(stream);
+
+    // Free GPU resources when done
     network.freeGPU();
 ```
 
-# Running multiple neural networks in parallel (all must have the same structure)
+# Chain Model Architecture
+Chain models allow connecting multiple components (networks, adapters) in sequence
 ```
-    MultiNetwork multi = new MultiNetwork(10, false);
+    // Create chain model
+    ChainModel chain = new ChainModel(inputSize);
 
-    /* input */
-    network.addLayer(inputsize, null, true);
-
-    /* hidden layers */
-    for(int i=0; i < 3; i++)
-        network.addLayer(hiddensize, new Sigmoid(), true);
-
-    network.addLayer(outputsize, new SoftMax(), true);
-
-    // one can also create multinetwork based on a neuralnetwork
-    // MultiNetwork multi = new MultiNetwork(10, false, baseNetwork);
-    
-    multi.build();
-
-    multi.setWeights(0, weights0);
-    multi.setBiases(0, biases0);
-
-    multi.setWeights(1, weights1);
-    multi.setBiases(1, biases1);
-
-    float[][] input2D = ...
-
-    float[][] resultCPU = network.compute(input2D);
-
-    multi.prepareGPU();
-    float[][] resultGPU = network.computeGPU(input2D);
-```
-
-# Using multiple GPUs
-By default, neural networks / multi networks will run on 1 GPU,
-In order to use multiple GPUs you must use a NetworkPool
-NetworkPool will evenly distributed all networks across the GPUs
-
-```
-    NetworkPool pool = new NetworkPool(size, false);
-        
-    /* input */
-    pool.addLayer(inputsize, null, true);
-    
-    /* hidden layers */
-    for(int i=0; i < 3; i++)
-        pool.addLayer(hiddensize, new Sigmoid(), true);
-
-    pool.addLayer(outputsize, new SoftMax(), true);
-
-    pool.build();
-
-    /* set weights for all your networks */
-    pool.getNetwork(0).setWeights(...);
-    pool.getNetwork(1).setWeights(...);
+    // Add neural network component
+    NeuralNetwork nn = new NeuralNetwork(....);
     ...
 
-    /* compute all GPU */
-    pool.prepareGPU();
-    float[][] resultGPU = pool.computeGPU(input2D);
+    chain.addComponent(nn);
+    
+    // Add positional encoder
+    PositionalEncoderAdapter encoder = new PositionalEncoderAdapter(featureSize, featureCount);
+    chain.addComponent(encoder);
+
+    // modify input shape if necessary to match the next component
+    chain.addBatchSizeAdapter(newBatchSize);
+
+    // Add another neural network component
+    NeuralNetwork nn2 = new NeuralNetwork(....);
+    ...
+    chain.addComponent(nn);
+    
+    // get back to the correct batchSize
+    chain.restoreBatchCount();
+    
+    // Feed forward
+    FeedForwardOutputMap result = chain.feedForward(input, batchSize, batchCount);
+
+    // Backpropagation
+    BackpropagateOutputMap backpropResult = chain.backpropagate(result, truth, 
+        batchSize, batchCount, Loss.MeanSquareError, learningRate);
 ```
+
+GPU Support
+```
+    // Prepare model for GPU
+    chain.prepareGPU(stream);
+
+    // GPU Operations
+    FeedForwardOutputMapGPU resultGPU = chain.feedForwardGPU(inputGPU, batchSize, batchCount, stream);
+    BackpropagateOutputMapGPU backpropResultGPU = chain.backpropagateGPU(resultGPU, truthGPU, 
+        batchSize, batchCount, Loss.MeanSquareError, learningRate, stream);
+
+    // Free resources
+    chain.freeGPU();
 
 # NEAT
 ```
@@ -134,4 +157,5 @@ An example of this can be found in test/examples
 
 # Contribution
 
--   Creating Unit tests
+- Creating Unit tests
+- Better documentation

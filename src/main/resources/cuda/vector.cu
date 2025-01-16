@@ -74,7 +74,7 @@ __global__ void add_stride(float* a, float* b, float* c, int stride_size, long t
         int a_index = b_index + stride_id * stride_size;
         
         if(a_index < total_size)
-            c[a_index] += a[a_index] + b[b_index];
+            c[a_index] = a[a_index] + b[b_index];
     }
 }
 

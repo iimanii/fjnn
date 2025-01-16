@@ -26,6 +26,7 @@ package org.fjnn.adapter.output;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.base.output.BackpropagateOutputGPU;
+import org.fjnn.cuda.CudaUtil;
 
 /**
  *
@@ -33,11 +34,13 @@ import org.fjnn.base.output.BackpropagateOutputGPU;
  */
 public class AdapterBackpropagateOutputGPU extends BackpropagateOutputGPU {  
     private final CUdeviceptr deltaLoss;
+    private final boolean byReference;  /* whether or not the output ptr is just a reference to another pointer */
 
-    public AdapterBackpropagateOutputGPU(int batchSize, int batchCount, CUdeviceptr deltaLoss) {
+    public AdapterBackpropagateOutputGPU(int batchSize, int batchCount, CUdeviceptr deltaLoss, boolean byReference) {
         super(batchSize, batchCount);
         
         this.deltaLoss = deltaLoss;
+        this.byReference = byReference;
     }
 
     @Override
@@ -47,11 +50,13 @@ public class AdapterBackpropagateOutputGPU extends BackpropagateOutputGPU {
 
     @Override
     public void free() {
-        
+        if(!byReference)
+            CudaUtil.free(deltaLoss);
     }
 
     @Override
     public void freeAsync(CUstream stream) {
-        
+        if(!byReference)
+            CudaUtil.freeAsync(deltaLoss, stream);
     }
 }

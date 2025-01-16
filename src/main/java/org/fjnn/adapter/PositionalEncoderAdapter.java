@@ -25,6 +25,7 @@ package org.fjnn.adapter;
 
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
+import jcuda.driver.JCudaDriver;
 import org.fjnn.adapter.output.AdapterBackpropagateOutput;
 import org.fjnn.adapter.output.AdapterBackpropagateOutputGPU;
 import org.fjnn.adapter.output.AdapterForwardOutput;
@@ -37,6 +38,7 @@ import org.fjnn.base.output.BackpropagateOutputGPU;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
 import org.fjnn.loss.Loss;
+import org.fjnn.util.util;
 
 /**
  *
@@ -127,7 +129,7 @@ public class PositionalEncoderAdapter extends ModelComponent {
 
         // add encodings
         CudaFunctions.vector.addStride(input, positionalEncodingsGPU, outputGPU, totalFeatures, batchCount, stream);
-
+        
         // Return the output
         return new AdapterForwardOutputGPU(totalFeatures, batchCount, outputGPU, false);
     }
@@ -171,8 +173,12 @@ public class PositionalEncoderAdapter extends ModelComponent {
     @Override
     public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, float learningRate, CUstream stream) {
         // Same logic for GPU: pass deltaLoss unchanged
-        return new AdapterBackpropagateOutputGPU(totalFeatures, output.batchCount, deltaLoss);
+        return new AdapterBackpropagateOutputGPU(totalFeatures, output.batchCount, deltaLoss, false);
     }
 
+    @Override
+    public ModelComponent copy() {
+        return new PositionalEncoderAdapter(featureSize, featureCount);
+    }
 }
 

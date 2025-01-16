@@ -33,12 +33,15 @@ import java.util.List;
 import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
+import org.fjnn.cuda.CudaUtil;
 
 public class BackpropagateOutputMapGPU {
     private final Map<Integer, BackpropagateOutputGPU> results;
+    private final CUdeviceptr deltaLoss;
 
-    public BackpropagateOutputMapGPU() {
+    public BackpropagateOutputMapGPU(CUdeviceptr deltaLoss) {
         this.results = new HashMap<>();
+        this.deltaLoss = deltaLoss;
     }
 
     public void addOutput(int index, BackpropagateOutputGPU result) {
@@ -56,12 +59,20 @@ public class BackpropagateOutputMapGPU {
         for (BackpropagateOutputGPU result : results.values()) {
             result.free();
         }
+        
+        CudaUtil.free(deltaLoss);
     }
 
     public void freeAsync(CUstream stream) {
         for (BackpropagateOutputGPU result : results.values()) {
             result.freeAsync(stream);
         }
+        
+        CudaUtil.freeAsync(deltaLoss, stream);
+    }
+    
+    public CUdeviceptr deltaLoss() {
+        return deltaLoss;
     }
     
     public int size() {

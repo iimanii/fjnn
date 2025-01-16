@@ -138,6 +138,11 @@ public class BatchSizeAdapter extends ModelComponent {
         }
 
         int sourceBatchCount = totalSamples / inputBatchSize;
-        return new AdapterBackpropagateOutputGPU(inputBatchSize, sourceBatchCount, deltaLoss);
+        return new AdapterBackpropagateOutputGPU(inputBatchSize, sourceBatchCount, deltaLoss, false);
+    }
+
+    @Override
+    public ModelComponent copy() {
+        return new BatchSizeAdapter(inputBatchSize, targetBatchSize);
     }
 }

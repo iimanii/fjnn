@@ -32,6 +32,7 @@ import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
 import org.fjnn.activation.Activation;
+import org.fjnn.base.ModelComponent;
 import org.fjnn.base.Network;
 import org.fjnn.base.NetworkInput;
 import org.fjnn.base.output.BackpropagateOutput;
@@ -41,8 +42,6 @@ import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
-import org.fjnn.loss.Loss;
-import org.fjnn.network.outputs.NeuralNetworkForwardOutputGPU;
 
 /**
  *
@@ -445,6 +444,11 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
 
     @Override
     public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, float learningRate, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public ModelComponent copy() {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 }

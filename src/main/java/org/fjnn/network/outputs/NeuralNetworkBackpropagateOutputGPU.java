@@ -70,8 +70,19 @@ public class NeuralNetworkBackpropagateOutputGPU extends BackpropagateOutputGPU 
     }
 
     @Override
-    public void free() {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public void free() {        // Free preActivationDeltas
+        for (CUdeviceptr deltaPtr : preActivationDeltas) {
+            if (deltaPtr != null) {
+                CudaUtil.free(deltaPtr);
+            }
+        }
+        // Free connection gradient weights and biases
+        for (Map<Integer, ConnectionGradientGPU> connectionGradients : layerConnectionGradients) {
+            for (ConnectionGradientGPU gradient : connectionGradients.values()) {
+                CudaUtil.free(gradient.weightGradients);
+                CudaUtil.free(gradient.biasGradients);
+            }
+        }
     }
     
 }

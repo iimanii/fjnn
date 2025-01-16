@@ -451,8 +451,8 @@ public class Layer {
         
         long size = (long)this.neurons * activations.batchCount;
         
-        // Step 1: Initialize the activation deltas for the current layer only if it has incomming connections
-        if(currentActivationDeltas == null && !reverseConnections.isEmpty()) {
+        // Step 1: Initialize the activation deltas for the current layer only if it has incoming connections
+        if(currentActivationDeltas == null) {
             currentActivationDeltas = CudaUtil.createFloatAsync(size, stream);
 //            JCudaDriver.cuMemsetD32Async(currentActivationDeltas, 0, size, stream);
         }
@@ -496,7 +496,6 @@ public class Layer {
         }
         
         preActivationDeltas[this.index] = currentActivationDeltas;
-
     }
 
     public void updateWeightsGPU(Map<Integer, ConnectionGradientGPU> connectionGradients, float learningRate, CUstream stream, cublasHandle handle) {

@@ -151,4 +151,6 @@ public abstract class ModelComponent {
     
     public abstract int getInputSize();
     public abstract int getOutputSize();
+    
+    public abstract ModelComponent copy();
 }

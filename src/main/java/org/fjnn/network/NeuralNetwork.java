@@ -92,6 +92,11 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     }
     
     @Override
+    public NeuralNetwork copy() {
+        return copy(true, true);
+    }
+    
+    @Override
     public NeuralNetwork copy(boolean copyWeights, boolean createWeights) {
         Layer[] copied = new Layer[layers.length];
         
@@ -454,7 +459,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         
         CUdeviceptr currentActivationDeltas = deltaLoss;
                 
-        // Step 4: Backpropagate through all hidden layers, excluding output layer
+        // Step 4: Backpropagate through layers
         for (int i = layers.length - 1; i >= 0; i--) {
             Layer currentLayer = layers[i];
             currentLayer.backpropagateGPU(output, currentActivationDeltas, preActivationDeltas, layerConnectionGradients.get(i), stream, handle);
@@ -466,8 +471,6 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
             Layer currentLayer = layers[i];
             currentLayer.updateWeightsGPU(layerConnectionGradients.get(i), learningRate, stream, handle);
         }
-        
-        JCudaDriver.cuStreamSynchronize(stream);
         
         return new NeuralNetworkBackpropagateOutputGPU(preActivationDeltas, layerConnectionGradients, getInputSize(), output.batchCount);
     }
