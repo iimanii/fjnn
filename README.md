@@ -83,7 +83,8 @@ Initialize
     float learningRate = 0.1f;
     
     // This call will automatically update the weights with gradients
-    BackpropagateOutputGPU backpropResultGPU = network.backpropagateGPU(feedforwardResultGPU, truth, Loss.MeanSquareError, learningRate);
+    BackpropagateOutputGPU backpropResultGPU = network.backpropagateGPU(feedforwardResultGPU, 
+        truth, Loss.MeanSquareError, learningRate);
 
     feedforwardResultGPU.freeAsync(stream);
     backpropResultGPU.freeAsync(stream);
@@ -141,6 +142,7 @@ GPU Support
 
     // Free resources
     chain.freeGPU();
+```
 
 # NEAT
 ```
