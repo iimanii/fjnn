@@ -23,6 +23,7 @@
  */
 package org.fjnn.base;
 
+import java.util.HashMap;
 import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.base.output.FeedForwardOutput;
 import jcuda.driver.CUdeviceptr;
@@ -153,4 +154,6 @@ public abstract class ModelComponent {
     public abstract int getOutputSize();
     
     public abstract ModelComponent copy();
+    
+    public abstract HashMap serialize();
 }

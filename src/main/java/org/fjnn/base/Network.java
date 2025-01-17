@@ -108,6 +108,7 @@ public abstract class Network <T extends Network> extends ModelComponent {
      * 
      * @return Number of inputs
      */
+    @Override
     public final int getInputSize() {
         return inputSize;
     }
@@ -116,6 +117,7 @@ public abstract class Network <T extends Network> extends ModelComponent {
      * 
      * @return Number of outputs
      */
+    @Override
     public final int getOutputSize() {
         return outputSize;
     }    

@@ -858,6 +858,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         CudaEngine.finalizeThread();
     }
 
+    @Override
     public HashMap serialize() {
         return serialize(new HashSet<>());
     }
@@ -872,6 +873,8 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         
         for(Layer l: layers)
             array.add(l.serialize());
+        
+        obj.put("type", "NeuralNetwork");
         
         return obj;
     }

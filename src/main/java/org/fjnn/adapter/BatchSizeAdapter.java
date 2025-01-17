@@ -23,6 +23,8 @@
  */
 package org.fjnn.adapter;
 
+import java.util.HashMap;
+import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.adapter.output.AdapterBackpropagateOutput;
@@ -144,5 +146,24 @@ public class BatchSizeAdapter extends ModelComponent {
     @Override
     public ModelComponent copy() {
         return new BatchSizeAdapter(inputBatchSize, targetBatchSize);
+    }
+    
+    @Override
+    public HashMap serialize() {
+       HashMap obj = new HashMap();
+
+       // Store component type and main properties
+       obj.put("type", "BatchSizeAdapter"); 
+       obj.put("inputSize", getInputSize());
+       obj.put("outputSize", getOutputSize());
+
+       return obj;
+    }
+
+    public static BatchSizeAdapter deserialize(Map serialized) {
+       int inputSize = (Integer)serialized.get("inputSize");
+       int outputSize = (Integer)serialized.get("outputSize");
+       
+       return new BatchSizeAdapter(inputSize, outputSize);
     }
 }

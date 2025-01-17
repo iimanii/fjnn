@@ -451,4 +451,9 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
     public ModelComponent copy() {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
+
+    @Override
+    public HashMap serialize() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
 }

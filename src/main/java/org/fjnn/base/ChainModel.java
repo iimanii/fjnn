@@ -27,11 +27,14 @@ import org.fjnn.base.output.FeedForwardOutput;
 import org.fjnn.base.output.FeedForwardOutputMap;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import jcuda.driver.CUdevice;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.adapter.BatchSizeAdapter;
+import org.fjnn.adapter.PositionalEncoderAdapter;
 import org.fjnn.base.output.BackpropagateOutput;
 import org.fjnn.base.output.BackpropagateOutputGPU;
 import org.fjnn.base.output.BackpropagateOutputMap;
@@ -40,6 +43,7 @@ import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.base.output.FeedForwardOutputMapGPU;
 import org.fjnn.cuda.CudaUtil;
 import org.fjnn.loss.Loss;
+import org.fjnn.network.NeuralNetwork;
 
 /**
  *
@@ -257,5 +261,62 @@ public class ChainModel {
         chainCopy.currentMultiplier = this.currentMultiplier;
 
         return chainCopy;
+    }
+    
+    public HashMap serialize() {
+        HashMap obj = new HashMap();
+
+        // Save state info
+        obj.put("currentBatchSize", currentBatchSize);
+        obj.put("currentMultiplier", currentMultiplier);
+
+        // Serialize components
+        List<HashMap> componentArray = new ArrayList<>();
+        obj.put("components", componentArray);
+
+        for (ModelComponent component : components) {
+            // Each component handles its own serialization
+            componentArray.add(component.serialize());
+        }
+
+        return obj;
+    }
+
+    public static ChainModel deserialize(Map serialized) {
+        // Create chain model with initial batch size
+        ChainModel chain = new ChainModel(0);
+
+        // Restore state
+        chain.currentBatchSize = (Integer) serialized.get("currentBatchSize");
+        chain.currentMultiplier = (Integer) serialized.get("currentMultiplier");
+
+        // Deserialize components
+        List<Map> componentArray = (List) serialized.get("components");
+
+        for (Map componentObj : componentArray) {
+            String type = (String) componentObj.get("type");
+            ModelComponent component = null;
+
+            switch (type) {
+                case "NeuralNetwork":
+                    component = NeuralNetwork.deserialize(componentObj);
+                    break;
+
+                case "BatchSizeAdapter":
+                    component = BatchSizeAdapter.deserialize(componentObj);
+                    break;
+
+                case "PositionalEncoderAdapter":
+                    component = PositionalEncoderAdapter.deserialize(componentObj);
+                    break;
+                    
+                default:
+                    throw new RuntimeException("Unknown component: " + type);
+            }
+
+            chain.components.add(component);
+        }
+
+        return chain;
     }
 }

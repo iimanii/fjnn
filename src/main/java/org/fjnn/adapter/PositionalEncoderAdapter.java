@@ -23,6 +23,8 @@
  */
 package org.fjnn.adapter;
 
+import java.util.HashMap;
+import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
@@ -48,6 +50,7 @@ public class PositionalEncoderAdapter extends ModelComponent {
     private final int featureSize;      // Number of features per unit (dimensionality)
     private final int featureCount;     // Number of units per input sequence
     private final int totalFeatures;    // Total number of features being processed
+    private final int offset;
     
     private final float[][] positionalEncodings;    // Precomputed positional encodings
     private final float[] positionalEncodings1D;    // Flattened positional encodings (1D)
@@ -56,10 +59,15 @@ public class PositionalEncoderAdapter extends ModelComponent {
     private boolean gpuReady;
     
     public PositionalEncoderAdapter(int featureSize, int featureCount) {
+        this(featureSize, featureCount, 0);
+    }
+    
+    public PositionalEncoderAdapter(int featureSize, int featureCount, int offset) {
         this.featureSize = featureSize;
         this.featureCount = featureCount;
         this.totalFeatures = featureSize * featureCount;
-        this.positionalEncodings = generateSinusoidalEncodings(featureSize, featureCount);
+        this.offset = offset;
+        this.positionalEncodings = generateSinusoidalEncodings(featureSize, featureCount, offset);
         this.positionalEncodings1D = flattenPositionalEncodings(positionalEncodings);
         this.gpuReady = false;
     }
@@ -73,14 +81,16 @@ public class PositionalEncoderAdapter extends ModelComponent {
         - Alternates between sine (even indices) and cosine (odd indices).
         - `featureSize` is the total dimensionality of the encoding.
     */
-    private float[][] generateSinusoidalEncodings(int featureSize, int featureCount) {
+    private float[][] generateSinusoidalEncodings(int featureSize, int featureCount, int offset) {
         float[][] encoding = new float[featureCount][featureSize];
         for (int pos = 0; pos < featureCount; pos++) {
+            int adjusted = pos + offset;
+            
             for (int i = 0; i < featureSize; i++) {
                 if (i % 2 == 0) {
-                    encoding[pos][i] = (float) Math.sin(pos / Math.pow(10000, (2.0 * i) / featureSize));
+                    encoding[pos][i] = (float) Math.sin(adjusted / Math.pow(10000, (2.0 * i) / featureSize));
                 } else {
-                    encoding[pos][i] = (float) Math.cos(pos / Math.pow(10000, (2.0 * (i - 1)) / featureSize));
+                    encoding[pos][i] = (float) Math.cos(adjusted / Math.pow(10000, (2.0 * (i - 1)) / featureSize));
                 }
             }
         }
@@ -179,6 +189,27 @@ public class PositionalEncoderAdapter extends ModelComponent {
     @Override
     public ModelComponent copy() {
         return new PositionalEncoderAdapter(featureSize, featureCount);
+    }
+    
+    @Override
+    public HashMap serialize() {
+       HashMap obj = new HashMap();
+
+       // Store component type and main properties
+       obj.put("type", "PositionalEncoderAdapter");
+       obj.put("featureSize", featureSize);
+       obj.put("featureCount", featureCount);
+       obj.put("offset", offset);
+
+       return obj;
+    }
+
+    public static PositionalEncoderAdapter deserialize(Map serialized) {
+       int featureSize = (Integer)serialized.get("featureSize");
+       int featureCount = (Integer)serialized.get("featureCount"); 
+       int offset = (Integer)serialized.get("offset"); 
+       
+       return new PositionalEncoderAdapter(featureSize, featureCount, offset);
     }
 }
 
