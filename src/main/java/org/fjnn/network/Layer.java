@@ -236,9 +236,10 @@ public class Layer {
         // Step 7: Convert Post-Activation Delta to Pre-Activation Delta for the current layer (l)
         // Equation: delta^{(l)}_j = Delta a^{(l)}_j * sigma'(z^{(l)}_j)
         if(activation != null) {
-            for (int j = 0; j < currentActivationDeltas.length; j++) {
-                currentActivationDeltas[j] *= activation.derivative(activations.preActivations[this.index][j]);
-            }
+            activation.gradient(activations.preActivations[this.index], activations.postActivations[this.index], currentActivationDeltas, neurons, activations.batchCount);
+//            for (int j = 0; j < currentActivationDeltas.length; j++) {
+//                currentActivationDeltas[j] *= activation.derivative(activations.preActivations[this.index][j]);
+//            }
         }
         
         preActivationDeltas[this.index] = currentActivationDeltas;
@@ -465,7 +466,7 @@ public class Layer {
         for (Map.Entry<Integer, Connection> entry : connections.entrySet()) {
             int nextLayerIndex = entry.getKey();
             Connection connection = entry.getValue();
-            CUdeviceptr nextPreActivationDeltas = preActivationDeltas[nextLayerIndex];  // delta^{(l+1)}
+            CUdeviceptr nextPreActivationDeltas = preActivationDeltas[nextLayerIndex];
 
             // Step 3: Compute Weight and Bias Gradients and accumulate pre-activation deltas for the current layer
             ConnectionGradientGPU gradient = connection.backpropagateGPU(currentActivationDeltas, 
@@ -482,18 +483,9 @@ public class Layer {
         }
 
         // Step 7: Convert Post-Activation Delta to Pre-Activation Delta for the current layer (l)
-        // Equation: delta^{(l)}_j = Delta a^{(l)}_j * sigma'(z^{(l)}_j)
-        if(activation != null) {
-            CUdeviceptr derivative = CudaUtil.copyFloatAsync(activations.preActivations[this.index], size, stream);
-            activation.derivativeGPU(derivative, this.neurons, activations.batchCount, stream);
-            
-            CudaFunctions.vector.multiply(currentActivationDeltas, derivative, currentActivationDeltas, size, stream);
-            CudaUtil.freeAsync(derivative, stream);
-            
-            /* can use preActivation[this.index] right away .. not used anywhere else */
-//            activation.derivativeGPU(activations.preActivations[this.index], this.neurons, activations.count, stream);
-//            CudaFunctions.vector.multiply(currentActivationDeltas, activations.preActivations[this.index], currentActivationDeltas, size, stream);
-        }
+        // Equation: delta[l] = delta[l+1] * activation_derivative(...)
+        if(activation != null)
+            activation.gradientGPU(activations.preActivations[this.index], activations.postActivations[this.index], currentActivationDeltas, this.neurons, activations.batchCount, stream);
         
         preActivationDeltas[this.index] = currentActivationDeltas;
     }

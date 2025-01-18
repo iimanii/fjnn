@@ -34,43 +34,78 @@ import org.fjnn.cuda.CudaUtil;
  * @author ahmed
  */
 public class GeLU extends Activation {
-
+    private static final float SQRT_2_PI = (float) Math.sqrt(2 / Math.PI);
+    private static final float ALPHA = 0.044715f;
+    
     @Override
     public float compute(float input) {
         // Using the tanh approximation of GELU
-        return 0.5f * input * (1.0f + (float) Math.tanh(Math.sqrt(2 / Math.PI) * (input + 0.044715f * Math.pow(input, 3))));
+        return 0.5f * input * (1.0f + (float) Math.tanh(SQRT_2_PI * (input + ALPHA * Math.pow(input, 3))));
     }
 
     @Override
     public void compute(float[] input, int stride, int count) {
         for (int i = 0; i < input.length; i++) {
-            input[i] = 0.5f * input[i] * (1.0f + (float) Math.tanh(Math.sqrt(2 / Math.PI) * (input[i] + 0.044715f * Math.pow(input[i], 3))));
+            input[i] = 0.5f * input[i] * (1.0f + (float) Math.tanh(SQRT_2_PI * (input[i] + ALPHA * Math.pow(input[i], 3))));
         }
-    }
-
-    @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.GeLU(ptr, stride * count, stream);
-    }
-
-    @Override
-    public void derivative(float[] input, int from, int to) {
-        throw new UnsupportedOperationException("Not supported yet.");
     }
 
     @Override
     public void compute(FloatBuffer input, int stride, int count) {
         throw new UnsupportedOperationException("Not supported yet.");
     }
+    
+    @Override
+    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
+        CudaFunctions.activation.GeLU(ptr, stride * count, stream);
+    }
+
 
     @Override
-    public float derivative(float input) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public float derivative(float preActivation, float postActivation) {
+        // d/dx[GELU(x)] = 0.5 * (1 + tanh(sqrt(2/π) * (x + 0.044715x³))) + 0.5x * sech²(sqrt(2/π) * (x + 0.044715x³)) * sqrt(2/π) * (1 + 3*0.044715x²)
+        float x = preActivation;
+        float inner = SQRT_2_PI * (x + ALPHA * x * x * x);
+        float tanh = (float)Math.tanh(inner);
+        float sech2 = 1.0f - tanh * tanh;
+
+        return 0.5f * (1.0f + tanh) + 0.5f * x * sech2 * SQRT_2_PI * (1.0f + 3 * ALPHA * x * x);
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr ptr, long stride, long size, CUstream stream) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+        // d/dx[GELU(x)] = 0.5 * (1 + tanh(sqrt(2/π) * (x + 0.044715x³))) + 0.5x * sech²(sqrt(2/π) * (x + 0.044715x³)) * sqrt(2/π) * (1 + 3*0.044715x²)
+        for (int i = 0; i < stride * count; i++) {
+            float x = preActivation[i];
+            float inner = SQRT_2_PI * (x + ALPHA * x * x * x);
+            float tanh = (float)Math.tanh(inner);
+            float sech2 = 1.0f - tanh * tanh;
+
+            output[i] = 0.5f * (1.0f + tanh) + 0.5f * x * sech2 * SQRT_2_PI * (1.0f + 3 * ALPHA * x * x);
+        }
+    }
+
+    @Override
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+        CudaFunctions.activationDerivative.GeLUDerivative(preActivation, postActivation, output, stride * count, stream);
+    }
+    
+    @Override
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
+        for (int i = 0; i < stride * count; i++) {
+            float x = preActivation[i];
+            float inner = SQRT_2_PI * (x + ALPHA * x * x * x);
+            float tanh = (float)Math.tanh(inner);
+            float sech2 = 1.0f - tanh * tanh;
+
+            float derivative = 0.5f * (1.0f + tanh) + 0.5f * x * sech2 * SQRT_2_PI * (1.0f + 3 * ALPHA * x * x);
+            gradient[i] *= derivative;
+        }
+    }
+
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
+        CudaFunctions.activationGradient.GeLUGradient(preActivation, postActivation, gradient, stride * count, stream);
     }
 }
 

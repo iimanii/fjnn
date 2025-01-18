@@ -36,8 +36,6 @@ public abstract class Activation implements Serializable {
     
     public abstract float compute(float input);
     
-    public abstract float derivative(float input);
-    
     public final void compute(float[] input) {
         compute(input, input.length, 1);
     }
@@ -46,20 +44,24 @@ public abstract class Activation implements Serializable {
         compute(input, input.capacity(), 1);
     }
     
-    public final void derivative(float[] input) {
-        derivative(input, 0, input.length);
-    }
-    
     public abstract void compute(float[] input, int stride, int count);
     
     public abstract void compute(FloatBuffer input, int stride, int count);
     
     public abstract void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream);
     
-    public abstract void derivative(float[] input, int stride, int count);
+    public abstract float derivative(float preActivation, float postActivation);
     
-    public abstract void derivativeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream);
+    /* calculates derivative and place result in output */
+    public abstract void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count);
     
+    public abstract void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream);
+    
+    /* calculates derivative and multiplies it by gradient, puts result in gradient */
+    public abstract void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count);
+    
+    public abstract void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream);
+
     public String toName() {
         return this.getClass().getSimpleName();
     }
@@ -92,6 +94,8 @@ public abstract class Activation implements Serializable {
                 return new Tanh();
             case "linear":
                 return new Linear();
+            case "swish":
+                return new Swish();
         }
         
         if(name.toLowerCase().startsWith("complex"))

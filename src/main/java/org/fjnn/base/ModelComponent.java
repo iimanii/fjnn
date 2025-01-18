@@ -156,4 +156,6 @@ public abstract class ModelComponent {
     public abstract ModelComponent copy();
     
     public abstract HashMap serialize();
+
+    public abstract void updateWeightsFromGPU();
 }

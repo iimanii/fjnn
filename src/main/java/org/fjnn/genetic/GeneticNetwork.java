@@ -127,6 +127,11 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
+    @Override
+    public void updateWeightsFromGPU() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
     static class mapping {
         final int layer;
         final int from;

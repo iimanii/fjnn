@@ -294,131 +294,360 @@ public class CudaFunctions {
     }
     
     /* Activation functions */
-    public static void Activation(String name, CUdeviceptr ptr, long size, CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
-        
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, name, device);
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(ptr),
-            Pointer.to(new long[]{size})
-        );
-        
-        int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
-        long gridSizeX = (size - 1) / blockSizeX + 1;
-        
-        if(gridSizeX > Integer.MAX_VALUE)
-            throw new RuntimeException();
-                    
-        JCudaDriver.cuLaunchKernel(function,
-        (int)gridSizeX, 1, 1,      // Grid dimension
-            blockSizeX, 1, 1,      // Block dimension
-            0, stream,             // Shared memory size and stream
-            kernelParameters, null // Kernel- and extra parameters
-        );
-    }
-    
-    public static void ReLU(CUdeviceptr ptr, long size, CUstream stream) {
-        Activation("ReLU", ptr, size, stream);
-    }
-    
-    public static void LeakyReLU(CUdeviceptr ptr, long size, float alpha, CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
+    public static class activation {
+        private static void Activation(String name, CUdeviceptr ptr, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
 
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "LeakyReLU", device);
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, name, device);
 
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(ptr),
-            Pointer.to(new long[]{size}),
-            Pointer.to(new float[]{alpha})
-        );
-        
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(ptr),
+                Pointer.to(new long[]{size})
+            );
 
-        int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
-        long gridSizeX = (size - 1) / blockSizeX + 1;
-        
-        if(gridSizeX > Integer.MAX_VALUE)
-            throw new RuntimeException();
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
 
-        JCudaDriver.cuLaunchKernel(function,
-        (int)gridSizeX, 1, 1,      // Grid dimension
-            blockSizeX, 1, 1,      // Block dimension
-            0, stream,             // Shared memory size and stream
-            kernelParameters, null // Kernel- and extra parameters
-        );
-    }
-    
-    public static void Sigmoid(CUdeviceptr ptr, long size, CUstream stream) {
-        Activation("Sigmoid", ptr, size, stream);
-    }
-    
-    public static void Sin(CUdeviceptr ptr, long size, CUstream stream) {
-        Activation("Sin", ptr, size, stream);
-    }
-    
-    public static void SoftMax(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        if(count > Integer.MAX_VALUE || stride > Integer.MAX_VALUE)
-            throw new RuntimeException();
-        
-        int device = CudaEngine.getThreadDeviceId();
-        
-        int blockSize;
-        
-        long temp = stride / 1;
-        
-        if(temp <= 32)
-            blockSize = 32;
-        else if(temp <= 64)
-            blockSize = 64;
-        else if(temp <= 128)
-            blockSize = 128;
-        else if(temp <= 256)
-            blockSize = 256;
-        else
-            blockSize = 512;
-        
-        /* Compute Matrix Multiplication */
-        CUfunction fn = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, true, String.format("SoftMax_%d", blockSize), device);
-        
-        int blockSizeX = blockSize;
-        int gridSizeX = (int)count;
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(ptr),
-            Pointer.to(new long[]{stride})
-        );
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
 
-        JCudaDriver.cuLaunchKernel(fn,
-            gridSizeX, 1, 1,            // Grid dimension
-            blockSizeX, 1, 1,           // Block dimension
-            0, stream,                  // Shared memory size and stream
-            kernelParameters, null      // Kernel- and extra parameters
-        );
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+
+        public static void ReLU(CUdeviceptr ptr, long size, CUstream stream) {
+            Activation("ReLU", ptr, size, stream);
+        }
+
+        public static void LeakyReLU(CUdeviceptr ptr, long size, float alpha, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "LeakyReLU", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(ptr),
+                Pointer.to(new long[]{size}),
+                Pointer.to(new float[]{alpha})
+            );
+
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+
+        public static void Sigmoid(CUdeviceptr ptr, long size, CUstream stream) {
+            Activation("Sigmoid", ptr, size, stream);
+        }
+
+        public static void Swish(CUdeviceptr ptr, long size, CUstream stream) {
+            Activation("Swish", ptr, size, stream);
+        }
+
+        public static void Sin(CUdeviceptr ptr, long size, CUstream stream) {
+            Activation("Sin", ptr, size, stream);
+        }
+
+        public static void SoftMax(CUdeviceptr ptr, long stride, long count, CUstream stream) {
+            if(count > Integer.MAX_VALUE || stride > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            int device = CudaEngine.getThreadDeviceId();
+            int blockSize;
+            
+            if(stride <= 32)
+                blockSize = 32;
+            else if(stride <= 64)
+                blockSize = 64;
+            else if(stride <= 128)
+                blockSize = 128;
+            else if(stride <= 256)
+                blockSize = 256;
+            else
+                blockSize = 512;
+
+            /* Compute Matrix Multiplication */
+            CUfunction fn = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, true, String.format("SoftMax_%d", blockSize), device);
+
+            int blockSizeX = blockSize;
+            int gridSizeX = (int)count;
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(ptr),
+                Pointer.to(new long[]{stride})
+            );
+
+            JCudaDriver.cuLaunchKernel(fn,
+                gridSizeX, 1, 1,            // Grid dimension
+                blockSizeX, 1, 1,           // Block dimension
+                0, stream,                  // Shared memory size and stream
+                kernelParameters, null      // Kernel- and extra parameters
+            );
+        }
+
+        public static void Step(CUdeviceptr ptr, long size, CUstream stream) {
+            Activation("Step", ptr, size, stream);
+        }
+
+        public static void Tanh(CUdeviceptr ptr, long size, CUstream stream) {
+            Activation("Tanh", ptr, size, stream);
+        }
+
+        public static void GeLU(CUdeviceptr ptr, long size, CUstream stream) {
+            Activation("GeLU", ptr, size, stream);
+        }
     }
     
-    public static void Step(CUdeviceptr ptr, long size, CUstream stream) {
-        Activation("Step", ptr, size, stream);
+    /* Activation derivative functions */
+    public static class activationDerivative {
+        private static void ActivationDerivative(String name, CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, name, device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(preActivation),
+                Pointer.to(postActivation),
+                Pointer.to(output),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+        
+        public static void GeLUDerivative(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long size, CUstream stream) {
+            ActivationDerivative("GeLUDerivative", preActivation, postActivation, output, size, stream);
+        }
+        
+        public static void LeakyReLUDerivative(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long size, float alpha, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "LeakyReLUDerivative", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(preActivation),
+                Pointer.to(postActivation),
+                Pointer.to(output),
+                Pointer.to(new long[]{size}),
+                Pointer.to(new float[]{alpha})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+        
+        public static void LinearDerivative(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long size, CUstream stream) {
+            JCudaDriver.cuMemsetD32Async(output, Float.floatToRawIntBits(1.0f), size, stream);
+        }
+        
+        public static void ReLUDerivative(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long size, CUstream stream) {
+            ActivationDerivative("ReLUDerivative", preActivation, postActivation, output, size, stream);
+        }
+
+        public static void SinDerivative(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long size, CUstream stream) {
+            ActivationDerivative("SinDerivative", preActivation, postActivation, output, size, stream);
+        }
+        
+        public static void SoftMaxDerivative(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+            if(count > Integer.MAX_VALUE || stride > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            int device = CudaEngine.getThreadDeviceId();
+            int blockSizeX;
+            
+            if(stride <= 32)
+                blockSizeX = 32;
+            else if(stride <= 64)
+                blockSizeX = 64;
+            else if(stride <= 128)
+                blockSizeX = 128;
+            else if(stride <= 256)
+                blockSizeX = 256;
+            else
+                blockSizeX = 512;
+
+            /* Compute Matrix Multiplication */
+            CUfunction fn = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, true, String.format("SoftMaxDerivative", blockSizeX), device);
+            int gridSizeX = (int)count;
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(preActivation),
+                Pointer.to(postActivation),
+                Pointer.to(output),
+                Pointer.to(new long[]{stride})
+            );
+
+            JCudaDriver.cuLaunchKernel(fn,
+                gridSizeX, 1, 1,            // Grid dimension
+                blockSizeX, 1, 1,           // Block dimension
+                0, stream,                  // Shared memory size and stream
+                kernelParameters, null      // Kernel- and extra parameters
+            );
+        }
+        
+        public static void SigmoidDerivative(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long size, CUstream stream) {
+            ActivationDerivative("SigmoidDerivative", preActivation, postActivation, output, size, stream);
+        }
+
+        public static void SwishDerivative(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long size, CUstream stream) {
+            ActivationDerivative("SwishDerivative", preActivation, postActivation, output, size, stream);
+        }
+
+        public static void TanhDerivative(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long size, CUstream stream) {
+            ActivationDerivative("TanhDerivative", preActivation, postActivation, output, size, stream);
+        }
     }
     
-    public static void Tanh(CUdeviceptr ptr, long size, CUstream stream) {
-        Activation("Tanh", ptr, size, stream);
-    }
-    
-    public static void GeLU(CUdeviceptr ptr, long size, CUstream stream) {
-        Activation("GeLU", ptr, size, stream);
-    }
-    
-    /* Activation derivative functions */    
-    public static void ReLUPrime(CUdeviceptr ptr, long size, CUstream stream) {
-        Activation("ReLUPrime", ptr, size, stream);
-    }
-    
-    public static void TanhPrime(CUdeviceptr ptr, long size, CUstream stream) {
-        Activation("TanhPrime", ptr, size, stream);
-    }
-    
-    public static void SigmoidPrime(CUdeviceptr ptr, long size, CUstream stream) {
-        Activation("SigmoidPrime", ptr, size, stream);
+    public static class activationGradient {
+        private static void ActivationGradient(String name, CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, name, device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(preActivation),
+                Pointer.to(postActivation),
+                Pointer.to(gradient),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+        
+        public static void GeLUGradient(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long size, CUstream stream) {
+            ActivationGradient("GeLUGradient", preActivation, postActivation, gradient, size, stream);
+        }
+        
+        public static void LeakyReLUGradient(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long size, float alpha, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "LeakyReLUGradient", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(preActivation),
+                Pointer.to(postActivation),
+                Pointer.to(gradient),
+                Pointer.to(new long[]{size}),
+                Pointer.to(new float[]{alpha})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+                
+        public static void ReLUGradient(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long size, CUstream stream) {
+            ActivationGradient("ReLUGradient", preActivation, postActivation, gradient, size, stream);
+        }
+
+        public static void SigmoidGradient(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long size, CUstream stream) {
+            ActivationGradient("SigmoidGradient", preActivation, postActivation, gradient, size, stream);
+        }
+        
+        public static void SinGradient(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long size, CUstream stream) {
+            ActivationGradient("SinGradient", preActivation, postActivation, gradient, size, stream);
+        }
+        
+        public static void SoftMaxGradient(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
+            if(count > Integer.MAX_VALUE || stride > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            int device = CudaEngine.getThreadDeviceId();
+            int blockSize;
+            
+            if(stride <= 32)
+                blockSize = 32;
+            else if(stride <= 64)
+                blockSize = 64;
+            else if(stride <= 128)
+                blockSize = 128;
+            else if(stride <= 256)
+                blockSize = 256;
+            else
+                blockSize = 512;
+
+            /* Compute Matrix Multiplication */
+            CUfunction fn = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, true, String.format("SoftMaxGradient_%d", blockSize), device);
+
+            int blockSizeX = blockSize;
+            int gridSizeX = (int)count;
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(preActivation),
+                Pointer.to(postActivation),
+                Pointer.to(gradient),
+                Pointer.to(new long[]{stride})
+            );
+
+            JCudaDriver.cuLaunchKernel(fn,
+                gridSizeX, 1, 1,            // Grid dimension
+                blockSizeX, 1, 1,           // Block dimension
+                0, stream,                  // Shared memory size and stream
+                kernelParameters, null      // Kernel- and extra parameters
+            );
+        }
+
+        public static void SwishGradient(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long size, CUstream stream) {
+            ActivationGradient("SwishGradient", preActivation, postActivation, gradient, size, stream);
+        }
+        
+        public static void TanhGradient(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long size, CUstream stream) {
+            ActivationGradient("TanhGradient", preActivation, postActivation, gradient, size, stream);
+        }
     }
     
     /* Loss Functions */

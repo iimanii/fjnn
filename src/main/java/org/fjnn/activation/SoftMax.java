@@ -45,7 +45,7 @@ public class SoftMax extends Activation {
     
     @Override
     public float compute(float input) {
-        return 1.0f;
+        throw new UnsupportedOperationException("SoftMax cannot be computed on a single value"); 
     }
 
     @Override
@@ -54,21 +54,17 @@ public class SoftMax extends Activation {
             int from = c * stride;
             int to = from + stride;
             
-            double sum = 0;
             float max = Float.NEGATIVE_INFINITY;
-
             for(int i=from; i < to; i++) {
                 max = Math.max(input[i], max);
             }
-//            
-//            System.out.println("max: " + max);
 
+            double sum = 0;
             for(int i=from; i < to; i++) {
                 input[i] = (float) Math.exp(input[i] - max);
                 sum += input[i];
             }
             
-//            System.out.println("sum: " + sum);
             if(sum == 0)
                 for(int i=from; i < to; i++)
                     input[i] = 1.0f / input.length;
@@ -79,31 +75,77 @@ public class SoftMax extends Activation {
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.SoftMax(ptr, stride, count, stream);
-    }
-
-    /*
-     * https://mmuratarat.github.io/2019-01-27/derivation-of-softmax-function
-     * https://www.youtube.com/watch?v=09c7bkxpv9I
-     */
-    @Override
-    public void derivative(float[] input, int from, int to) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
     public void compute(FloatBuffer input, int stride, int count) {
         intrinsic.SoftMax(input, stride, count);
     }
 
     @Override
-    public float derivative(float input) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
+        CudaFunctions.activation.SoftMax(ptr, stride, count, stream);
+    }
+    
+    @Override
+    public float derivative(float preActivation, float postActivation) {
+        throw new UnsupportedOperationException("SoftMax derivative cannot be computed on single values"); 
+    }
+    
+    /*
+     * https://mmuratarat.github.io/2019-01-27/derivation-of-softmax-function
+     * https://www.youtube.com/watch?v=09c7bkxpv9I
+     * Softmax derivative is: Si * (δij - Sj) where S is softmax output
+     * δij = 1 if  i ==j otherwise 0
+     *
+     */
+    @Override
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+        throw new UnsupportedOperationException("Not supported, use gradient");
+
+//        for(int c = 0; c < count; c++) {
+//            int from = c * stride;
+//            int to = from + stride;
+//            
+//            for(int i = from; i < to; i++) {
+//                float sum = 0.0f;
+//                for(int j = from; j < to; j++) {
+//                    // If i==j, use Si*(1-Si), else use -Si*Sj
+//                    float term = (i == j) ? postActivation[i] * (1.0f - postActivation[i]) :
+//                                           -postActivation[i] * postActivation[j];
+//                    sum += term;
+//                }
+//                output[i] = sum;
+//            }
+//        }
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr ptr, long stride, long size, CUstream stream) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported, use gradient");
+    }
+    
+    /*
+     * gradient[i] = Si(gi - dot_product[Si.gi])
+     */
+    @Override
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
+        for(int c = 0; c < count; c++) {
+            int from = c * stride;
+            int to = from + stride;
+
+            // Calculate dot product between output and gradient
+            float dot_product = 0;
+            for(int j = from; j < to; j++) {
+                dot_product += postActivation[j] * gradient[j];
+            }
+
+            // Calculate final gradient: Si(gi - dot_product)
+            for(int i = from; i < to; i++) {
+                gradient[i] = postActivation[i] * (gradient[i] - dot_product);
+            }
+        }
+    }
+    
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
+        CudaFunctions.activationGradient.SoftMaxGradient(preActivation, postActivation, gradient, stride, count, stream);
     }
 }

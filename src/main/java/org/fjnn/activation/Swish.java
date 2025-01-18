@@ -40,67 +40,59 @@ import org.fjnn.util.intrinsic;
  *
  * @author ahmed
  */
-public class LeakyReLU extends Activation {
-    public static final float DEFAULT_ALPHA = 0.3f;
-    
-    final float alpha;
-    
-    public LeakyReLU() {
-        this.alpha = DEFAULT_ALPHA;
-    }
-    
-    public LeakyReLU(float alpha) {
-        this.alpha = alpha;
-    }
-    
+public class Swish extends Activation {
+
     @Override
     public float compute(float input) {
-        return input < 0 ? input * alpha : input;
-    }
-    
-    @Override
-    public void compute(float[] input, int stride, int count) {
-        for(int i=0; i < input.length; i++)
-            if(input[i] < 0)
-                input[i] = input[i] * alpha;
+        return input / (1 + SafeExp(-input));
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.activation.LeakyReLU(ptr, stride * count, alpha, stream);
+    public void compute(float[] input, int stride, int count) {
+        for(int i=0; i < input.length; i++)
+            input[i] = input[i] / (1 + SafeExp(-input[i]));
     }
 
     @Override
     public void compute(FloatBuffer input, int stride, int count) {
-        throw new UnsupportedOperationException("Not supported yet.");
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
-
+    
+    @Override
+    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
+        CudaFunctions.activation.Swish(ptr, stride * count, stream);
+    }
+    
     @Override
     public float derivative(float preActivation, float postActivation) {
-        return preActivation < 0 ? alpha : 1.0f;
+        float sigmoid = 1.0f / (1.0f + SafeExp(-preActivation));
+        return postActivation + sigmoid * (1.0f - postActivation);
     }
-
+    
     @Override
     public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
-        for(int i = 0; i < stride * count; i++) {
-            output[i] = preActivation[i] < 0 ? alpha : 1.0f;
+        for (int i = 0; i < stride * count; i++) {
+            float sigmoid = 1.0f / (1.0f + SafeExp(-preActivation[i]));
+            output[i] = postActivation[i] + sigmoid * (1.0f - postActivation[i]);
         }
-    }
-
-    @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
-        CudaFunctions.activationDerivative.LeakyReLUDerivative(preActivation, postActivation, output, stride * count, alpha, stream);
     }
     
     @Override
     public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
-        for(int i = 0; i < stride * count; i++) {
-            gradient[i] *= preActivation[i] < 0 ? alpha : 1.0f;
+        for (int i = 0; i < stride * count; i++) {
+            float sigmoid = 1.0f / (1.0f + SafeExp(-preActivation[i]));
+            float deriv = postActivation[i] + sigmoid * (1.0f - postActivation[i]);
+            gradient[i] *= deriv;
         }
     }
     
     @Override
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+        CudaFunctions.activationDerivative.SwishDerivative(preActivation, postActivation, output, stride * count, stream);
+    }
+    
+    @Override
     public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
-        CudaFunctions.activationGradient.LeakyReLUGradient(preActivation, postActivation, gradient, stride * count, alpha, stream);
+        CudaFunctions.activationGradient.SwishGradient(preActivation, postActivation, gradient, stride * count, stream);
     }
 }

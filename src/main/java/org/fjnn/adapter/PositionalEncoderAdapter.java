@@ -211,5 +211,10 @@ public class PositionalEncoderAdapter extends ModelComponent {
        
        return new PositionalEncoderAdapter(featureSize, featureCount, offset);
     }
+
+    @Override
+    public void updateWeightsFromGPU() {
+        
+    }
 }
 

@@ -49,18 +49,13 @@ public class Sin extends Activation {
 
     @Override
     public void compute(float[] input, int stride, int count) {
-        for(int i=0; i < input.length; i++)
+        for(int i=0; i < stride * count; i++)
             input[i] = (float) Math.sin(input[i]);
     }
 
     @Override
     public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.Sin(ptr, stride * count, stream);        
-    }
-
-    @Override
-    public void derivative(float[] input, int from, int to) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        CudaFunctions.activation.Sin(ptr, stride * count, stream);        
     }
 
     @Override
@@ -69,12 +64,33 @@ public class Sin extends Activation {
     }
 
     @Override
-    public float derivative(float input) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public float derivative(float preActivation, float postActivation) {
+        /* cos(x) */
+        return (float) Math.cos(preActivation);
+    }
+    
+    @Override
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+        /* cos(x) */
+        for (int i = 0; i < stride * count; i++) {
+            output[i] = (float) Math.cos(preActivation[i]);
+        }
+    }
+    
+    @Override
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+        CudaFunctions.activationDerivative.SinDerivative(preActivation, postActivation, output, stride * count, stream);
+    }
+    
+    @Override
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
+        for(int i = 0; i < stride * count; i++) {
+            gradient[i] *= (float)Math.cos(preActivation[i]);
+        }
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr ptr, long stride, long size, CUstream stream) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
+        CudaFunctions.activationGradient.SinGradient(preActivation, postActivation, gradient, stride * count, stream);
     }
 }

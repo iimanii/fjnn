@@ -44,42 +44,53 @@ public class Sigmoid extends Activation {
 
     @Override
     public float compute(float input) {
-        return (float) (1.0 / (1 + SafeExp(-input)));
+        return 1.0f / (1.0f + SafeExp(-input));
     }
 
     @Override
     public void compute(float[] input, int stride, int count) {
-        for(int i=0; i < input.length; i++)
-            input[i] = (float) (1.0 / (1 + SafeExp(-input[i])));
-    }
-
-    @Override
-    public float derivative(float input) {
-        float sigmoid = (float) (1.0 / (1 + SafeExp(-input)));
-        return sigmoid * (1 - sigmoid);
-    }
-    
-    @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.Sigmoid(ptr, stride * count, stream);
-    }
-    
-    @Override
-    public void derivative(float[] input, int from, int to) {
-        /* sigmoid(x) * (1 - sigmoid(x)) */
-        for (int i = from; i < to; i++) {
-            float sigmoid = (float) (1.0 / (1 + SafeExp(-input[i])));
-            input[i] = sigmoid * (1 - sigmoid);
-        }
+        for(int i=0; i < stride * count; i++)
+            input[i] = 1.0f / (1.0f + SafeExp(-input[i]));
     }
 
     @Override
     public void compute(FloatBuffer input, int stride, int count) {
         intrinsic.Sigmoid(input, stride * count);
     }
+    
+    @Override
+    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
+        CudaFunctions.activation.Sigmoid(ptr, stride * count, stream);
+    }
 
     @Override
-    public void derivativeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.SigmoidPrime(ptr, stride * count, stream);
+    public float derivative(float preActivation, float postActivation) {
+        /* sigmoid(x) * (1 - sigmoid(x)) */
+        return postActivation * (1.0f - postActivation);
+    }
+    
+    @Override
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+        /* sigmoid(x) * (1 - sigmoid(x)) */
+        for (int i=0; i < stride * count; i++) {
+            output[i] = postActivation[i] * (1.0f - postActivation[i]);
+        }
+    }
+    
+    @Override
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+        CudaFunctions.activationDerivative.SigmoidDerivative(preActivation, postActivation, output, stride * count, stream);
+    }
+    
+    @Override
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
+        for(int i = 0; i < stride * count; i++) {
+            gradient[i] *= postActivation[i] * (1.0f - postActivation[i]);
+        }
+    }
+
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
+        CudaFunctions.activationGradient.SigmoidGradient(preActivation, postActivation, gradient, stride * count, stream);
     }
 }

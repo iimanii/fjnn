@@ -166,4 +166,9 @@ public class BatchSizeAdapter extends ModelComponent {
        
        return new BatchSizeAdapter(inputSize, outputSize);
     }
+
+    @Override
+    public void updateWeightsFromGPU() {
+
+    }
 }

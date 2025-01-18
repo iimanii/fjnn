@@ -49,7 +49,7 @@ public class Step extends Activation {
 
     @Override
     public void compute(float[] input, int stride, int count) {
-        for(int i=0; i < input.length; i++)
+        for(int i=0; i < stride * count; i++)
             input[i] = input[i] >= 0 ? 1 : 0;
     }
 
@@ -60,22 +60,31 @@ public class Step extends Activation {
 
     @Override
     public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.Step(ptr, stride * count, stream);        
+        CudaFunctions.activation.Step(ptr, stride * count, stream);        
     }
     
     @Override
-    public float derivative(float input) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public float derivative(float preActivation, float postActivation) {
+        throw new UnsupportedOperationException("Step function does not support derivatives");
     }
     
     @Override
-    public void derivative(float[] input, int from, int to) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+        throw new UnsupportedOperationException("Step function does not support derivatives");
     }
-
-
+    
     @Override
-    public void derivativeGPU(CUdeviceptr ptr, long stride, long size, CUstream stream) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
+        throw new UnsupportedOperationException("Step function does not support gradients");
+    }
+    
+    @Override
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+        throw new UnsupportedOperationException("Step function does not support derivatives");
+    }
+    
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
+        throw new UnsupportedOperationException("Step function does not support gradients");
     }
 }

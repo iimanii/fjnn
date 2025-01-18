@@ -319,4 +319,10 @@ public class ChainModel {
 
         return chain;
     }
+
+    public void updateWeightsFromGPU() {
+        for (ModelComponent component : components) {
+            component.updateWeightsFromGPU();
+        }
+    }
 }

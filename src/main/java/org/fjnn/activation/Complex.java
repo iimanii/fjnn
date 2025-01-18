@@ -51,12 +51,27 @@ public class Complex extends Activation {
     }
 
     @Override
-    public float derivative(float input) {
+    public float derivative(float preactivation, float postactivation) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr ptr, long stride, long size, CUstream stream) {
+    public void derivative(float[] preactivation, float[] postactivation, float[] output, int stride, int count) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void derivativeGPU(CUdeviceptr preactivation, CUdeviceptr postactivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
     
@@ -95,11 +110,6 @@ public class Complex extends Activation {
         this.count = count;
         this.functions = functions.toArray(new function[functions.size()]);
         this.activation = activation;
-    }
-    
-    @Override
-    public void derivative(float[] input, int from, int to) {
-        throw new UnsupportedOperationException("Not supported yet.");
     }
 
     protected static Complex parse(String name) {

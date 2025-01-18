@@ -27,36 +27,6 @@
 #include "util.h"
 
 /**
- * Rectifier Linear Unit
- */
-extern "C"
-__global__ void ReLU(float* v, long size) {
-    int row = blockDim.x * blockIdx.x + threadIdx.x;
-    
-    if(row < size && v[row] < 0.0f)
-        v[row] = 0.0f;
-}
-extern "C"
-__global__ void ReLUPrime(float* v, long size) {
-    int row = blockDim.x * blockIdx.x + threadIdx.x;
-
-    if (row < size) {
-        v[row] = v[row] > 0.0f ? 1.0f : 0.0f;
-    }
-}
-
-/**
- * Leaky Rectifier Linear Unit
- */
-extern "C"
-__global__ void LeakyReLU(float* v, long size, float alpha) {
-    int row = blockDim.x * blockIdx.x + threadIdx.x;
-    
-    if(row < size && v[row] < 0.0f)
-        v[row] = v[row] * alpha;
-}
-
-/**
  * Gaussian Error Linear Unit (GELU)
  * Using the tanh approximation for GELU
  */
@@ -71,6 +41,97 @@ __global__ void GeLU(float* v, long size) {
     }
 }
 
+extern "C"
+__global__ void GeLUDerivative(float* preActivation, float* postActivation, float* output, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    // d/dx[GELU(x)] = 0.5 * (1 + tanh(sqrt(2/π) * (x + 0.044715x³))) + 0.5x * sech²(sqrt(2/π) * (x + 0.044715x³)) * sqrt(2/π) * (1 + 3*0.044715x²)
+    if(row < size) {
+        float x = preActivation[row];
+        float inner = 0.797885f * (x + 0.044715f * x * x * x);
+        float tanh_val = tanhf(inner);
+        float sech2 = 1.0f - tanh_val * tanh_val;
+        
+        output[row] = 0.5f * (1.0f + tanh_val) + 
+                      0.5f * x * sech2 * 0.797885f * (1.0f + 3.0f * 0.044715f * x * x);
+    }
+}
+
+extern "C"
+__global__ void GeLUGradient(float* preActivation, float* postActivation, float* gradient, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    // d/dx[GELU(x)] = 0.5 * (1 + tanh(sqrt(2/π) * (x + 0.044715x³))) + 0.5x * sech²(sqrt(2/π) * (x + 0.044715x³)) * sqrt(2/π) * (1 + 3*0.044715x²)
+    if(row < size) {
+        float x = preActivation[row];
+        float inner = 0.797885f * (x + 0.044715f * x * x * x);
+        float tanh_val = tanhf(inner);
+        float sech2 = 1.0f - tanh_val * tanh_val;
+        
+        float derivative = 0.5f * (1.0f + tanh_val) + 
+                           0.5f * x * sech2 * 0.797885f * (1.0f + 3.0f * 0.044715f * x * x);
+        
+        gradient[row] *= derivative;
+    }
+}
+
+/**
+ * Leaky Rectifier Linear Unit
+ */
+extern "C"
+__global__ void LeakyReLU(float* v, long size, float alpha) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size && v[row] < 0.0f)
+        v[row] = v[row] * alpha;
+}
+extern "C"
+__global__ void LeakyReLUDerivative(float* preActivation, float* postActivation, float* output, long size, float alpha) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size) {
+        output[row] = preActivation[row] < 0 ? alpha : 1.0f;
+    }
+}
+extern "C"
+__global__ void LeakyReLUGradient(float* preActivation, float* postActivation, float* gradient, long size, float alpha) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size) {
+        gradient[row] *= preActivation[row] < 0 ? alpha : 1.0f;
+    }
+}
+
+/**
+ * Rectifier Linear Unit
+ */
+extern "C"
+__global__ void ReLU(float* v, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size && v[row] < 0.0f)
+        v[row] = 0.0f;
+}
+
+extern "C"
+__global__ void ReLUDerivative(float* preActivation, float* postActivation, float* output, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+
+    if (row < size) {
+        output[row] = preActivation[row] > 0.0f ? 1.0f : 0.0f;
+    }
+}
+
+extern "C"
+__global__ void ReLUGradient(float* preActivation, float* postActivation, float* gradient, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size) {
+        if(preActivation[row] <= 0)
+            gradient[row] = 0;
+        // if preActivation > 0, derivative is 1 so gradient stays the same
+    }
+}
+
 /**
  * Sigmoid
  */
@@ -79,16 +140,26 @@ __global__ void Sigmoid(float* v, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
     if(row < size)
-        v[row] = 1.0 / (1 + safe_exp(-v[row]));
+        v[row] = 1.0f / (1.0f + safe_exp(-v[row]));
 }
 
 extern "C"
-__global__ void SigmoidPrime(float* v, long size) {
+__global__ void SigmoidDerivative(float* preActivation, float* postActivation, float* output, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
 
     if (row < size) {
-        float sigmoid = 1.0f / (1.0f + safe_exp(-v[row]));
-        v[row] = sigmoid * (1.0f - sigmoid);
+        float post = postActivation[row];
+        output[row] = post * (1.0f - post);
+    }
+}
+
+extern "C"
+__global__ void SigmoidGradient(float* preActivation, float* postActivation, float* gradient, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size) {
+        float post = postActivation[row];
+        gradient[row] *= post * (1.0f - post);
     }
 }
 
@@ -100,42 +171,31 @@ __global__ void Sin(float* v, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
     if(row < size)
-        v[row] = sin(v[row]);
+        v[row] = sinf(v[row]);
 }
 
-/**
- * Tanh
- */
 extern "C"
-__global__ void Tanh(float* v, long size) {
+__global__ void SinDerivative(float* preActivation, float* postActivation, float* output, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
-    if(row < size)
-        v[row] = tanh(v[row]);
-}
-
-extern "C"
-__global__ void TanhPrime(float* v, long size) {
-    int row = blockDim.x * blockIdx.x + threadIdx.x;
-
-    if (row < size) {
-        float tanhValue = tanh(v[row]);
-        v[row] = 1.0f - tanhValue * tanhValue;
+    if(row < size) {
+        output[row] = cosf(preActivation[row]);
     }
 }
 
-/**
- * Step
- */
 extern "C"
-__global__ void Step(float* v, long size) {
+__global__ void SinGradient(float* preActivation, float* postActivation, float* gradient, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
-    if(row < size)
-        v[row] = v[row] >= 0 ? 1 : 0;
+    if(row < size) {
+        gradient[row] *= cosf(preActivation[row]);
+    }
 }
 
 
+/**
+ * SoftMax
+ */
 template<const int BLOCK_SIZE>
 __device__ void SoftMax(float* v, long size) {
     __shared__ float temp[BLOCK_SIZE];
@@ -186,31 +246,133 @@ __device__ void SoftMax(float* v, long size) {
     }
 }
 
+template<const int BLOCK_SIZE>
+__device__ void SoftMaxGradient(float* preActivation, float* postActivation, float* gradient, long size) {
+    __shared__ float temp[BLOCK_SIZE];
+    
+    int blockIndex = blockIdx.x * size;
+    const int iterations = (size - 1) / BLOCK_SIZE + 1;
+    
+    // Calculate partial dot products
+    float dot_sum = 0;
+    for(int i = 0; i < iterations; i++) {
+        int index = threadIdx.x + i * BLOCK_SIZE;
+        if(index < size) {
+            dot_sum += postActivation[blockIndex + index] * gradient[blockIndex + index];
+        }
+    }
+    
+    // Reduce to get total dot product
+    float dot_product = reduceBlockSum<BLOCK_SIZE>(temp, dot_sum);
+    
+    // Calculate final gradients
+    for(int i = 0; i < iterations; i++) {
+        int index = threadIdx.x + i * BLOCK_SIZE;
+        if(index < size) {
+            gradient[blockIndex + index] = postActivation[blockIndex + index] * (gradient[blockIndex + index] - dot_product);
+        }
+    }
+}
+
+/* 
+ * create a list of SoftMax_X and SoftMaxGradient_X
+ */
+#define SOFTMAX_KERNELS(SIZE) \
+extern "C" \
+__global__ void SoftMax_##SIZE(float* v, long size) { \
+    SoftMax<SIZE>(v, size); \
+} \
+extern "C" \
+__global__ void SoftMaxGradient_##SIZE(float* preActivation, float* postActivation, float* gradient, long size) { \
+    SoftMaxGradient<SIZE>(preActivation, postActivation, gradient, size); \
+}
+
+SOFTMAX_KERNELS(32)
+SOFTMAX_KERNELS(64)
+SOFTMAX_KERNELS(128)
+SOFTMAX_KERNELS(256)
+SOFTMAX_KERNELS(512)
+
+/**
+ * Step
+ */
 extern "C"
-__global__ void SoftMax_32(float* v, long size) {
-    SoftMax<32>(v, size);
+__global__ void Step(float* v, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size)
+        v[row] = v[row] >= 0 ? 1.0f : 0.0f;
+}
+
+
+/**
+ * Swish (x * sigmoid)
+ */
+extern "C"
+__global__ void Swish(float* v, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size) {
+        float x = v[row];
+        v[row] = x / (1.0f + safe_exp(-x));
+    }
 }
 
 extern "C"
-__global__ void SoftMax_64(float* v, long size) {
-    SoftMax<64>(v, size);
+__global__ void SwishDerivative(float* preActivation, float* postActivation, float* output, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size) {
+        float x = preActivation[row];
+        float sigmoid = 1.0f / (1.0f + safe_exp(-x));
+        output[row] = postActivation[row] + sigmoid * (1.0f - postActivation[row]);
+    }
 }
 
 extern "C"
-__global__ void SoftMax_128(float* v, long size) {
-    SoftMax<128>(v, size);
+__global__ void SwishGradient(float* preActivation, float* postActivation, float* gradient, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size) {
+        float x = preActivation[row];
+        float sigmoid = 1.0f / (1.0f + safe_exp(-x));
+        float derivative = postActivation[row] + sigmoid * (1.0f - postActivation[row]);
+        gradient[row] *= derivative;
+    }
+}
+
+/**
+ * Tanh
+ */
+extern "C"
+__global__ void Tanh(float* v, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size)
+        v[row] = tanhf(v[row]);
 }
 
 extern "C"
-__global__ void SoftMax_256(float* v, long size) {
-    SoftMax<256>(v, size);
+__global__ void TanhDerivative(float* preActivation, float* postActivation, float* output, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size) {
+        float tanh_val = postActivation[row];
+        output[row] = 1.0f - tanh_val * tanh_val;
+    }
 }
 
 extern "C"
-__global__ void SoftMax_512(float* v, long size) {
-    SoftMax<512>(v, size);
+__global__ void TanhGradient(float* preActivation, float* postActivation, float* gradient, long size) {
+    int row = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(row < size) {
+        float tanh_val = postActivation[row];
+        gradient[row] *= (1.0f - tanh_val * tanh_val);
+    }
 }
 
+/* legacy stuff */
 extern "C"
 __global__ void SoftMax_1(float* v, long size, float* sums) {
     __shared__ float cache[THREADS_PER_BLOCK];

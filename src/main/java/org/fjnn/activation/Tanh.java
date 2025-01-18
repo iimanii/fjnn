@@ -60,27 +60,39 @@ public class Tanh extends Activation {
     
     @Override
     public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.Tanh(ptr, stride * count, stream);        
-    }
-
-    @Override
-    public float derivative(float input) {
-        float tanhValue = (float) Math.tanh(input);
-        return 1.0f - tanhValue * tanhValue;
+        CudaFunctions.activation.Tanh(ptr, stride * count, stream);        
     }
     
     @Override
-    public void derivative(float[] input, int from, int to) {
+    public float derivative(float preActivation, float postActivation) {
         /* 1 - tanh(x)^2 */
-        for (int i = from; i < to; i++) {
-            float tanhValue = (float) Math.tanh(input[i]);
-            input[i] = 1.0f - tanhValue * tanhValue;
+        return 1.0f - postActivation * postActivation;
+    }
+    
+    @Override
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+        /* 1 - tanh(x)^2 */
+        for (int i = 0; i < stride * count; i++) {
+            output[i] = 1.0f - postActivation[i] * postActivation[i];
         }
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.TanhPrime(ptr, stride * count, stream);
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+        CudaFunctions.activationDerivative.TanhDerivative(preActivation, postActivation, output, stride * count, stream);
+    }
+    
+    
+    @Override
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
+        for (int i = 0; i < stride * count; i++) {
+            gradient[i] *= (1.0f - postActivation[i] * postActivation[i]);
+        }
+    }
+    
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
+        CudaFunctions.activationGradient.TanhGradient(preActivation, postActivation, gradient, stride * count, stream);
     }
 
 }

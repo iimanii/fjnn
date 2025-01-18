@@ -255,14 +255,14 @@ public class Connection {
             JCublas2.cublasSetStream(handle, new cudaStream_t(stream));
 
             // Step 1: Compute the weight gradient using cuBLAS
-            // grad_W^{(l)} = delta^{(l+1)} * (a^{(l)})^T
+            // gradW[l] = delta[l+1] * activations[l].transpose() 
             JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_N, cublasOperation.CUBLAS_OP_T, 
                                  m, n, k, 
                                  pAlpha, a, m, b, n, 
                                  pBeta, c, m);
 
             // Step 2: Compute pre-activation deltas for current layer
-            // postActivationDeltas += W^{(l)}^T * delta^{(l+1)}
+            // postActivationDeltas[l] += weights[l].transpose() * delta[l+1]   
             if(currentActivationDeltas != null) {
                 if(accumulateDeltas)
                     pBeta = Pointer.to(new float[]{1.0f});
@@ -275,7 +275,7 @@ public class Connection {
             }
 
             // Step 3: Compute bias gradients
-            // biasGradients = sum(delta^{(l+1)}, across batch)
+            // biasGradients = sum(delta[l+1], across batch)
             CudaFunctions.vector.reduceSum(gradient.biasGradients, nextPreActivationDeltas, links, count, stream);
 
             // Step 4: If count > 1, average the gradients

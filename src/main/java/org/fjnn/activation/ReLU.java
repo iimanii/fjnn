@@ -49,7 +49,7 @@ public class ReLU extends Activation {
     
     @Override
     public void compute(float[] input, int stride, int count) {
-        for(int i=0; i < input.length; i++) {
+        for(int i=0; i < stride * count; i++) {
             if(input[i] < 0) {
                 input[i] = 0;
             }
@@ -57,30 +57,44 @@ public class ReLU extends Activation {
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.ReLU(ptr, stride * count, stream);
+    public void compute(FloatBuffer input, int stride, int count) {
+        intrinsic.ReLU(input, stride * count);
     }
     
     @Override
-    public void derivative(float[] input, int from, int to) {
-        for (int i = from; i < to; i++) {
-            input[i] = input[i] > 0 ? 1 : 0;
+    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
+        CudaFunctions.activation.ReLU(ptr, stride * count, stream);
+    }
+
+    @Override
+    public float derivative(float preActivation, float postActivation) {
+        return preActivation > 0 ? 1 : 0;
+    }
+    
+
+    @Override
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+        for(int i = 0; i < stride * count; i++) {
+            output[i] = preActivation[i] > 0 ? 1.0f : 0.0f;
         }
     }
 
     @Override
-    public float derivative(float input) {
-        return input > 0 ? 1 : 0;
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+        CudaFunctions.activationDerivative.ReLUDerivative(preActivation, postActivation, output, stride * count, stream);
     }
     
     @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        intrinsic.ReLU(input, stride * count);
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
+        for(int i = 0; i < stride * count; i++) {
+            if(preActivation[i] <= 0) {
+                gradient[i] = 0;
+            }
+        }
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.ReLUPrime(ptr, stride * count, stream);
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
+        CudaFunctions.activationGradient.ReLUGradient(preActivation, postActivation, gradient, stride * count, stream);
     }
-
 }
