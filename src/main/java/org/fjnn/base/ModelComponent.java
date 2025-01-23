@@ -24,16 +24,21 @@
 package org.fjnn.base;
 
 import java.util.HashMap;
+import java.util.Map;
 import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.base.output.FeedForwardOutput;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
+import org.fjnn.adapter.InputDimAdapter;
+import org.fjnn.adapter.PositionalEncoderAdapter;
 import org.fjnn.base.output.BackpropagateOutput;
 import org.fjnn.base.output.BackpropagateOutputGPU;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaUtil;
 import org.fjnn.loss.Loss;
+import org.fjnn.network.NeuralNetwork;
+import org.fjnn.normalizer.Normalizer;
 
 /**
  *
@@ -47,46 +52,49 @@ public abstract class ModelComponent {
         return deviceId;
     }
     
-    public FeedForwardOutput feedForward(float[] input, int batchSize, int batchCount) {
-        if(batchSize != getInputSize())
+    public FeedForwardOutput feedForward(float[] input, int inputSize, int batchSize) {
+        if(inputSize != getInputSize())
             throw new RuntimeException("Invalid batch size " + batchSize + " != " + getInputSize());
         
-        return feedForward(input, batchCount);
+        return feedForward(input, batchSize);
     }
-    public abstract FeedForwardOutput feedForward(float[] input, int batchCount);
+    public abstract FeedForwardOutput feedForward(float[] input, int batchSize);
     
-    public final FeedForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchSize, int batchCount, CUstream stream) {
+    public final FeedForwardOutputGPU feedForwardGPU(CUdeviceptr input, int inputSize, int batchSize, CUstream stream) {
         checkGPUContext();
         
-        if(batchSize != getInputSize())
-            throw new RuntimeException("Invalid batch size " + batchSize + " != " + getInputSize());
+        if(inputSize != getInputSize())
+            throw new RuntimeException("Invalid batch size " + inputSize + " != " + getInputSize());
         
-        return feedForwardGPU(input, batchCount, stream);
+        return feedForwardGPU(input, batchSize, stream);
     }
-    public abstract FeedForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchCount, CUstream stream);
+    public abstract FeedForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchSize, CUstream stream);
     
-    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss, int deltaLossSize, int deltaLossCount, float learningRate) {
-        if(output.batchSize != deltaLossSize || getOutputSize() != deltaLossSize)
+    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss, int deltaLossSize, int deltaLossCount) {
+        if(output.outputDim != deltaLossSize || getOutputSize() != deltaLossSize)
             throw new RuntimeException("Invalid batch size " + deltaLossSize + " != " + getInputSize());
         
-        if(output.batchCount != deltaLossCount)
-            throw new RuntimeException("Invalid batch count " + deltaLossCount + " != " + output.batchCount);
+        if(output.batchSize != deltaLossCount)
+            throw new RuntimeException("Invalid batch count " + deltaLossCount + " != " + output.batchSize);
         
-        return backpropagate(output, deltaLoss, learningRate);
+        return backpropagate(output, deltaLoss);
     }
-    protected abstract BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss, float learningRate);
+    protected abstract BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss);
     
-    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, int deltaLossSize, int deltaLossCount, float learningRate, CUstream stream) {
-        if(output.batchSize != deltaLossSize || getOutputSize() != deltaLossSize)
+    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, int deltaLossSize, int deltaLossCount, CUstream stream) {
+        if(output.outputDim != deltaLossSize || getOutputSize() != deltaLossSize)
             throw new RuntimeException("Invalid batch size " + deltaLossSize + " != " + getInputSize());
         
-        if(output.batchCount != deltaLossCount)
-            throw new RuntimeException("Invalid batch count " + deltaLossCount + " != " + output.batchCount);
+        if(output.batchSize != deltaLossCount)
+            throw new RuntimeException("Invalid batch count " + deltaLossCount + " != " + output.batchSize);
         
-        return backpropagateGPU(output, deltaLoss, learningRate, stream);
+        return backpropagateGPU(output, deltaLoss, stream);
     }
-    protected abstract BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, float learningRate, CUstream stream);
+    protected abstract BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, CUstream stream);
     
+    public abstract void applyGradients(BackpropagateOutput gradients, float learningRate);
+    public abstract void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, CUstream stream);
+
     public abstract boolean gpuReady();
     
     public final void prepareGPU() {
@@ -157,5 +165,27 @@ public abstract class ModelComponent {
     
     public abstract HashMap serialize();
 
+    public static ModelComponent deserialize(Map serialized) {
+        String type = (String)serialized.get("type");
+        
+        switch (type) {
+            case "NeuralNetwork":
+                return NeuralNetwork.deserialize(serialized);
+            case "BatchSizeAdapter":
+                return InputDimAdapter.deserialize(serialized);
+            case "PositionalEncoderAdapter":
+                return PositionalEncoderAdapter.deserialize(serialized);
+            case "LayerNormalizer":
+                return Normalizer.deserialize(serialized);
+                
+            default:
+                throw new RuntimeException("Unknown component type: " + type);
+        }
+    }
+    
     public abstract void updateWeightsFromGPU();
+    
+    public abstract long getParametersCount();
+    
+    public abstract long getBackpropagateMemoryRequired(int batchCount);
 }

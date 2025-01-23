@@ -36,58 +36,57 @@ import org.fjnn.base.output.BackpropagateOutput;
 import org.fjnn.base.output.BackpropagateOutputGPU;
 import org.fjnn.base.output.FeedForwardOutput;
 import org.fjnn.base.output.FeedForwardOutputGPU;
-import org.fjnn.loss.Loss;
 
 /**
  *
  * @author ahmed
  */
-public class BatchSizeAdapter extends ModelComponent {
-    private final int inputBatchSize;       // Expected input batch size
-    private final int targetBatchSize;      // Target batch size for the next component
+public class InputDimAdapter extends ModelComponent {
+    private final int inputDim;       // Expected input batch size
+    private final int targetDim;      // Target batch size for the next component
     private boolean gpuReady;
 
-    public BatchSizeAdapter(int inputBatchSize, int targetBatchSize) {
-        this.inputBatchSize = inputBatchSize;
-        this.targetBatchSize = targetBatchSize;
+    public InputDimAdapter(int inputDim, int targetDim) {
+        this.inputDim = inputDim;
+        this.targetDim = targetDim;
     }
 
     @Override
-    public AdapterForwardOutput feedForward(float[] input, int batchCount) {
+    public AdapterForwardOutput feedForward(float[] input, int batchSize) {
         // Calculate the total number of samples
-        int totalSamples = batchCount * inputBatchSize;
+        long totalSamples = batchSize * inputDim;
 
-        // Calculate the target batch count
-        int targetBatchCount = totalSamples / targetBatchSize;
+        // Calculate the target batch size
+        long targetBatchSize = totalSamples / targetDim;
 
         // Validate divisibility
-        if (totalSamples % targetBatchSize != 0) {
+        if (totalSamples % targetDim != 0) {
             throw new IllegalArgumentException(
-                "Total samples " + totalSamples + " is not divisible by target batch size " + targetBatchSize
+                "Total samples " + totalSamples + " is not divisible by target batch size " + targetDim
             );
         }
         
         // Pass inputs directly with the new batch size
-        return new AdapterForwardOutput(targetBatchSize, targetBatchCount, input);
+        return new AdapterForwardOutput(targetDim, (int)targetBatchSize, input);
     }
 
     @Override
-    public AdapterForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchCount, CUstream stream) {
+    public AdapterForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchSize, CUstream stream) {
         // Calculate the total number of samples
-        int totalSamples = batchCount * inputBatchSize;
+        long totalSamples = batchSize * inputDim;
 
-        // Calculate the target batch count
-        int targetBatchCount = totalSamples / targetBatchSize;
+        // Calculate the target batch size
+        long targetBatchSize = totalSamples / targetDim;
 
         // Validate divisibility
-        if (totalSamples % targetBatchSize != 0) {
+        if (totalSamples % targetDim != 0) {
             throw new IllegalArgumentException(
-                "Total samples " + totalSamples + " is not divisible by target batch size " + targetBatchSize
+                "Total samples " + totalSamples + " is not divisible by target batch size " + targetDim
             );
         }
         
         // Pass inputs directly with the new batch size
-        return new AdapterForwardOutputGPU(targetBatchSize, targetBatchCount, input, true);
+        return new AdapterForwardOutputGPU(targetDim, (int)targetBatchSize, input, true);
     }
 
     @Override
@@ -107,45 +106,47 @@ public class BatchSizeAdapter extends ModelComponent {
 
     @Override
     public int getInputSize() {
-        return inputBatchSize;
+        return inputDim;
     }
 
     @Override
     public int getOutputSize() {
-        return targetBatchSize;
+        return targetDim;
     }
 
     @Override
-    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss, float learningRate) {
+    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss) {
         // The deltaLoss is passed back unchanged since this adapter doesn't transform gradients.
-        int totalSamples = output.totalSize;
+        long totalSamples = output.totalSize;
 
         // Check that the size matches the input batch size.
-        if (totalSamples % inputBatchSize != 0) {
+        if (totalSamples % inputDim != 0) {
             throw new IllegalArgumentException("Backpropagation size mismatch.");
         }
 
-        int sourceBatchCount = totalSamples / inputBatchSize;
-        return new AdapterBackpropagateOutput(inputBatchSize, sourceBatchCount, deltaLoss);
+        long sourceBatchSize = totalSamples / inputDim;
+        
+        return new AdapterBackpropagateOutput(inputDim, (int)sourceBatchSize, deltaLoss);
     }
 
     @Override
-    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, float learningRate, CUstream stream) {
+    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, CUstream stream) {
         // Similar to the CPU version, pass back the deltaLoss unchanged.
-        int totalSamples = output.totalSize;
+        long totalSamples = output.totalSize;
 
         // Check that the size matches the input batch size.
-        if (totalSamples % inputBatchSize != 0) {
+        if (totalSamples % inputDim != 0) {
             throw new IllegalArgumentException("Backpropagation size mismatch.");
         }
 
-        int sourceBatchCount = totalSamples / inputBatchSize;
-        return new AdapterBackpropagateOutputGPU(inputBatchSize, sourceBatchCount, deltaLoss, false);
+        long sourceBatchSize = totalSamples / inputDim;
+        
+        return new AdapterBackpropagateOutputGPU(inputDim, (int)sourceBatchSize, deltaLoss, false);
     }
 
     @Override
     public ModelComponent copy() {
-        return new BatchSizeAdapter(inputBatchSize, targetBatchSize);
+        return new InputDimAdapter(inputDim, targetDim);
     }
     
     @Override
@@ -154,21 +155,41 @@ public class BatchSizeAdapter extends ModelComponent {
 
        // Store component type and main properties
        obj.put("type", "BatchSizeAdapter"); 
-       obj.put("inputSize", getInputSize());
-       obj.put("outputSize", getOutputSize());
+       obj.put("inputDim", getInputSize());
+       obj.put("targetDim", getOutputSize());
 
        return obj;
     }
 
-    public static BatchSizeAdapter deserialize(Map serialized) {
-       int inputSize = (Integer)serialized.get("inputSize");
-       int outputSize = (Integer)serialized.get("outputSize");
+    public static InputDimAdapter deserialize(Map serialized) {
+       int inputDim = (Integer)serialized.get("inputDim");
+       int targetDim = (Integer)serialized.get("targetDim");
        
-       return new BatchSizeAdapter(inputSize, outputSize);
+       return new InputDimAdapter(inputDim, targetDim);
     }
 
     @Override
     public void updateWeightsFromGPU() {
 
+    }
+
+    @Override
+    public long getParametersCount() {
+        return 0;
+    }
+
+    @Override
+    public long getBackpropagateMemoryRequired(int batchSize) {
+        return 0;
+    }
+
+    @Override
+    public void applyGradients(BackpropagateOutput gradients, float learningRate) {
+        // do nothing
+    }
+
+    @Override
+    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, CUstream stream) {
+        // do nothing        
     }
 }

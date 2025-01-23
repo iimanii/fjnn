@@ -23,6 +23,7 @@
  */
 package org.fjnn.network.outputs;
 
+import org.fjnn.activation.output.ActivationForwardOutput;
 import org.fjnn.base.output.FeedForwardOutput;
 
 /**
@@ -30,19 +31,23 @@ import org.fjnn.base.output.FeedForwardOutput;
  * @author ahmed
  */
 public class NeuralNetworkForwardOutput extends FeedForwardOutput {
-    public final float[][] preActivations; // Stores z_x (pre-activation) for each layer
-    public final float[][] postActivations; // Stores a_x (post-activation) for each layer
-
-    public NeuralNetworkForwardOutput(int batchSize, int batchCount, int layerCount) {
-        super(batchSize, batchCount);
+    public final float[][] layerInputs;                         // initial input to each layer
+    public final FeedForwardOutput[] normalizerOutputs;         // normalizer results if any
+    public final ActivationForwardOutput[] activationOutputs;   // activation results
+    public final float[][] layerOutputs;
+    
+    public NeuralNetworkForwardOutput(int outputDim, int batchSize, int layerCount) {
+        super(outputDim, batchSize);
         
-        this.preActivations = new float[layerCount][];
-        this.postActivations = new float[layerCount][];
+        this.layerInputs = new float[layerCount][];
+        this.normalizerOutputs = new FeedForwardOutput[layerCount];
+        this.activationOutputs = new ActivationForwardOutput[layerCount];
+        this.layerOutputs = new float[layerCount][];
     }
 
     @Override
     public float[] output() {
-        return postActivations[postActivations.length - 1];
+        return layerOutputs[layerOutputs.length - 1];
     }
     
 }

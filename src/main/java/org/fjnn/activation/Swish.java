@@ -24,17 +24,9 @@
 package org.fjnn.activation;
 
 import java.nio.FloatBuffer;
-import jcuda.Pointer;
 import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
-import jcuda.driver.JCudaDriver;
-import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CUdeviceptr2D;
 import org.fjnn.cuda.CudaFunctions;
-import org.fjnn.cuda.CudaUtil;
-import org.fjnn.util.intrinsic;
 
 /**
  *
@@ -48,9 +40,9 @@ public class Swish extends Activation {
     }
 
     @Override
-    public void compute(float[] input, int stride, int count) {
+    public void compute(float[] input, float[] output, int stride, int count) {
         for(int i=0; i < input.length; i++)
-            input[i] = input[i] / (1 + SafeExp(-input[i]));
+            output[i] = input[i] / (1 + SafeExp(-input[i]));
     }
 
     @Override
@@ -59,8 +51,8 @@ public class Swish extends Activation {
     }
     
     @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.activation.Swish(ptr, stride * count, stream);
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activation.Swish(input, output, stride * (long)count, stream);
     }
     
     @Override
@@ -87,12 +79,12 @@ public class Swish extends Activation {
     }
     
     @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
-        CudaFunctions.activationDerivative.SwishDerivative(preActivation, postActivation, output, stride * count, stream);
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activationDerivative.SwishDerivative(preActivation, postActivation, output, stride * (long)count, stream);
     }
     
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
-        CudaFunctions.activationGradient.SwishGradient(preActivation, postActivation, gradient, stride * count, stream);
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
+        CudaFunctions.activationGradient.SwishGradient(preActivation, postActivation, gradient, stride * (long)count, stream);
     }
 }

@@ -28,14 +28,14 @@ package org.fjnn.base.output;
  * @author ahmed
  */
 public abstract class FeedForwardOutput {
+    public final int outputDim;
     public final int batchSize;
-    public final int batchCount;
-    public final int totalSize;
+    public final long totalSize;
 
-    public FeedForwardOutput(int batchSize, int batchCount) {
+    public FeedForwardOutput(int outputDim, int batchSize) {
+        this.outputDim = outputDim;
         this.batchSize = batchSize;
-        this.batchCount = batchCount;
-        this.totalSize = batchSize * batchCount;
+        this.totalSize = outputDim * batchSize;
     }
     
     public abstract float[] output();

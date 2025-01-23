@@ -30,13 +30,27 @@
  * Mean Square Error derivative
  */
 extern "C"
-__global__ void MeanSquareErrorPrime(float* output, float* expected, float* result, long size) {
+__global__ void MeanSquareErrorDerivative(float* output, float* expected, float* result, long size) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     
+    float multiplier = 2.0f / size;
+    
     if(i < size)
-        result[i] = output[i] - expected[i];
+        result[i] = multiplier * (output[i] - expected[i]);
 }
 
+/**
+ * Binary Cross Entropy derivative
+ */
+extern "C"
+__global__ void BinaryCrossEntropyDerivative(float* output, float* expected, float* result, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(i < size) {
+        float clipped = fmaxf(1e-7f, fminf(1.0f - 1e-7f, output[i]));
+        result[i] = (clipped - expected[i]) / (clipped * (1.0f - clipped));
+    }
+}
 /**
  * Weighted Mean Square Error derivative
  */

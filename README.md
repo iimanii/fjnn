@@ -19,12 +19,14 @@ Initialize
     int hiddensize = 10;
     int outputsize = 2;
 
-    NeuralNetwork network = new NeuralNetwork(inputSize, outputSize, new Sigmoid());
+    // create network with inputSize / outputSize
+    // apply layer normalization and use sigmoid for output activation
+    NeuralNetwork network = new NeuralNetwork(inputSize, outputSize, new Sigmoid(), new LayerNormalizer());
     network.addHiddenLayer(hiddenSize, new ReLU());
 
     /* hidden layers */
     for(int i=0; i < 3; i++)
-        network.addLayer(hiddensize, new Sigmoid(), true);
+        network.addLayer(hiddensize, new Sigmoid(), new LayerNormalizer());
 
     /* must call build*/
     network.build();

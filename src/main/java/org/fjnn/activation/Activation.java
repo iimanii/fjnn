@@ -25,8 +25,12 @@ package org.fjnn.activation;
 
 import java.io.Serializable;
 import java.nio.FloatBuffer;
+import java.util.HashMap;
+import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
+import org.fjnn.activation.output.ActivationForwardOutput;
+import org.fjnn.activation.output.ActivationForwardOutputGPU;
 
 /**
  *
@@ -36,32 +40,85 @@ public abstract class Activation implements Serializable {
     
     public abstract float compute(float input);
     
-    public final void compute(float[] input) {
-        compute(input, input.length, 1);
-    }
-    
     public final void compute(FloatBuffer input) {
         compute(input, input.capacity(), 1);
     }
     
-    public abstract void compute(float[] input, int stride, int count);
+    public void compute(float[] input, int stride, int count) {
+        compute(input, input, stride, count);
+    }
+    
+    public abstract void compute(float[] input, float[] output, int stride, int count);
     
     public abstract void compute(FloatBuffer input, int stride, int count);
     
-    public abstract void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream);
+    public void computeGPU(CUdeviceptr input, int stride, int count, CUstream stream) {
+        computeGPU(input, input, stride, count, stream);
+    }
+    
+    public abstract void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream);
+    
+    public ActivationForwardOutput feedForward(float[] input, int stride, int count) {
+        ActivationForwardOutput activationOutput = new ActivationForwardOutput(input, stride, count);
+        compute(activationOutput.preActivation, activationOutput.postActivation, stride, count);
+        
+        return activationOutput;
+    }
+    
+    public ActivationForwardOutputGPU feedForwardGPU(CUdeviceptr input, int stride, int count, CUstream stream) {
+        ActivationForwardOutputGPU activationOutput = new ActivationForwardOutputGPU(input, stride, count, stream);
+        computeGPU(activationOutput.preActivation, activationOutput.postActivation, stride, count, stream);
+        
+        return activationOutput;
+    }
     
     public abstract float derivative(float preActivation, float postActivation);
     
     /* calculates derivative and place result in output */
     public abstract void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count);
     
-    public abstract void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream);
+    public abstract void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream);
     
     /* calculates derivative and multiplies it by gradient, puts result in gradient */
     public abstract void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count);
     
-    public abstract void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream);
-
+    public abstract void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream);
+    
+    public HashMap serialize() {
+        HashMap obj = new HashMap();
+        obj.put("type", getClass().getSimpleName());
+        return obj;
+    }
+    
+    public static Activation deserialize(Map serialized) {
+        String type = (String)serialized.get("type");
+        
+        switch(type) {
+            case "ReLU":
+                return new ReLU();
+            case "LeakyReLU":
+                return LeakyReLU.deserialize(serialized);
+            case "Sigmoid":
+                return new Sigmoid();
+            case "Sin":
+                return new Sin();
+            case "SoftMax":
+                return new SoftMax();
+            case "Step":
+                return new Step();
+            case "Tanh":
+                return new Tanh();
+            case "Linear":
+                return new Linear();
+            case "Swish":
+                return new Swish();
+            case "Complex":
+                return Complex.deserialize(serialized);
+            default:
+                throw new RuntimeException("Unknown activation type: " + type);
+        }
+    }
+    
     public String toName() {
         return this.getClass().getSimpleName();
     }
@@ -73,6 +130,7 @@ public abstract class Activation implements Serializable {
         return activation.toName();
     }
     
+    @Deprecated
     public static Activation fromName(String name) {
         if(name == null)
             return null;

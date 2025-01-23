@@ -31,14 +31,14 @@ import jcuda.driver.CUstream;
  * @author ahmed
  */
 public abstract class BackpropagateOutputGPU {
+    public final int deltaLossDim;
     public final int batchSize;
-    public final int batchCount;
-    public final int totalSize;
+    public final long totalSize;
 
-    public BackpropagateOutputGPU(int batchSize, int batchCount) {
+    public BackpropagateOutputGPU(int outputSize, int batchSize) {
+        this.deltaLossDim = outputSize;
         this.batchSize = batchSize;
-        this.batchCount = batchCount;
-        this.totalSize = batchSize * batchCount;
+        this.totalSize = outputSize * batchSize;
     }
     
     public abstract CUdeviceptr deltaLoss();

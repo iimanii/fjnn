@@ -25,6 +25,8 @@ package org.fjnn.network.outputs;
 
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
+import org.fjnn.activation.output.ActivationForwardOutput;
+import org.fjnn.activation.output.ActivationForwardOutputGPU;
 import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.cuda.CudaUtil;
 
@@ -33,56 +35,67 @@ import org.fjnn.cuda.CudaUtil;
  * @author ahmed
  */
 public class NeuralNetworkForwardOutputGPU extends FeedForwardOutputGPU {
-    
     public final int layers;
-    public final CUdeviceptr[] preActivations; // Stores z_x (pre-activation) for each layer
-    public final CUdeviceptr[] postActivations; // Stores a_x (post-activation) for each layer
-    public final boolean[] zeroed; // Stores a_x (post-activation) for each layer
+    
+    public final CUdeviceptr[] layerInputs;                         // initial input to each layer
+    public final FeedForwardOutputGPU[] normalizerOutputs;          // stores normalizer outputs for each layer
+    public final ActivationForwardOutputGPU[] activationOutputs;    // activation results
+    public final CUdeviceptr[] layerOutputs;                        // outputs from the layer activation
 
-    public NeuralNetworkForwardOutputGPU(int batchSize, int batchCount, int layerCount) {
-        super(batchSize, batchCount);
+    public NeuralNetworkForwardOutputGPU(int outputDim, int batchSize, int layerCount) {
+        super(outputDim, batchSize);
         
         this.layers = layerCount;
-        this.preActivations = new CUdeviceptr[layerCount];
-        this.postActivations = new CUdeviceptr[layerCount];
-        this.zeroed = new boolean[layerCount];
+        this.layerInputs = new CUdeviceptr[layerCount];
+        this.normalizerOutputs = new FeedForwardOutputGPU[layerCount];
+        this.activationOutputs = new ActivationForwardOutputGPU[layerCount];
+        this.layerOutputs = new CUdeviceptr[layerCount];
     }
 
     @Override
     public CUdeviceptr output() {
-        return postActivations[postActivations.length - 1];
+        return layerOutputs[layerOutputs.length - 1];
     }
 
     @Override
     public void free() {
-        /* do not free input (preActivations[0] / postActivation[0]) */
-        for (int i = 1; i < preActivations.length; i++) {
-            CudaUtil.free(preActivations[i]);
-            if (preActivations[i] != postActivations[i]) {
-                CudaUtil.free(postActivations[i]);
+        /* first layer has initial input .. do not free */
+        for (int i=1; i < layers; i++) {
+            if(layerInputs[i] != null) {
+                CudaUtil.free(layerInputs[i]);
+                layerInputs[i] = null;
             }
-            preActivations[i] = null;
-            postActivations[i] = null;
+            
+            if(normalizerOutputs[i] != null) {
+                normalizerOutputs[i].free();
+                normalizerOutputs[i] = null;
+            }
+            
+            if(activationOutputs[i] != null) {
+                activationOutputs[i].free();
+                activationOutputs[i] = null;
+            }
         }
-        preActivations[0] = null;
-        postActivations[0] = null;
     }
 
     @Override
     public void freeAsync(CUstream stream) {
-        /* do not free input (preActivations[0] / postActivation[0]) */
-        for (int i = 1; i < preActivations.length; i++) {
-            //                System.out.println(i + " " + preActivations[i] + " " + postActivations[i]);
-            CudaUtil.freeAsync(preActivations[i], stream);
-            if (preActivations[i] != postActivations[i]) {
-                CudaUtil.freeAsync(postActivations[i], stream);
+        /* first layer has initial input .. do not free */
+        for (int i=1; i < layers; i++) {
+            if(layerInputs[i] != null) {
+                CudaUtil.freeAsync(layerInputs[i], stream);
+                layerInputs[i] = null;
             }
-            preActivations[i] = null;
-            postActivations[i] = null;
+            
+            if(normalizerOutputs[i] != null) {
+                normalizerOutputs[i].freeAsync(stream);
+                normalizerOutputs[i] = null;
+            }
+            
+            if(activationOutputs[i] != null) {
+                activationOutputs[i].freeAsync(stream);
+                activationOutputs[i] = null;
+            }
         }
-        preActivations[0] = null;
-        postActivations[0] = null;
     }
-
-    
 }

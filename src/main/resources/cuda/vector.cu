@@ -52,7 +52,7 @@ __global__ void multiply(float* a, float* b, float* c, long size) {
  * c[x] *= factor
  */
 extern "C"
-__global__ void scale(float* data, float factor, int size) {
+__global__ void scale(float* data, float factor, long size) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
 
     if (tid < size) {
@@ -66,7 +66,7 @@ __global__ void scale(float* data, float factor, int size) {
  * each block calculates 1 or more strides
  */
 extern "C"
-__global__ void add_stride(float* a, float* b, float* c, int stride_size, long total_size) {
+__global__ void add_stride(float* a, float* b, float* c, long stride_size, long total_size) {
     int b_index = threadIdx.x + blockIdx.x * blockDim.x;
     
     if(b_index < stride_size) {
@@ -92,11 +92,26 @@ __global__ void reduce_stride(float* a, float* b, float* c, long sizeA, long siz
 }
 
 extern "C"
-__global__ void reduce_stride_in_place(float* a, float* b, int sizeB) {
+__global__ void reduce_stride_in_place(float* a, float* b, long sizeB) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < sizeB) {
         // Add elements from b to a if idx < sizeB
         a[idx] = a[idx] + b[idx];
+    }
+}
+
+extern "C"
+__global__ void optimized_reduce_stride(float* a, float* b, float* c, long sizeA, long sizeB, long iterations) {    
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+    
+    for(int i = 0; i < iterations; i++) {
+        int index = i * stride + idx;
+        
+        if(index < sizeB)
+            c[index] = a[index] + b[index];
+        else if(index < sizeA)
+            c[index] = a[index];
     }
 }

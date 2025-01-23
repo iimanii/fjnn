@@ -33,8 +33,8 @@ public class AdapterForwardOutput extends FeedForwardOutput {
     
     private final float[] output;
 
-    public AdapterForwardOutput(int batchSize, int batchCount, float[] output) {
-        super(batchSize, batchCount);
+    public AdapterForwardOutput(int outputDim, int batchSize, float[] output) {
+        super(outputDim, batchSize);
         
         this.output = output;
     }

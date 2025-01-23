@@ -48,14 +48,14 @@ public class Sin extends Activation {
     }
 
     @Override
-    public void compute(float[] input, int stride, int count) {
+    public void compute(float[] input, float[] output, int stride, int count) {
         for(int i=0; i < stride * count; i++)
-            input[i] = (float) Math.sin(input[i]);
+            output[i] = (float) Math.sin(input[i]);
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.activation.Sin(ptr, stride * count, stream);        
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activation.Sin(input, output, stride * (long)count, stream);        
     }
 
     @Override
@@ -78,8 +78,8 @@ public class Sin extends Activation {
     }
     
     @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
-        CudaFunctions.activationDerivative.SinDerivative(preActivation, postActivation, output, stride * count, stream);
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activationDerivative.SinDerivative(preActivation, postActivation, output, stride * (long)count, stream);
     }
     
     @Override
@@ -90,7 +90,7 @@ public class Sin extends Activation {
     }
 
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
-        CudaFunctions.activationGradient.SinGradient(preActivation, postActivation, gradient, stride * count, stream);
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
+        CudaFunctions.activationGradient.SinGradient(preActivation, postActivation, gradient, stride * (long)count, stream);
     }
 }

@@ -24,6 +24,7 @@
 package org.fjnn.network;
 
 import org.fjnn.activation.Activation;
+import org.fjnn.normalizer.Normalizer;
 
 /**
  *
@@ -33,11 +34,15 @@ public class LayerPlan {
     /* number of neurons in this layer */
     public final int neurons;
 
+    /* normalizer for this layer */
+    public final Normalizer normalizer;
+    
     /* activation function for this layer */
     public final Activation activation;
     
-    public LayerPlan(int neurons, Activation activation) {
+    public LayerPlan(int neurons, Activation activation, Normalizer normalizer) {
         this.neurons = neurons;
         this.activation = activation;
+        this.normalizer = normalizer;
     }
 }

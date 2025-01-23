@@ -24,18 +24,10 @@
 package org.fjnn.activation;
 
 import java.nio.FloatBuffer;
-import jcuda.Pointer;
 import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
-import jcuda.driver.JCudaDriver;
-import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CudaUtil;
-import org.fjnn.cuda.CUdeviceptr2D;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.util.intrinsic;
-import org.fjnn.util.util;
 
 /**
  *
@@ -49,7 +41,12 @@ public class SoftMax extends Activation {
     }
 
     @Override
-    public void compute(float[] input, int stride, int count) {
+    public void compute(FloatBuffer input, int stride, int count) {
+        intrinsic.SoftMax(input, stride, count);
+    }
+    
+    @Override
+    public void compute(float[] input, float[] output, int stride, int count) {
         for(int c=0; c < count; c++) {
             int from = c * stride;
             int to = from + stride;
@@ -61,27 +58,22 @@ public class SoftMax extends Activation {
 
             double sum = 0;
             for(int i=from; i < to; i++) {
-                input[i] = (float) Math.exp(input[i] - max);
-                sum += input[i];
+                output[i] = (float) Math.exp(input[i] - max);
+                sum += output[i];
             }
             
             if(sum == 0)
                 for(int i=from; i < to; i++)
-                    input[i] = 1.0f / input.length;
+                    output[i] = 1.0f / input.length;
             else
                 for(int i=from; i < to; i++)
-                    input[i] /= sum;
+                    output[i] /= sum;
         }
     }
 
     @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        intrinsic.SoftMax(input, stride, count);
-    }
-
-    @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.activation.SoftMax(ptr, stride, count, stream);
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activation.SoftMax(input, output, stride, count, stream);
     }
     
     @Override
@@ -118,7 +110,7 @@ public class SoftMax extends Activation {
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
         throw new UnsupportedOperationException("Not supported, use gradient");
     }
     
@@ -145,7 +137,7 @@ public class SoftMax extends Activation {
     }
     
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
         CudaFunctions.activationGradient.SoftMaxGradient(preActivation, postActivation, gradient, stride, count, stream);
     }
 }

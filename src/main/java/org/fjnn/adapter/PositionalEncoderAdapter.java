@@ -47,8 +47,8 @@ import org.fjnn.util.util;
  * @author ahmed
  */
 public class PositionalEncoderAdapter extends ModelComponent {
-    private final int featureSize;      // Number of features per unit (dimensionality)
-    private final int featureCount;     // Number of units per input sequence
+    private final int unitDim;          // Number of features per unit (dimensionality)
+    private final int unitCount;        // Number of units per input sequence
     private final int totalFeatures;    // Total number of features being processed
     private final int offset;
     
@@ -58,16 +58,16 @@ public class PositionalEncoderAdapter extends ModelComponent {
     private CUdeviceptr positionalEncodingsGPU;
     private boolean gpuReady;
     
-    public PositionalEncoderAdapter(int featureSize, int featureCount) {
-        this(featureSize, featureCount, 0);
+    public PositionalEncoderAdapter(int unitDim, int unitCount) {
+        this(unitDim, unitCount, 0);
     }
     
-    public PositionalEncoderAdapter(int featureSize, int featureCount, int offset) {
-        this.featureSize = featureSize;
-        this.featureCount = featureCount;
-        this.totalFeatures = featureSize * featureCount;
+    public PositionalEncoderAdapter(int unitDim, int unitCount, int offset) {
+        this.unitDim = unitDim;
+        this.unitCount = unitCount;
+        this.totalFeatures = unitDim * unitCount;
         this.offset = offset;
-        this.positionalEncodings = generateSinusoidalEncodings(featureSize, featureCount, offset);
+        this.positionalEncodings = generateSinusoidalEncodings(unitDim, unitCount, offset);
         this.positionalEncodings1D = flattenPositionalEncodings(positionalEncodings);
         this.gpuReady = false;
     }
@@ -81,16 +81,16 @@ public class PositionalEncoderAdapter extends ModelComponent {
         - Alternates between sine (even indices) and cosine (odd indices).
         - `featureSize` is the total dimensionality of the encoding.
     */
-    private float[][] generateSinusoidalEncodings(int featureSize, int featureCount, int offset) {
-        float[][] encoding = new float[featureCount][featureSize];
-        for (int pos = 0; pos < featureCount; pos++) {
+    private float[][] generateSinusoidalEncodings(int unitDim, int unitCount, int offset) {
+        float[][] encoding = new float[unitCount][unitDim];
+        for (int pos = 0; pos < unitCount; pos++) {
             int adjusted = pos + offset;
             
-            for (int i = 0; i < featureSize; i++) {
+            for (int i = 0; i < unitDim; i++) {
                 if (i % 2 == 0) {
-                    encoding[pos][i] = (float) Math.sin(adjusted / Math.pow(10000, (2.0 * i) / featureSize));
+                    encoding[pos][i] = (float) Math.sin(adjusted / Math.pow(10000, (2.0 * i) / unitDim));
                 } else {
-                    encoding[pos][i] = (float) Math.cos(adjusted / Math.pow(10000, (2.0 * (i - 1)) / featureSize));
+                    encoding[pos][i] = (float) Math.cos(adjusted / Math.pow(10000, (2.0 * (i - 1)) / unitDim));
                 }
             }
         }
@@ -98,50 +98,50 @@ public class PositionalEncoderAdapter extends ModelComponent {
     }
     
     private float[] flattenPositionalEncodings(float[][] encodings2D) {
-        int totalSize = featureCount * featureSize;
+        int totalSize = unitCount * unitDim;
         float[] flattened = new float[totalSize];
-        for (int i = 0; i < featureCount; i++) {
-            System.arraycopy(encodings2D[i], 0, flattened, i * featureSize, featureSize);
+        for (int i = 0; i < unitCount; i++) {
+            System.arraycopy(encodings2D[i], 0, flattened, i * unitDim, unitDim);
         }
         return flattened;
     }
 
     @Override
-    public AdapterForwardOutput feedForward(float[] input, int batchCount) {
+    public AdapterForwardOutput feedForward(float[] input, int batchSize) {
         // Ensure input size matches the expected dimensions
-        if (input.length != batchCount * totalFeatures) {
+        if (input.length != batchSize * totalFeatures) {
             throw new IllegalArgumentException(
-                "Input size mismatch. Expected: " + (batchCount * featureCount * featureSize) + ", but got: " + input.length
+                "Input size mismatch. Expected: " + (batchSize * unitCount * unitDim) + ", but got: " + input.length
             );
         }
 
         // Add positional encodings
         float[] encodedInput = new float[input.length];
-        for(int i = 0; i < batchCount; i++) {
-            for(int j = 0; j < featureCount; j++) {
-                for(int k = 0; k < featureSize; k++) {
-                    int idx = i * totalFeatures + j * featureSize + k;
+        for(int i = 0; i < batchSize; i++) {
+            for(int j = 0; j < unitCount; j++) {
+                for(int k = 0; k < unitDim; k++) {
+                    int idx = i * totalFeatures + j * unitDim + k;
                     encodedInput[idx] = input[idx] + positionalEncodings[j][k];
                 }
             }
         }
 
-        return new AdapterForwardOutput(totalFeatures, batchCount, encodedInput);
+        return new AdapterForwardOutput(totalFeatures, batchSize, encodedInput);
     }
 
     @Override
-    public AdapterForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchCount, CUstream stream) {
+    public AdapterForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchSize, CUstream stream) {
         // Calculate the total number of elements
-        int totalElements = batchCount * totalFeatures;
+        long totalElements = batchSize * totalFeatures;
 
         // Allocate GPU memory for the output
         CUdeviceptr outputGPU = CudaUtil.createFloatAsync(totalElements, stream);
 
         // add encodings
-        CudaFunctions.vector.addStride(input, positionalEncodingsGPU, outputGPU, totalFeatures, batchCount, stream);
+        CudaFunctions.vector.addStride(input, positionalEncodingsGPU, outputGPU, totalFeatures, batchSize, stream);
         
         // Return the output
-        return new AdapterForwardOutputGPU(totalFeatures, batchCount, outputGPU, false);
+        return new AdapterForwardOutputGPU(totalFeatures, batchSize, outputGPU, false);
     }
 
     @Override
@@ -175,20 +175,20 @@ public class PositionalEncoderAdapter extends ModelComponent {
     }
 
 @Override
-    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss, float learningRate) {
+    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss) {
         // Since positional encodings are constant, simply pass back the deltaLoss unchanged
-        return new AdapterBackpropagateOutput(totalFeatures, output.batchCount, deltaLoss);
+        return new AdapterBackpropagateOutput(totalFeatures, output.batchSize, deltaLoss);
     }
 
     @Override
-    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, float learningRate, CUstream stream) {
+    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, CUstream stream) {
         // Same logic for GPU: pass deltaLoss unchanged
-        return new AdapterBackpropagateOutputGPU(totalFeatures, output.batchCount, deltaLoss, false);
+        return new AdapterBackpropagateOutputGPU(totalFeatures, output.batchSize, deltaLoss, false);
     }
 
     @Override
     public ModelComponent copy() {
-        return new PositionalEncoderAdapter(featureSize, featureCount);
+        return new PositionalEncoderAdapter(unitDim, unitCount);
     }
     
     @Override
@@ -197,24 +197,45 @@ public class PositionalEncoderAdapter extends ModelComponent {
 
        // Store component type and main properties
        obj.put("type", "PositionalEncoderAdapter");
-       obj.put("featureSize", featureSize);
-       obj.put("featureCount", featureCount);
+       obj.put("unitDim", unitDim);
+       obj.put("unitCount", unitCount);
        obj.put("offset", offset);
 
        return obj;
     }
 
     public static PositionalEncoderAdapter deserialize(Map serialized) {
-       int featureSize = (Integer)serialized.get("featureSize");
-       int featureCount = (Integer)serialized.get("featureCount"); 
+       int unitDim = (Integer)serialized.get("unitDim");
+       int unitCount = (Integer)serialized.get("unitCount"); 
        int offset = (Integer)serialized.get("offset"); 
        
-       return new PositionalEncoderAdapter(featureSize, featureCount, offset);
+       return new PositionalEncoderAdapter(unitDim, unitCount, offset);
     }
 
     @Override
     public void updateWeightsFromGPU() {
         
+    }
+    
+    @Override
+    public long getParametersCount() {
+        return totalFeatures;
+    }
+    
+    @Override
+    public long getBackpropagateMemoryRequired(int batchSize) {
+        /* feedforward creates a new adjusted array */
+        return totalFeatures * batchSize * Float.SIZE;
+    }
+
+    @Override
+    public void applyGradients(BackpropagateOutput gradients, float learningRate) {
+        // no learnable parameters .. do nothing
+    }
+
+    @Override
+    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, CUstream stream) {
+        // no learnable parameters .. do nothing
     }
 }
 

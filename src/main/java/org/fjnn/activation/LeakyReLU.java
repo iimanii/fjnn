@@ -24,6 +24,8 @@
 package org.fjnn.activation;
 
 import java.nio.FloatBuffer;
+import java.util.HashMap;
+import java.util.Map;
 import jcuda.Pointer;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUfunction;
@@ -59,15 +61,14 @@ public class LeakyReLU extends Activation {
     }
     
     @Override
-    public void compute(float[] input, int stride, int count) {
+    public void compute(float[] input, float[] output, int stride, int count) {
         for(int i=0; i < input.length; i++)
-            if(input[i] < 0)
-                input[i] = input[i] * alpha;
+            output[i] = input[i] < 0 ? input[i] * alpha : input[i];
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.activation.LeakyReLU(ptr, stride * count, alpha, stream);
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activation.LeakyReLU(input, output, stride * (long)count, alpha, stream);
     }
 
     @Override
@@ -88,8 +89,8 @@ public class LeakyReLU extends Activation {
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
-        CudaFunctions.activationDerivative.LeakyReLUDerivative(preActivation, postActivation, output, stride * count, alpha, stream);
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activationDerivative.LeakyReLUDerivative(preActivation, postActivation, output, stride * (long)count, alpha, stream);
     }
     
     @Override
@@ -100,7 +101,21 @@ public class LeakyReLU extends Activation {
     }
     
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
-        CudaFunctions.activationGradient.LeakyReLUGradient(preActivation, postActivation, gradient, stride * count, alpha, stream);
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
+        CudaFunctions.activationGradient.LeakyReLUGradient(preActivation, postActivation, gradient, stride * (long)count, alpha, stream);
+    }
+    
+    @Override
+    public HashMap serialize() {
+        HashMap obj = super.serialize();
+        obj.put("alpha", alpha);
+        
+        return obj;
+    }
+    
+    public static LeakyReLU deserialize(Map serialized) {
+        float alpha = ((Number)serialized.get("alpha")).floatValue();
+        
+        return new LeakyReLU(alpha);
     }
 }

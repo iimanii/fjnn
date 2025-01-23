@@ -28,14 +28,14 @@ package org.fjnn.base.output;
  * @author ahmed
  */
 public abstract class BackpropagateOutput {
+    public final int deltaLossDim;
     public final int batchSize;
-    public final int batchCount;
-    public final int totalSize;
+    public final long totalSize;
 
-    public BackpropagateOutput(int batchSize, int batchCount) {
+    public BackpropagateOutput(int deltaLossDim, int batchSize) {
+        this.deltaLossDim = deltaLossDim;
         this.batchSize = batchSize;
-        this.batchCount = batchCount;
-        this.totalSize = batchSize * batchSize;
+        this.totalSize = deltaLossDim * batchSize;
     }
     
     public abstract float[] deltaLoss();

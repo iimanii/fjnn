@@ -31,13 +31,13 @@
  * Using the tanh approximation for GELU
  */
 extern "C"
-__global__ void GeLU(float* v, long size) {
+__global__ void GeLU(float* input, float* output, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
 
     if (row < size) {
-        float x = v[row];
+        float x = input[row];
         // GELU formula: 0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3)))
-        v[row] = 0.5f * x * (1.0f + tanh(0.797885f * (x + 0.044715f * x * x * x)));
+        output[row] = 0.5f * x * (1.0f + tanh(0.797885f * (x + 0.044715f * x * x * x)));
     }
 }
 
@@ -78,11 +78,11 @@ __global__ void GeLUGradient(float* preActivation, float* postActivation, float*
  * Leaky Rectifier Linear Unit
  */
 extern "C"
-__global__ void LeakyReLU(float* v, long size, float alpha) {
+__global__ void LeakyReLU(float* input, float* output, long size, float alpha) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
-    if(row < size && v[row] < 0.0f)
-        v[row] = v[row] * alpha;
+    if(row < size)
+        output[row] = input[row] < 0.0f ? input[row] * alpha : input[row];
 }
 extern "C"
 __global__ void LeakyReLUDerivative(float* preActivation, float* postActivation, float* output, long size, float alpha) {
@@ -105,11 +105,11 @@ __global__ void LeakyReLUGradient(float* preActivation, float* postActivation, f
  * Rectifier Linear Unit
  */
 extern "C"
-__global__ void ReLU(float* v, long size) {
+__global__ void ReLU(float* input, float* output, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
-    if(row < size && v[row] < 0.0f)
-        v[row] = 0.0f;
+    if(row < size)
+        output[row] = input[row] < 0.0f ? 0.0f : input[row];
 }
 
 extern "C"
@@ -136,11 +136,11 @@ __global__ void ReLUGradient(float* preActivation, float* postActivation, float*
  * Sigmoid
  */
 extern "C"
-__global__ void Sigmoid(float* v, long size) {
+__global__ void Sigmoid(float* input, float* output, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
     if(row < size)
-        v[row] = 1.0f / (1.0f + safe_exp(-v[row]));
+        output[row] = 1.0f / (1.0f + safe_exp(-input[row]));
 }
 
 extern "C"
@@ -163,15 +163,24 @@ __global__ void SigmoidGradient(float* preActivation, float* postActivation, flo
     }
 }
 
+extern "C"
+__global__ void SigmoidCrossEntropyGradient(float* postActivation, float* truth, float* result, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(i < size) {
+        result[i] = postActivation[i] - truth[i];
+    }
+}
+
 /**
  * Sin
  */
 extern "C"
-__global__ void Sin(float* v, long size) {
+__global__ void Sin(float* input, float* output, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
     if(row < size)
-        v[row] = sinf(v[row]);
+        output[row] = sinf(input[row]);
 }
 
 extern "C"
@@ -197,7 +206,7 @@ __global__ void SinGradient(float* preActivation, float* postActivation, float* 
  * SoftMax
  */
 template<const int BLOCK_SIZE>
-__device__ void SoftMax(float* v, long size) {
+__device__ void SoftMax(float* input, float* output, long size) {
     __shared__ float temp[BLOCK_SIZE];
     
     int blockIndex = blockIdx.x * size;
@@ -210,7 +219,7 @@ __device__ void SoftMax(float* v, long size) {
         int index = threadIdx.x + i * BLOCK_SIZE;
         
         if(index < size) {
-            float value = v[blockIndex + index];
+            float value = input[blockIndex + index];
             tmax = max(tmax, value);
         }
     }
@@ -224,9 +233,9 @@ __device__ void SoftMax(float* v, long size) {
         int index = threadIdx.x + i * BLOCK_SIZE;
         
         if(index < size) {
-            float value = safe_exp(v[blockIndex + index] - blockMax);
+            float value = safe_exp(input[blockIndex + index] - blockMax);
             sum += value;
-            v[blockIndex + index] = value;
+            output[blockIndex + index] = value;
         }
     }
     
@@ -239,9 +248,9 @@ __device__ void SoftMax(float* v, long size) {
         
         if(index < size) {
             if(blockSum == 0) {
-                v[blockIndex + index] = 1.0 / size;
+                output[blockIndex + index] = 1.0 / size;
             } else
-                v[blockIndex + index] = v[blockIndex + index] / blockSum;
+                output[blockIndex + index] = output[blockIndex + index] / blockSum;
         }
     }
 }
@@ -279,8 +288,8 @@ __device__ void SoftMaxGradient(float* preActivation, float* postActivation, flo
  */
 #define SOFTMAX_KERNELS(SIZE) \
 extern "C" \
-__global__ void SoftMax_##SIZE(float* v, long size) { \
-    SoftMax<SIZE>(v, size); \
+__global__ void SoftMax_##SIZE(float* input, float* output, long size) { \
+    SoftMax<SIZE>(input, output, size); \
 } \
 extern "C" \
 __global__ void SoftMaxGradient_##SIZE(float* preActivation, float* postActivation, float* gradient, long size) { \
@@ -297,11 +306,11 @@ SOFTMAX_KERNELS(512)
  * Step
  */
 extern "C"
-__global__ void Step(float* v, long size) {
+__global__ void Step(float* input, float* output, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
     if(row < size)
-        v[row] = v[row] >= 0 ? 1.0f : 0.0f;
+        output[row] = input[row] >= 0 ? 1.0f : 0.0f;
 }
 
 
@@ -309,12 +318,12 @@ __global__ void Step(float* v, long size) {
  * Swish (x * sigmoid)
  */
 extern "C"
-__global__ void Swish(float* v, long size) {
+__global__ void Swish(float* input, float* output, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
     if(row < size) {
-        float x = v[row];
-        v[row] = x / (1.0f + safe_exp(-x));
+        float x = input[row];
+        output[row] = x / (1.0f + safe_exp(-x));
     }
 }
 
@@ -345,11 +354,11 @@ __global__ void SwishGradient(float* preActivation, float* postActivation, float
  * Tanh
  */
 extern "C"
-__global__ void Tanh(float* v, long size) {
+__global__ void Tanh(float* input, float* output, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
     if(row < size)
-        v[row] = tanhf(v[row]);
+        input[row] = tanhf(output[row]);
 }
 
 extern "C"

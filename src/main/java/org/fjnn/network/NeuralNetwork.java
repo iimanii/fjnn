@@ -41,13 +41,18 @@ import jcuda.driver.JCudaDriver;
 import jcuda.jcublas.cublasHandle;
 import jcuda.jcurand.curandGenerator;
 import org.fjnn.activation.Activation;
+import org.fjnn.activation.Sigmoid;
 import org.fjnn.base.output.FeedForwardOutput;
 import org.fjnn.base.NetworkInput;
+import org.fjnn.base.output.BackpropagateOutput;
+import org.fjnn.base.output.BackpropagateOutputGPU;
 import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaUtil;
+import org.fjnn.loss.BinaryCrossEntropy;
 import org.fjnn.loss.Loss;
 import org.fjnn.network.Layer.crossOverMutateResult;
+import org.fjnn.normalizer.Normalizer;
 import org.fjnn.util.util;
 
 /**
@@ -76,13 +81,19 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     String signature;
     
     public NeuralNetwork(int input, int output, Activation outputActivation) {
-        super(input, output, outputActivation);
+        super(input, output, outputActivation, null);
+        
+        this.plan = new ArrayList<>();
+    }
+    
+    public NeuralNetwork(int input, int output, Activation outputActivation, Normalizer outputNormalizer) {
+        super(input, output, outputActivation, outputNormalizer);
         
         this.plan = new ArrayList<>();
     }
         
     NeuralNetwork(Layer[] layers) {
-        super(layers[0].neurons, layers[layers.length-1].neurons, layers[layers.length-1].activation);
+        super(layers[0].neurons, layers[layers.length-1].neurons, layers[layers.length-1].activation, layers[layers.length-1].normalizer);
         
         this.layers = layers;
         this.finalized = true;
@@ -116,10 +127,14 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     
     /* for building the network */
     public NeuralNetwork addHiddenLayer(int neurons, Activation activation) {
+        return addHiddenLayer(neurons, activation, null);
+    }
+    
+    public NeuralNetwork addHiddenLayer(int neurons, Activation activation, Normalizer normalizer) {
         if(finalized)
             throw new RuntimeException("network already finalized");
         
-        plan.add(new LayerPlan(neurons, activation));
+        plan.add(new LayerPlan(neurons, activation, normalizer));
         return this;
     }
     
@@ -136,7 +151,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         sourceLayer.addConnection(toLayer, targetNeurons);
         
         // Add reverse connection from target to source (incoming)
-        targetLayer.addReverseConnection(fromLayer);//, sourceLayer.getConnection(toLayer));
+//        targetLayer.addReverseConnection(fromLayer);//, sourceLayer.getConnection(toLayer));
     
         computeMemoryRequirements();
         return this;
@@ -152,31 +167,31 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         int i=0;
 
         /* input layer */
-        layers[0] = new Layer(i++, inputSize, null);
+        layers[0] = new Layer(i++, inputSize, null, null);
 
         Layer prev = layers[0];
 
         for(LayerPlan p : plan) {
-            Layer layer = new Layer(i++, p.neurons, p.activation);
+            Layer layer = new Layer(i++, p.neurons, p.activation, p.normalizer);
 
             // Add connection from previous layer to the current layer
             prev.addConnection(layer.index, layer.neurons);
 
             // Also add the reverse connection from the current layer to the previous layer
-            layer.addReverseConnection(prev.index);//, prev.getConnection(layer.index));
+//            layer.addReverseConnection(prev.index);//, prev.getConnection(layer.index));
 
             layers[layer.index] = layer;            
             prev = layer;
         }
 
         /* output layer */
-        layers[i] = new Layer(i, outputSize, outputActivation);
+        layers[i] = new Layer(i, outputSize, outputActivation, outputNormalizer);
 
         // Add connection from the last hidden layer to the output layer
         prev.addConnection(i, outputSize);
 
         // Also add the reverse connection from output layer to the previous layer
-        layers[i].addReverseConnection(prev.index);//, prev.getConnection(i));
+//        layers[i].addReverseConnection(prev.index);//, prev.getConnection(i));
 
         last = i;
 
@@ -219,6 +234,11 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         return count;
     }
     
+    @Override
+    public long getParametersCount() {
+        return getWeightsCount();
+    }
+    
     /* initialization functions */
     @Override
     public void randomize(float min, float max) {
@@ -229,7 +249,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     public void xavier() {
         xavier(1);
     }
-    public void xavier(int scalar) {
+    public void xavier(float scalar) {
         for(Layer l : layers)
             l.xavier(scalar);
     }
@@ -252,12 +272,12 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     }
     
     @Override
-    public float[] compute(float[] input, int count) {
+    public float[] compute(float[] input, int batchSize) {
         float[][] results = new float[getLayerCount()][];
         results[0] = util.copyArray(input);
         
         for(int i=0; i < layers.length; i++)
-            layers[i].feedForward(results[i], count, results);
+            layers[i].feedForward(results[i], batchSize, results);
         
         return results[last];
     }
@@ -268,7 +288,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     }
     
     @Override
-    public float[] compute(FloatBuffer input, int count) {
+    public float[] compute(FloatBuffer input, int batchSize) {
         if(!nativeReady())
             prepareCPU();
         
@@ -276,9 +296,9 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         results[0] = input;
         
         for(int i=0; i < layers.length; i++)
-            layers[i].feedForward(results[i], count, results);
+            layers[i].feedForward(results[i], batchSize, results);
         
-        float[] result = new float[outputSize * count];
+        float[] result = new float[outputSize * batchSize];
         results[last].rewind();
         results[last].get(result);
 
@@ -287,9 +307,9 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     
     
     @Override
-    public NeuralNetworkForwardOutput feedForward(float[] input, int count) {
-        NeuralNetworkForwardOutput activations = new NeuralNetworkForwardOutput(getOutputSize(), count, getLayerCount());
-        activations.preActivations[0] = input;
+    public NeuralNetworkForwardOutput feedForward(float[] input, int batchSize) {
+        NeuralNetworkForwardOutput activations = new NeuralNetworkForwardOutput(getOutputSize(), batchSize, getLayerCount());
+        activations.layerInputs[0] = input;
         
         for (int i = 0; i < layers.length; i++)
             layers[i].feedForward(activations);
@@ -308,47 +328,91 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
      *  6. After processing the entire batch, update weights and biases using the accumulated gradients and the learning rate.
      *  7. Clear the accumulated gradients after the update.
      */
-    public NeuralNetworkBackpropagateOutput backpropagate(NeuralNetworkForwardOutput output, float[] target, float learningRate, Loss lossFunction) {
-        float[] result = output.output();
-        float[] deltaLoss = lossFunction.derivative(result, target);
+    public NeuralNetworkBackpropagateOutput backpropagate(NeuralNetworkForwardOutput output, float[] truth, Loss lossFunction) {
+        float[] outputPreActivationDelta = new float[outputSize * output.batchSize];
         
-        return backpropagate(output, deltaLoss, learningRate);
+        /* handle special case */
+        if(lossFunction instanceof BinaryCrossEntropy && layers[last].activation instanceof Sigmoid) {
+            Sigmoid sigmoid = (Sigmoid) layers[last].activation;
+            
+            sigmoid.gradientCrossEntropy(output.activationOutputs[last].postActivation, truth, outputPreActivationDelta, outputSize, output.batchSize);
+            
+            // If normalizer exists, apply its gradient
+            BackpropagateOutput normOutput = null;
+
+            if(outputNormalizer != null) {
+                normOutput = outputNormalizer.backpropagate(output.normalizerOutputs[last], outputPreActivationDelta, outputSize, output.batchSize);
+                outputPreActivationDelta = normOutput.deltaLoss();
+            }
+
+            NeuralNetworkBackpropagateOutput result = backpropagate0(output, outputPreActivationDelta);
+            result.normalizerGradients[last] = normOutput;
+
+            return result;
+        } else {
+            float[] result = output.output();
+            float[] deltaLoss = lossFunction.derivative(result, truth);
+            
+            return backpropagate(output, deltaLoss);
+        }
     }
     
     @Override
-    public NeuralNetworkBackpropagateOutput backpropagate(FeedForwardOutput feedforward, float[] deltaLoss, float learningRate) {
+    public NeuralNetworkBackpropagateOutput backpropagate(FeedForwardOutput feedforward, float[] deltaLoss) {
+        if(!(feedforward instanceof NeuralNetworkForwardOutput))
+            throw new RuntimeException("Invalid feedforward output");
+        
+        NeuralNetworkForwardOutput output = (NeuralNetworkForwardOutput)feedforward;
+
+        // Calculate pre-activation deltas for output layer 
+        if(outputActivation != null)
+            outputActivation.gradient(output.activationOutputs[last].preActivation, output.activationOutputs[last].postActivation, deltaLoss, outputSize, feedforward.batchSize);
+        
+        // If normalizer exists, apply its gradient
+        BackpropagateOutput normOutput = null;
+        
+        if(outputNormalizer != null) {
+            normOutput = outputNormalizer.backpropagate(output.normalizerOutputs[last], deltaLoss, outputSize, feedforward.batchSize);
+            deltaLoss = normOutput.deltaLoss();
+        }
+        
+        NeuralNetworkBackpropagateOutput result = backpropagate0(output, deltaLoss);
+        result.normalizerGradients[last] = normOutput;
+        
+        return result;
+    }
+    
+    public NeuralNetworkBackpropagateOutput backpropagate0(FeedForwardOutput feedforward, float[] outputPreActivationDelta) {
         if(!(feedforward instanceof NeuralNetworkForwardOutput))
             throw new RuntimeException("Invalid feedforward output");
         
         NeuralNetworkForwardOutput output = (NeuralNetworkForwardOutput)feedforward;
         
-        float[][] preActivationDeltas = new float[layers.length][];
+        NeuralNetworkBackpropagateOutput result = new NeuralNetworkBackpropagateOutput(getInputSize(), output.batchSize, getLayerCount());
+        result.preActivationDeltas[last] = outputPreActivationDelta;
 
-        // Step 3: Initialize the ConnectionGradient Map to store gradients for all connections
-        List<Map<Integer, ConnectionGradient>> layerConnectionGradients = new ArrayList<>();
-        for (int i = 0; i < layers.length; i++) {
-            layerConnectionGradients.add(new HashMap<>());
-        }
-
-        // Step 1: Initialize the activation deltas for the output layer
-        float[] currentActivationDeltas = deltaLoss;
-
-        // Step 4: Backpropagate through all hidden layers
-        for (int i = layers.length - 1; i >= 0; i--) {
-            Layer currentLayer = layers[i];
-            currentLayer.backpropagate(output, currentActivationDeltas, preActivationDeltas, layerConnectionGradients.get(i));
-            currentActivationDeltas = null;
-        }
-
-        // Step 5: Update weights and biases using the accumulated gradients for each layer
-        for (int i = 0; i < layers.length - 1; i++) {  // Iterate through all layers except the last (output layer)
-            Layer currentLayer = layers[i];
-            currentLayer.updateWeights(layerConnectionGradients.get(i), learningRate);
+        // Step 4: Backpropagate through all hidden layers, except output layer
+        for (int i = layers.length - 2; i >= 0; i--) {
+            layers[i].backpropagate(output, result.preActivationDeltas, result.layerConnectionGradients.get(i), result.normalizerGradients);
         }
         
-        return new NeuralNetworkBackpropagateOutput(preActivationDeltas, layerConnectionGradients, getInputSize(), output.batchCount);
+        return result;
     }
     
+    @Override
+    public void applyGradients(BackpropagateOutput gradients, float learningRate) {
+        if(!(gradients instanceof NeuralNetworkBackpropagateOutput))
+            throw new RuntimeException("Invalid gradients object");
+        
+        NeuralNetworkBackpropagateOutput output = (NeuralNetworkBackpropagateOutput)gradients;
+        
+        List<Map<Integer, ConnectionGradient>> layerConnectionGradients = output.layerConnectionGradients;
+        
+        // Update weights and biases using the accumulated gradients
+        for (int i = 0; i < layers.length; i++) {
+            layers[i].updateWeights(layerConnectionGradients.get(i), learningRate);
+        }
+    }
     /*
      * Compute GPU 
      */
@@ -356,12 +420,12 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         return computeGPU(input, 1);
     }
     
-    public float[] computeGPU(CUdeviceptr input, int count) {
-        return computeGPU(input, count, true);
+    public float[] computeGPU(CUdeviceptr input, int batchSize) {
+        return computeGPU(input, batchSize, true);
     }
     
-    public float[] computeGPU(CUdeviceptr input, int count, boolean memlock) {
-        long memory = getGPUComputeMemoryRequired(count);
+    public float[] computeGPU(CUdeviceptr input, int batchSize, boolean memlock) {
+        long memory = getGPUComputeMemoryRequired(batchSize);
         
         int deviceId = getGPUDeviceId();
         
@@ -377,9 +441,9 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
             layerResults[0] = input;
 
             for(int i=0; i < layers.length; i++)
-                layers[i].feedForwardGPU(layerResults[i], count, layerResults, null, handle);
+                layers[i].computeGPU(layerResults[i], batchSize, layerResults, null, handle);
 
-            float[] result = CudaUtil.fromGPUFloat(layerResults[last], count * outputSize);
+            float[] result = CudaUtil.fromGPUFloat(layerResults[last], batchSize * outputSize);
 
             for(int i=1; i < layerResults.length; i++)
                 CudaUtil.free(layerResults[i]);
@@ -391,7 +455,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         }
     }
     
-    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int count, CUstream stream) {
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int batchSize, CUstream stream) {
         checkGPUContext();
         
         cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
@@ -400,21 +464,21 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         layerResults[0] = input;
         layerResults[last] = output;
         
-        JCudaDriver.cuMemsetD32Async(layerResults[last], 0, outputSize * count, stream);
+        JCudaDriver.cuMemsetD32Async(layerResults[last], 0, outputSize * batchSize, stream);
         
         for(int i=0; i < layers.length; i++)
-            layers[i].feedForwardGPU(layerResults[i], count, layerResults, stream, handle);
+            layers[i].computeGPU(layerResults[i], batchSize, layerResults, stream, handle);
         
         for(int i=1; i < layerResults.length-1; i++)
             CudaUtil.freeAsync(layerResults[i], stream);
     }
     
     @Override
-    public NeuralNetworkForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchCount, CUstream stream) {
+    public NeuralNetworkForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchSize, CUstream stream) {
         cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
         
-        NeuralNetworkForwardOutputGPU activations = new NeuralNetworkForwardOutputGPU(getOutputSize(), batchCount, getLayerCount());
-        activations.preActivations[0] = input;
+        NeuralNetworkForwardOutputGPU activations = new NeuralNetworkForwardOutputGPU(getOutputSize(), batchSize, getLayerCount());
+        activations.layerInputs[0] = input;
 
         for(int i=0; i < layers.length; i++) {
             layers[i].feedForwardGPU(activations, stream, handle);
@@ -423,69 +487,108 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         return activations;
     }
     
-    public void backpropagateGPU(NeuralNetworkForwardOutputGPU output, CUdeviceptr truth, float learningRate, Loss lossFunction, CUstream stream) {
-        backpropagateGPUDebug(output, truth, learningRate, lossFunction, stream).freeAsync(stream);
-    }
-    
-    public NeuralNetworkBackpropagateOutputGPU backpropagateGPUDebug(NeuralNetworkForwardOutputGPU output, CUdeviceptr truth, float learningRate, Loss lossFunction, CUstream stream) {
+    public NeuralNetworkBackpropagateOutputGPU backpropagateGPU(NeuralNetworkForwardOutputGPU output, CUdeviceptr truth, Loss lossFunction, CUstream stream) {
         checkGPUContext();
         
         // Step 1: Get result and calculate delta loss on GPU
-        long totalOutputSize = outputSize * output.batchCount;
+        long totalOutputSize = outputSize * output.batchSize;
         CUdeviceptr outputPtr = output.output();
         CUdeviceptr deltaLoss = CudaUtil.createFloatAsync(totalOutputSize, stream);
         
-        lossFunction.derivativeGPU(outputPtr, truth, deltaLoss, totalOutputSize, stream);
+        /* handle special case */
+        if(lossFunction instanceof BinaryCrossEntropy && layers[last].activation instanceof Sigmoid) {
+            Sigmoid sigmoid = (Sigmoid) layers[last].activation;
+            
+            sigmoid.gradientGPUCrossEntropy(output.activationOutputs[last].postActivation, truth, deltaLoss, outputSize, output.batchSize, stream);
+            
+            // If normalizer exists, apply its gradient
+            BackpropagateOutputGPU normOutput = null;
+
+            if(outputNormalizer != null) {
+                normOutput = outputNormalizer.backpropagateGPU(output.normalizerOutputs[last], deltaLoss, outputSize, output.batchSize, stream);
+                deltaLoss = normOutput.deltaLoss();
+            }
+
+            NeuralNetworkBackpropagateOutputGPU result = backpropagateGPU0(output, deltaLoss, stream);
+            result.normalizerGradients[last] = normOutput;
+
+            return result;
+        } else {
+            lossFunction.derivativeGPU(outputPtr, truth, deltaLoss, totalOutputSize, stream);
         
-        return backpropagateGPU(output, deltaLoss, learningRate, stream);
+            return backpropagateGPU(output, deltaLoss, stream);
+        }
     }
     
     @Override
-    public NeuralNetworkBackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU feedforward, CUdeviceptr deltaLoss, float learningRate, CUstream stream) {
+    public NeuralNetworkBackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU feedforward, CUdeviceptr deltaLoss, CUstream stream) {
         if(!(feedforward instanceof NeuralNetworkForwardOutputGPU))
             throw new RuntimeException("Invalid feedforward output");
         
         NeuralNetworkForwardOutputGPU output = (NeuralNetworkForwardOutputGPU) feedforward;
         
-        cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
+        // Calculate pre-activation delta for output layer 
+        if(outputActivation != null)
+           outputActivation.gradientGPU(output.activationOutputs[last].preActivation, 
+                                        output.activationOutputs[last].postActivation, 
+                                        deltaLoss, outputSize, feedforward.batchSize, stream);
         
-        CUdeviceptr[] preActivationDeltas = new CUdeviceptr[layers.length];
-        
-        // Step 3: Store gradients for all connections in GPU memory
-        List<Map<Integer, ConnectionGradientGPU>> layerConnectionGradients = new ArrayList<>();
-        for (int i = 0; i < layers.length; i++) {
-            layerConnectionGradients.add(new HashMap<>());
-        }
-        
-        CUdeviceptr currentActivationDeltas = deltaLoss;
-                
-        // Step 4: Backpropagate through layers
-        for (int i = layers.length - 1; i >= 0; i--) {
-            Layer currentLayer = layers[i];
-            currentLayer.backpropagateGPU(output, currentActivationDeltas, preActivationDeltas, layerConnectionGradients.get(i), stream, handle);
-            currentActivationDeltas = null;
+        // If normalizer exists, apply its gradient
+        BackpropagateOutputGPU normOutput = null;
+
+        if(outputNormalizer != null) {
+            normOutput = outputNormalizer.backpropagateGPU(output.normalizerOutputs[last], deltaLoss, outputSize, feedforward.batchSize, stream);
+            deltaLoss = normOutput.deltaLoss();
         }
 
-        // Step 5: Update weights and biases using accumulated gradients
-        for (int i = 0; i < layers.length - 1; i++) {
-            Layer currentLayer = layers[i];
-            currentLayer.updateWeightsGPU(layerConnectionGradients.get(i), learningRate, stream, handle);
-        }
+        NeuralNetworkBackpropagateOutputGPU result = backpropagateGPU0(output, deltaLoss, stream);
+        result.normalizerGradients[last] = normOutput;
+
+        return result;
+    }
+    
+    private NeuralNetworkBackpropagateOutputGPU backpropagateGPU0(NeuralNetworkForwardOutputGPU feedforward, CUdeviceptr outputPreActivationDelta, CUstream stream) {        
+        cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
         
-        return new NeuralNetworkBackpropagateOutputGPU(preActivationDeltas, layerConnectionGradients, getInputSize(), output.batchCount);
+        // Create output structure with proper size
+        NeuralNetworkBackpropagateOutputGPU result = new NeuralNetworkBackpropagateOutputGPU(getInputSize(), feedforward.batchSize, getLayerCount());
+        result.preActivationDeltas[last] = outputPreActivationDelta;
+        
+        // Step 4: Backpropagate through layers, excluding output layer
+        for (int i = layers.length - 2; i >= 0; i--) {
+            layers[i].backpropagateGPU(feedforward, result.preActivationDeltas, result.layerConnectionGradients.get(i), result.normalizerGradients, stream, handle);
+        }
+
+        return result;
     }
     
     @Override
-    public long getGPUComputeMemoryRequired(int inputcount) {
-        return computeMemReq * inputcount;
+    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, CUstream stream) {
+        if(!(gradients instanceof NeuralNetworkBackpropagateOutputGPU))
+            throw new RuntimeException("Invalid gradients object");
+        
+        NeuralNetworkBackpropagateOutputGPU output = (NeuralNetworkBackpropagateOutputGPU)gradients;
+        
+        cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
+        List<Map<Integer, ConnectionGradientGPU>> layerConnectionGradients = output.layerConnectionGradients;
+
+        // Update weights and biases using the accumulated gradients
+        for (int i = 0; i < layers.length; i++) {
+            layers[i].updateWeightsGPU(layerConnectionGradients.get(i), learningRate, stream, handle);
+        }
     }
     
-    public long getGPUBackpropagateMemoryRequired(int inputcount) {
+    @Override
+    public long getGPUComputeMemoryRequired(int batchSize) {
+        return computeMemReq * batchSize;
+    }
+    
+    public long getGPUBackpropagateMemoryRequired(int batchSize) {
         /* pre and post activations stored */
-        long feedForward = 2 * computeMemReq * inputcount;
+        long feedForward = 2 * computeMemReq * batchSize;
         
         /* activation deltas + gradients */
-        long backpropagate = computeMemReq * inputcount + weightsMemReq;
+        long backpropagate = computeMemReq * batchSize + weightsMemReq;
         
         return feedForward + backpropagate;
     }
@@ -840,6 +943,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         CudaUtil.freeStream(stream);
     }
     
+    @Override
     public void updateWeightsFromGPU() {
         if(!gpuReady())
             throw new RuntimeException("Network is not loaded to the GPU");
@@ -888,17 +992,17 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
             layers[i] = Layer.deserialize(array.get(i));
         
         /* check reverse connections */
-        for(int i=0; i < layers.length; i++) {
-            Layer sourceLayer = layers[i];
-            for(int j : sourceLayer.connections.keySet()) {
-                Layer targetLayer = layers[j];
-                
-                if(!targetLayer.reverseConnections.contains(i)) {
-                    System.out.printf("adding reverse connection: %d <- %d\n", j, i);
-                    targetLayer.addReverseConnection(i);
-                }
-            }
-        }
+//        for(int i=0; i < layers.length; i++) {
+//            Layer sourceLayer = layers[i];
+//            for(int j : sourceLayer.connections.keySet()) {
+//                Layer targetLayer = layers[j];
+//                
+//                if(!targetLayer.reverseConnections.contains(i)) {
+//                    System.out.printf("adding reverse connection: %d <- %d\n", j, i);
+//                    targetLayer.addReverseConnection(i);
+//                }
+//            }
+//        }
         
         NeuralNetwork result = new NeuralNetwork(layers);
         
@@ -940,4 +1044,9 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         
         CudaEngine.finalizeThread();
     }    
+
+    @Override
+    public long getBackpropagateMemoryRequired(int batchSize) {
+        return getGPUComputeMemoryRequired(batchSize);
+    }
 }

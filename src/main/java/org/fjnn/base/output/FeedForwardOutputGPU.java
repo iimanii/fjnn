@@ -31,14 +31,14 @@ import jcuda.driver.CUstream;
  * @author ahmed
  */
 public abstract class FeedForwardOutputGPU {
+    public final int outputDim;
     public final int batchSize;
-    public final int batchCount;
-    public final int totalSize;
+    public final long totalSize;
 
-    public FeedForwardOutputGPU(int batch_size, int batch_count) {
-        this.batchSize = batch_size;
-        this.batchCount = batch_count;
-        this.totalSize = batch_size * batch_count;
+    public FeedForwardOutputGPU(int outputDim, int batchSize) {
+        this.outputDim = outputDim;
+        this.batchSize = batchSize;
+        this.totalSize = outputDim * batchSize;
     }
     
     public abstract CUdeviceptr output();

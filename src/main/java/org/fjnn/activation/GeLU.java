@@ -44,9 +44,9 @@ public class GeLU extends Activation {
     }
 
     @Override
-    public void compute(float[] input, int stride, int count) {
+    public void compute(float[] input, float[] output, int stride, int count) {
         for (int i = 0; i < input.length; i++) {
-            input[i] = 0.5f * input[i] * (1.0f + (float) Math.tanh(SQRT_2_PI * (input[i] + ALPHA * Math.pow(input[i], 3))));
+            output[i] = 0.5f * input[i] * (1.0f + (float) Math.tanh(SQRT_2_PI * (input[i] + ALPHA * Math.pow(input[i], 3))));
         }
     }
 
@@ -56,8 +56,8 @@ public class GeLU extends Activation {
     }
     
     @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.activation.GeLU(ptr, stride * count, stream);
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activation.GeLU(input, output, stride * (long)count, stream);
     }
 
 
@@ -86,8 +86,8 @@ public class GeLU extends Activation {
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
-        CudaFunctions.activationDerivative.GeLUDerivative(preActivation, postActivation, output, stride * count, stream);
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activationDerivative.GeLUDerivative(preActivation, postActivation, output, stride * (long)count, stream);
     }
     
     @Override
@@ -104,8 +104,8 @@ public class GeLU extends Activation {
     }
 
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
-        CudaFunctions.activationGradient.GeLUGradient(preActivation, postActivation, gradient, stride * count, stream);
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
+        CudaFunctions.activationGradient.GeLUGradient(preActivation, postActivation, gradient, stride * (long)count, stream);
     }
 }
 

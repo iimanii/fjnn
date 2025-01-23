@@ -178,16 +178,16 @@ public class CudaFunctions {
             addStride(a, b, c, stride, count, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
         }
         
-        public static void addStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, int stride, int count, int threadsPerBlock, CUstream stream) {
+        public static void addStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long stride, long count, int threadsPerBlock, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
             CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "add_stride", device);
 
-            int blockSizeX = Math.min(threadsPerBlock, stride);
+            int blockSizeX = (int) Math.min(threadsPerBlock, stride);
             int blockSizeY = threadsPerBlock / blockSizeX;
-            int gridSizeX = (stride - 1) / threadsPerBlock + 1;
+            int gridSizeX = (int)((stride - 1) / threadsPerBlock + 1);
 
-            int blocksCount = (count - 1) / blockSizeY + 1;
+            int blocksCount = (int)((count - 1) / blockSizeY + 1);
             int gridSizeY = Math.min(CudaEngine.getMaxGridSize(device)[1], blocksCount);
             int gridSizeZ = (blocksCount - 1) / gridSizeY + 1;
 
@@ -195,7 +195,7 @@ public class CudaFunctions {
                 Pointer.to(a),
                 Pointer.to(b),
                 Pointer.to(c),
-                Pointer.to(new int[]{stride}),
+                Pointer.to(new long[]{stride}),
                 Pointer.to(new long[]{(long)count * stride})
             );
 
@@ -291,17 +291,89 @@ public class CudaFunctions {
             
             CudaUtil.freeAsync(temp, stream);
         }
+        
+        
+        public static void reduceStride2(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long sizeA, long sizeB, CUstream stream) {
+            if(sizeA < sizeB)
+                throw new RuntimeException("Size A must be larger or equal to Size B");
+            
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "optimized_reduce_stride", device);
+            
+                        
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, sizeA);
+            long gridSizeX = (sizeA - 1) / blockSizeX + 1;
+            long iterationsPerBlock = 1;
+            
+            if(gridSizeX > 4096) {
+                gridSizeX = 4096;
+                iterationsPerBlock = (sizeA - 1) / (blockSizeX * gridSizeX) + 1;
+                
+//                System.out.println("new grid size: " + gridSizeX + " " + iterationsPerBlock);
+            }
+                    
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+            
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(a),
+                Pointer.to(b),
+                Pointer.to(c),
+                Pointer.to(new long[]{sizeA}),
+                Pointer.to(new long[]{sizeB}),
+                Pointer.to(new long[]{iterationsPerBlock})
+            );
+            
+            // Launch the reduceStride kernel
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+
+        public static void testReduceStride(CUdeviceptr dest, CUdeviceptr src, long stride, int count, CUstream stream) {
+            if(count == 1) {                
+                JCudaDriver.cuMemcpyAsync(dest, src, stride * CudaUtil.FLOAT_SIZE, stream);
+                return;
+            } else if(count == 2) {
+                reduceStride2(src, src.withByteOffset(stride * CudaUtil.FLOAT_SIZE), dest, stride, stride, stream);
+                return;
+            }
+            
+            /* create temp memory to reduce */
+            int curr = (count + 1) / 2;
+            CUdeviceptr temp = CudaUtil.createFloatAsync(stride * curr, stream);
+            
+            // Initial reduction: src -> temp
+            reduceStride(src, src.withByteOffset(stride * curr * CudaUtil.FLOAT_SIZE), temp, stride * curr, stride * (count - curr), stream);
+            
+            // Subsequent reductions: temp -> temp
+            while(curr > 2) {
+                int half = (curr + 1) / 2;
+                reduceStride(temp, temp.withByteOffset(stride * half * CudaUtil.FLOAT_SIZE), temp, stride * half, stride * (curr - half), stream);
+//                reduceStrideInPlace(temp, temp.withByteOffset(stride * half * CudaUtil.FLOAT_SIZE), stride * (curr - half), stream);      
+                curr = half;
+            }
+            
+            reduceStride(temp, temp.withByteOffset(stride * CudaUtil.FLOAT_SIZE), dest, stride, stride, stream);
+            
+            CudaUtil.freeAsync(temp, stream);
+        }
     }
     
     /* Activation functions */
     public static class activation {
-        private static void Activation(String name, CUdeviceptr ptr, long size, CUstream stream) {
+        private static void Activation(String name, CUdeviceptr input, CUdeviceptr output, long size, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
             CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, name, device);
 
             Pointer kernelParameters = Pointer.to(
-                Pointer.to(ptr),
+                Pointer.to(input),
+                Pointer.to(output),
                 Pointer.to(new long[]{size})
             );
 
@@ -319,17 +391,18 @@ public class CudaFunctions {
             );
         }
 
-        public static void ReLU(CUdeviceptr ptr, long size, CUstream stream) {
-            Activation("ReLU", ptr, size, stream);
+        public static void GeLU(CUdeviceptr input, CUdeviceptr output, long size, CUstream stream) {
+            Activation("GeLU", input, output, size, stream);
         }
-
-        public static void LeakyReLU(CUdeviceptr ptr, long size, float alpha, CUstream stream) {
+        
+        public static void LeakyReLU(CUdeviceptr input, CUdeviceptr output, long size, float alpha, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
             CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "LeakyReLU", device);
 
             Pointer kernelParameters = Pointer.to(
-                Pointer.to(ptr),
+                Pointer.to(input),
+                Pointer.to(output),
                 Pointer.to(new long[]{size}),
                 Pointer.to(new float[]{alpha})
             );
@@ -349,19 +422,19 @@ public class CudaFunctions {
             );
         }
 
-        public static void Sigmoid(CUdeviceptr ptr, long size, CUstream stream) {
-            Activation("Sigmoid", ptr, size, stream);
+        public static void ReLU(CUdeviceptr input, CUdeviceptr output, long size, CUstream stream) {
+            Activation("ReLU", input, output, size, stream);
         }
 
-        public static void Swish(CUdeviceptr ptr, long size, CUstream stream) {
-            Activation("Swish", ptr, size, stream);
+        public static void Sigmoid(CUdeviceptr input, CUdeviceptr output, long size, CUstream stream) {
+            Activation("Sigmoid", input, output, size, stream);
         }
 
-        public static void Sin(CUdeviceptr ptr, long size, CUstream stream) {
-            Activation("Sin", ptr, size, stream);
+        public static void Sin(CUdeviceptr input, CUdeviceptr output, long size, CUstream stream) {
+            Activation("Sin", input, output, size, stream);
         }
 
-        public static void SoftMax(CUdeviceptr ptr, long stride, long count, CUstream stream) {
+        public static void SoftMax(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
             if(count > Integer.MAX_VALUE || stride > Integer.MAX_VALUE)
                 throw new RuntimeException();
 
@@ -386,7 +459,8 @@ public class CudaFunctions {
             int gridSizeX = (int)count;
 
             Pointer kernelParameters = Pointer.to(
-                Pointer.to(ptr),
+                Pointer.to(input),
+                Pointer.to(output),
                 Pointer.to(new long[]{stride})
             );
 
@@ -398,16 +472,16 @@ public class CudaFunctions {
             );
         }
 
-        public static void Step(CUdeviceptr ptr, long size, CUstream stream) {
-            Activation("Step", ptr, size, stream);
+        public static void Step(CUdeviceptr input, CUdeviceptr output, long size, CUstream stream) {
+            Activation("Step", input, output, size, stream);
         }
 
-        public static void Tanh(CUdeviceptr ptr, long size, CUstream stream) {
-            Activation("Tanh", ptr, size, stream);
+        public static void Swish(CUdeviceptr input, CUdeviceptr output, long size, CUstream stream) {
+            Activation("Swish", input, output, size, stream);
         }
 
-        public static void GeLU(CUdeviceptr ptr, long size, CUstream stream) {
-            Activation("GeLU", ptr, size, stream);
+        public static void Tanh(CUdeviceptr input, CUdeviceptr output, long size, CUstream stream) {
+            Activation("Tanh", input, output, size, stream);
         }
     }
     
@@ -598,6 +672,10 @@ public class CudaFunctions {
             ActivationGradient("SigmoidGradient", preActivation, postActivation, gradient, size, stream);
         }
         
+        public static void SigmoidCrossEntropyGradient(CUdeviceptr postActivation, CUdeviceptr truth, CUdeviceptr gradient, long size, CUstream stream) {
+            ActivationGradient("SigmoidCrossEntropyGradient", postActivation, truth, gradient, size, stream);            
+        }
+        
         public static void SinGradient(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long size, CUstream stream) {
             ActivationGradient("SinGradient", preActivation, postActivation, gradient, size, stream);
         }
@@ -650,11 +728,132 @@ public class CudaFunctions {
         }
     }
     
+    public static class normalization {
+        public static void LayerNormalizer(CUdeviceptr preNormalization, 
+                                           CUdeviceptr normalized,
+                                           CUdeviceptr postNormalization, 
+                                           CUdeviceptr stds,
+                                           CUdeviceptr gamma, CUdeviceptr beta,
+                                           long stride, long count, CUstream stream) {
+            if(count > Integer.MAX_VALUE || stride > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            int device = CudaEngine.getThreadDeviceId();
+            int blockSize;
+            
+            if(stride <= 32)
+                blockSize = 32;
+            else if(stride <= 64)
+                blockSize = 64;
+            else if(stride <= 128)
+                blockSize = 128;
+            else if(stride <= 256)
+                blockSize = 256;
+            else
+                blockSize = 512;
+
+            /* Compute Matrix Multiplication */
+            CUfunction fn = CudaEngine.getKernel(CudaModule.MODULE_NORMALIZER, true, String.format("LayerNormalizer_%d", blockSize), device);
+
+            int blockSizeX = blockSize;
+            int gridSizeX = (int)count;
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(preNormalization),
+                Pointer.to(normalized),
+                Pointer.to(postNormalization),
+                Pointer.to(stds),
+                Pointer.to(gamma),
+                Pointer.to(beta),
+                Pointer.to(new long[]{stride})
+            );
+
+            JCudaDriver.cuLaunchKernel(fn,
+                gridSizeX, 1, 1,            // Grid dimension
+                blockSizeX, 1, 1,           // Block dimension
+                0, stream,                  // Shared memory size and stream
+                kernelParameters, null      // Kernel- and extra parameters
+            );
+        }
+
+        public static void LayerNormalizerBackpropagate(CUdeviceptr normalized,
+                                                        CUdeviceptr stds, 
+                                                        CUdeviceptr gamma, 
+                                                        CUdeviceptr gradients, 
+                                                        CUdeviceptr deltaLoss, 
+                                                        int stride, int count, CUstream stream) {
+            if(count > Integer.MAX_VALUE || stride > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            int device = CudaEngine.getThreadDeviceId();
+            int blockSize;
+            
+            if(stride <= 32)
+                blockSize = 32;
+            else if(stride <= 64)
+                blockSize = 64;
+            else if(stride <= 128)
+                blockSize = 128;
+            else if(stride <= 256)
+                blockSize = 256;
+            else
+                blockSize = 512;
+
+            /* Compute Matrix Multiplication */
+            CUfunction fn = CudaEngine.getKernel(CudaModule.MODULE_NORMALIZER, true, String.format("LayerNormalizerDerivative_%d", blockSize), device);
+
+            int blockSizeX = blockSize;
+            int gridSizeX = (int)count;
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(normalized),
+                Pointer.to(stds),
+                Pointer.to(gamma),
+                Pointer.to(gradients),
+                Pointer.to(deltaLoss),
+                Pointer.to(new long[]{stride})
+            );
+
+            JCudaDriver.cuLaunchKernel(fn,
+                gridSizeX, 1, 1,            // Grid dimension
+                blockSizeX, 1, 1,           // Block dimension
+                0, stream,                  // Shared memory size and stream
+                kernelParameters, null      // Kernel- and extra parameters
+            );
+        }
+        
+    }
     /* Loss Functions */
-    public static void MeanSquareErrorPrime(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, int threadsPerBlock, CUstream stream) {
+    public static void MeanSquareErrorDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, int threadsPerBlock, CUstream stream) {
         int device = CudaEngine.getThreadDeviceId();
         
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "MeanSquareErrorPrime", device);
+        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "MeanSquareErrorDerivative", device);
+        
+        Pointer kernelParameters = Pointer.to(
+            Pointer.to(output),
+            Pointer.to(expected),
+            Pointer.to(result),
+            Pointer.to(new long[]{size})
+        );
+        
+        int blockSizeX = (int)Math.min(threadsPerBlock, size);
+        long gridSizeX = (size - 1) / blockSizeX + 1;
+        
+        if(gridSizeX > Integer.MAX_VALUE)
+            throw new RuntimeException();
+        
+        JCudaDriver.cuLaunchKernel(function,
+        (int)gridSizeX, 1, 1,      // Grid dimension
+            blockSizeX, 1, 1,      // Block dimension
+            0, stream,             // Shared memory size and stream
+            kernelParameters, null // Kernel- and extra parameters
+        );
+    }
+    
+    public static void BinaryCrossEntropyDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, int threadsPerBlock, CUstream stream) {
+        int device = CudaEngine.getThreadDeviceId();
+        
+        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "BinaryCrossEntropyDerivative", device);
         
         Pointer kernelParameters = Pointer.to(
             Pointer.to(output),

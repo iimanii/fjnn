@@ -48,12 +48,12 @@ public class Linear extends Activation {
     }
     
     @Override
-    public void compute(float[] input, int stride, int count) {
+    public void compute(float[] input, float[] output, int stride, int count) {
         // do nothing        
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
         // do nothing        
     }
     
@@ -75,7 +75,7 @@ public class Linear extends Activation {
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
         CudaFunctions.activationDerivative.LinearDerivative(preActivation, postActivation, output, stride * count, stream);
     }
     
@@ -85,7 +85,7 @@ public class Linear extends Activation {
     }
 
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
         // derivative is 1, so gradient remains unchanged
     }
 }

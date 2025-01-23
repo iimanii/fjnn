@@ -45,7 +45,7 @@ public class MeanSquareError extends Loss {
             float diff = output[i] - expected[i];
             sum += diff * diff;
         }
-        return sum / (2 * output.length);
+        return sum / output.length;
     }
 
     // Compute the derivative of MSE with respect to the predicted values
@@ -55,15 +55,17 @@ public class MeanSquareError extends Loss {
             throw new RuntimeException();
         
         float[] derivatives = new float[output.length];
+        float multiplier = 2.0f / output.length;
+        
         for (int i = 0; i < output.length; i++) {
-            derivatives[i] = output[i] - expected[i];
+            derivatives[i] = multiplier * (output[i] - expected[i]);
         }
         return derivatives;
     }
     
     @Override
     public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
-        CudaFunctions.MeanSquareErrorPrime(output, expected, result, size, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
+        CudaFunctions.MeanSquareErrorDerivative(output, expected, result, size, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
     }
 }
 

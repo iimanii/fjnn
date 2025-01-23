@@ -37,10 +37,17 @@ import jcuda.driver.JCudaDriver;
 import jcuda.jcublas.cublasHandle;
 import jcuda.jcurand.curandGenerator;
 import org.fjnn.activation.Activation;
+import org.fjnn.activation.output.ActivationForwardOutput;
+import org.fjnn.activation.output.ActivationForwardOutputGPU;
+import org.fjnn.base.output.BackpropagateOutput;
+import org.fjnn.base.output.BackpropagateOutputGPU;
+import org.fjnn.base.output.FeedForwardOutput;
+import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
 import org.fjnn.network.outputs.NeuralNetworkForwardOutput;
 import org.fjnn.network.outputs.NeuralNetworkForwardOutputGPU;
+import org.fjnn.normalizer.Normalizer;
 import org.fjnn.util.Rng;
 import org.fjnn.util.util;
 
@@ -58,29 +65,38 @@ public class Layer {
     
     public final Activation activation;
     
+    public final Normalizer normalizer;
+    
     /* connections from this layer to next layers */
     final Map<Integer, Connection> connections;
    
     /* List of incoming connections .. for backpropagation */
-    final List<Integer> reverseConnections;
+//    final List<Integer> reverseConnections;
     
-    public Layer(int index, int neurons, Activation activation) {
+//    public Layer(int index, int neurons, Activation activation) {
+//        this(index, neurons, activation, null);
+//    }
+    
+    public Layer(int index, int neurons, Activation activation, Normalizer normalizer) {
         this.index = index;
         this.neurons = neurons;
         this.activation = activation;
+        this.normalizer = normalizer != null ? normalizer.withNeurons(neurons) : null;
+
         this.connections = new HashMap<>();
-        this.reverseConnections = new ArrayList<>();
+//        this.reverseConnections = new ArrayList<>();
     }
 
+    
     Layer copy(boolean copyWeights, boolean createWeights) {
-        Layer result = new Layer(index, neurons, activation);
+        Layer result = new Layer(index, neurons, activation, normalizer == null ? null : (Normalizer)normalizer.copy());
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             result.addConnection(e.getKey(), e.getValue().copy(copyWeights, createWeights));
         }
         
-        for(Integer e : reverseConnections)
-            result.addReverseConnection(e);
+//        for(Integer e : reverseConnections)
+//            result.addReverseConnection(e);
         
         return result;
     }
@@ -108,12 +124,12 @@ public class Layer {
         connections.put(toLayer, connection);
     }
     
-    protected void addReverseConnection(int fromLayer) {
-        if (reverseConnections.contains(fromLayer))
-            throw new RuntimeException("Already reverse connected to layer: " + fromLayer);
-        
-        reverseConnections.add(fromLayer);
-    }
+//    protected void addReverseConnection(int fromLayer) {
+//        if (reverseConnections.contains(fromLayer))
+//            throw new RuntimeException("Already reverse connected to layer: " + fromLayer);
+//        
+//        reverseConnections.add(fromLayer);
+//    }
         
     /* returns connection to the next layer */
     public Connection getConnection() {
@@ -146,7 +162,7 @@ public class Layer {
             c.initGaussian(mean, sd);
     }
 
-    public void xavier(int scalar) {
+    public void xavier(float scalar) {
         for(Connection c : connections.values()) {
             float variance = 2.0f / (c.neurons + c.links);
             float sd = (float) Math.sqrt(variance) * scalar;
@@ -163,8 +179,11 @@ public class Layer {
     }
     
     protected void feedForward(float[] input, int count, float[][] result) {
+        if (normalizer != null)
+            normalizer.compute(input, count);
+
         if(activation != null)
-            activation.compute(input, neurons, count);
+            activation.compute(input, input, neurons, count);
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             int toLayer = e.getKey();
@@ -178,24 +197,34 @@ public class Layer {
     }
     
     protected void feedForward(NeuralNetworkForwardOutput activations) {
-        /* make a copy to perform activation on the array while keeping the original preActivation */
-        activations.postActivations[this.index] = util.copyArray(activations.preActivations[index]);
+        int count = activations.batchSize;
         
-        int count = activations.batchCount;
+        float[] processedInput = activations.layerInputs[this.index];
         
-        if (activation != null)
-            activation.compute(activations.postActivations[this.index], neurons, count);
-
+        if (normalizer != null) {
+            FeedForwardOutput normOutput = normalizer.feedForward(processedInput, count);
+            activations.normalizerOutputs[this.index] = normOutput;
+            processedInput = normOutput.output();
+        }
+        
+        if (activation != null) {
+            ActivationForwardOutput activationOutput = activation.feedForward(processedInput, neurons, count);
+            activations.activationOutputs[this.index] = activationOutput;
+            processedInput = activationOutput.output();
+        }
+        
+        activations.layerOutputs[this.index] = processedInput;
+        
         for (Map.Entry<Integer, Connection> e : connections.entrySet()) {
             int toLayer = e.getKey();
             Connection connection = e.getValue();
 
             // Initialize space for the next layer's pre-activations if it hasn't been set yet
-            if (activations.preActivations[toLayer] == null)
-                activations.preActivations[toLayer] = new float[connection.links * count];
+            if (activations.layerInputs[toLayer] == null)
+                activations.layerInputs[toLayer] = new float[connection.links * count];
 
             // Perform feedForward to the next layer's pre-activations
-            connection.feedForward(activations.postActivations[this.index], count, activations.preActivations[toLayer]);
+            connection.feedForward(processedInput, count, activations.layerInputs[toLayer]);
         }
     }
 
@@ -214,13 +243,15 @@ public class Layer {
         }
     }
     
-    public void backpropagate(NeuralNetworkForwardOutput activations, float[] currentActivationDeltas, float[][] preActivationDeltas, Map<Integer, ConnectionGradient> connectionGradients) {
+    public void backpropagate(NeuralNetworkForwardOutput activations, 
+                              float[][] preActivationDeltas, 
+                              Map<Integer, ConnectionGradient> connectionGradients,
+                              BackpropagateOutput[] normalizerGradients) {
         if(preActivationDeltas[this.index] != null)
             throw new RuntimeException("issue with preActivation");
         
         // Step 1: Initialize the activation deltas for the current layer
-        if(currentActivationDeltas == null)
-           currentActivationDeltas = new float[this.neurons * activations.batchCount];
+        float[] currentActivationDeltas = new float[this.neurons * activations.batchSize];
 
         // Step 2: Loop through each connection to the next layers
         for (Map.Entry<Integer, Connection> entry : connections.entrySet()) {
@@ -229,17 +260,22 @@ public class Layer {
             float[] nextPreActivationDeltas = preActivationDeltas[nextLayerIndex];  // delta^{(l+1)}
 
             // Step 3: Compute Weight and Bias Gradients and accumulate pre-activation deltas for the current layer
-            ConnectionGradient gradient = connection.backpropagate(currentActivationDeltas, nextPreActivationDeltas, activations.postActivations[this.index], activations.batchCount);
+            ConnectionGradient gradient = connection.backpropagate(currentActivationDeltas, nextPreActivationDeltas, activations.layerOutputs[this.index], activations.batchSize);
             connectionGradients.put(nextLayerIndex, gradient);
         }
 
         // Step 7: Convert Post-Activation Delta to Pre-Activation Delta for the current layer (l)
         // Equation: delta^{(l)}_j = Delta a^{(l)}_j * sigma'(z^{(l)}_j)
         if(activation != null) {
-            activation.gradient(activations.preActivations[this.index], activations.postActivations[this.index], currentActivationDeltas, neurons, activations.batchCount);
-//            for (int j = 0; j < currentActivationDeltas.length; j++) {
-//                currentActivationDeltas[j] *= activation.derivative(activations.preActivations[this.index][j]);
-//            }
+            activation.gradient(activations.activationOutputs[this.index].preActivation, 
+                                activations.activationOutputs[this.index].postActivation, 
+                                currentActivationDeltas, neurons, activations.batchSize);
+        }
+        
+        if(normalizer != null) {
+            BackpropagateOutput normOutput = normalizer.backpropagate(activations.normalizerOutputs[this.index], currentActivationDeltas, neurons, activations.batchSize);
+            currentActivationDeltas = normOutput.deltaLoss();            
+            normalizerGradients[this.index] = normOutput;
         }
         
         preActivationDeltas[this.index] = currentActivationDeltas;
@@ -325,7 +361,8 @@ public class Layer {
         HashMap result = new HashMap();
         result.put("index", index);
         result.put("neurons", neurons);
-        result.put("activation", activation == null ? null : activation.toName());
+        result.put("activation", activation == null ? null : activation.serialize());
+        result.put("normalizer", normalizer == null ? null : normalizer.serialize());
         
         List<HashMap> array = new ArrayList<>();
         result.put("connections", array);
@@ -336,20 +373,25 @@ public class Layer {
             array.add(connection);
         }
         
-        List<Integer> reverse = new ArrayList<>(reverseConnections);
-        result.put("reverseConnections", reverse);
+//        List<Integer> reverse = new ArrayList<>(reverseConnections);
+//        result.put("reverseConnections", reverse);
         
         return result;
     }
     
-    static Layer deserialize(HashMap object) {
-        int index = (Integer)object.get("index");
-        int neurons = (Integer)object.get("neurons");
-        Activation activation = Activation.fromName((String)object.get("activation"));
+    static Layer deserialize(HashMap serialized) {
+        int index = (Integer)serialized.get("index");
+        int neurons = (Integer)serialized.get("neurons");
         
-        Layer layer = new Layer(index, neurons, activation);
+        Map activationMap = (Map)serialized.get("activation");
+        Activation activation = activationMap == null ? null : Activation.deserialize(activationMap);
         
-        List<HashMap> connections = (List)object.get("connections");
+        Map normalizerMap = (Map)serialized.get("normalizer");
+        Normalizer normalizer = normalizerMap == null ? null : Normalizer.deserialize(normalizerMap);
+
+        Layer layer = new Layer(index, neurons, activation, normalizer);
+        
+        List<HashMap> connections = (List)serialized.get("connections");
         
         for(int i=0; i < connections.size(); i++) {
             HashMap connection = connections.get(i);
@@ -357,11 +399,11 @@ public class Layer {
             layer.addConnection(toLayer, Connection.deserialize(connection));
         }
         
-        List<Integer> reverse = (List) object.get("reverseConnections");
+//        List<Integer> reverse = (List) object.get("reverseConnections");
 
-        for(int i : reverse) {
-            layer.addReverseConnection(i);
-        }
+//        for(int i : reverse) {
+//            layer.addReverseConnection(i);
+//        }
         
         return layer;
     }
@@ -376,12 +418,18 @@ public class Layer {
         for(Connection c : connections.values())
             gpuReady &= c.gpuReady;
         
+        if(normalizer != null)
+            gpuReady &= normalizer.gpuReady();
+        
         return gpuReady;
     }
     
     protected void prepareGPU(CUstream stream) {
         for(Connection c : connections.values())
             c.prepareGPU(stream);
+        
+        if(normalizer != null)
+            normalizer.prepareGPU(stream);
     }
     
     protected long getMemoryRequirements() {
@@ -394,9 +442,12 @@ public class Layer {
         return total;
     }
     
-    protected void feedForwardGPU(CUdeviceptr input, int count, CUdeviceptr[] result, CUstream stream, cublasHandle handle) {
+    protected void computeGPU(CUdeviceptr input, int count, CUdeviceptr[] result, CUstream stream, cublasHandle handle) {
+        if(normalizer != null)
+            normalizer.computeGPU(input, count, stream);
+        
         if(activation != null)
-            activation.computeGPU(input, neurons, count, stream);
+            activation.computeGPU(input, input, neurons, count, stream);
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             int toLayer = e.getKey();
@@ -417,17 +468,23 @@ public class Layer {
     }
     
     protected void feedForwardGPU(NeuralNetworkForwardOutputGPU activations, CUstream stream, cublasHandle handle) {
-        int count = activations.batchCount;
+        int count = activations.batchSize;
+        
+        CUdeviceptr processedInput = activations.layerInputs[this.index];
+        
+        if (normalizer != null) {
+            FeedForwardOutputGPU normOutput = normalizer.feedForwardGPU(processedInput, count, stream);
+            activations.normalizerOutputs[this.index] = normOutput;
+            processedInput = normOutput.output();
+        }
         
         if (activation != null) {
-            /* make a copy to perform activation on the array while keeping the original preActivation */
-            activations.postActivations[this.index] = CudaUtil.copyFloatAsync(activations.preActivations[this.index], neurons * count, stream);
-            
-            /* compute activation values */
-            activation.computeGPU(activations.postActivations[this.index], neurons, count, stream);
-        } else {
-            activations.postActivations[this.index] = activations.preActivations[this.index];
+            ActivationForwardOutputGPU activationOutput = activation.feedForwardGPU(processedInput, neurons, count, stream);
+            activations.activationOutputs[this.index] = activationOutput;
+            processedInput = activationOutput.output();
         }
+        
+        activations.layerOutputs[this.index] = processedInput;
 
         for (Map.Entry<Integer, Connection> e : connections.entrySet()) {
             int toLayer = e.getKey();
@@ -436,27 +493,30 @@ public class Layer {
             // Initialize space for the next layer's pre-activations if it hasn't been set yet
             long size = connection.links * count;
             
-            if (activations.preActivations[toLayer] == null) {
-                activations.preActivations[toLayer] = CudaUtil.createFloatAsync(size, stream);
-                JCudaDriver.cuMemsetD32Async(activations.preActivations[toLayer], 0, size, stream);
+            if (activations.layerInputs[toLayer] == null) {
+                activations.layerInputs[toLayer] = CudaUtil.createFloatAsync(size, stream);
+                JCudaDriver.cuMemsetD32Async(activations.layerInputs[toLayer], 0, size, stream);
             }
 
             // Perform feedForward to the next layer's pre-activations
-            connection.feedForwardGPU(activations.postActivations[this.index], count, activations.preActivations[toLayer], stream, handle);
+            connection.feedForwardGPU(processedInput, count, activations.layerInputs[toLayer], stream, handle);
         }
     }
 
-    protected void backpropagateGPU(NeuralNetworkForwardOutputGPU activations, CUdeviceptr currentActivationDeltas, CUdeviceptr[] preActivationDeltas, Map<Integer, ConnectionGradientGPU> connectionGradients, CUstream stream, cublasHandle handle) {
+    protected void backpropagateGPU(NeuralNetworkForwardOutputGPU activations, 
+                                    CUdeviceptr[] preActivationDeltas, 
+                                    Map<Integer, ConnectionGradientGPU> connectionGradients,
+                                    BackpropagateOutputGPU[] normalizerGradients,
+                                    CUstream stream, cublasHandle handle) {
         if(preActivationDeltas[this.index] != null)
             throw new RuntimeException("issue with preActivation");
         
-        long size = (long)this.neurons * activations.batchCount;
+        long size = (long)this.neurons * activations.batchSize;
         
         // Step 1: Initialize the activation deltas for the current layer only if it has incoming connections
-        if(currentActivationDeltas == null) {
-            currentActivationDeltas = CudaUtil.createFloatAsync(size, stream);
+        CUdeviceptr currentActivationDeltas = CudaUtil.createFloatAsync(size, stream);
 //            JCudaDriver.cuMemsetD32Async(currentActivationDeltas, 0, size, stream);
-        }
+//        }
 
         // initially set to false to initalize the array with deltas
         // so we avoid using memset
@@ -471,8 +531,8 @@ public class Layer {
             // Step 3: Compute Weight and Bias Gradients and accumulate pre-activation deltas for the current layer
             ConnectionGradientGPU gradient = connection.backpropagateGPU(currentActivationDeltas, 
                                                                          nextPreActivationDeltas, 
-                                                                         activations.postActivations[this.index], 
-                                                                         activations.batchCount,
+                                                                         activations.layerOutputs[this.index], 
+                                                                         activations.batchSize,
                                                                          accumulateDeltas,
                                                                          stream,
                                                                          handle);
@@ -484,8 +544,16 @@ public class Layer {
 
         // Step 7: Convert Post-Activation Delta to Pre-Activation Delta for the current layer (l)
         // Equation: delta[l] = delta[l+1] * activation_derivative(...)
-        if(activation != null)
-            activation.gradientGPU(activations.preActivations[this.index], activations.postActivations[this.index], currentActivationDeltas, this.neurons, activations.batchCount, stream);
+        if(activation != null) {
+            activation.gradientGPU(activations.activationOutputs[this.index].preActivation, 
+                                   activations.activationOutputs[this.index].postActivation, 
+                                   currentActivationDeltas, neurons, activations.batchSize, stream);
+        }
+        
+        if(normalizer != null) {
+            BackpropagateOutputGPU normOutput = normalizer.backpropagateGPU(activations.normalizerOutputs[this.index], currentActivationDeltas, neurons, activations.batchSize, stream);
+            normalizerGradients[this.index] = normOutput;
+        }
         
         preActivationDeltas[this.index] = currentActivationDeltas;
     }
@@ -543,6 +611,9 @@ public class Layer {
     protected void freeGPU(CUstream stream) {
         for(Connection c : connections.values())
             c.freeGPU(stream);
+        
+        if(normalizer != null)
+            normalizer.freeGPU(stream);
     }
 
     protected void freeGPURng() {

@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import org.fjnn.activation.Activation;
 import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.cuda.CudaEngine;
+import org.fjnn.normalizer.Normalizer;
 
 /**
  *
@@ -47,16 +48,17 @@ public abstract class Network <T extends Network> extends ModelComponent {
     protected final int inputSize;
     protected final int outputSize;
     protected final Activation outputActivation;
-    
+    protected final Normalizer outputNormalizer;
     
     /* a network can only be built once */
     protected boolean finalized;
 
-    public Network(int inputSize, int outputSize, Activation outputActivation) {
+    public Network(int inputSize, int outputSize, Activation outputActivation, Normalizer outputNormalizer) {
         this.properties = new ConcurrentHashMap<>();
         this.inputSize = inputSize;
         this.outputSize = outputSize;
         this.outputActivation = outputActivation;
+        this.outputNormalizer = outputNormalizer;
         
         if(inputSize == 0 || outputSize == 0)
             throw new RuntimeException("invalid input / output: " + inputSize + " " + outputSize);

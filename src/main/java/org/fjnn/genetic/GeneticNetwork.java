@@ -113,12 +113,12 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
     }
 
     @Override
-    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss, float learningRate) {
+    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
     @Override
-    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, float learningRate, CUstream stream) {
+    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
@@ -129,6 +129,26 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
 
     @Override
     public void updateWeightsFromGPU() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public long getParametersCount() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public long getBackpropagateMemoryRequired(int batchCount) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void applyGradients(BackpropagateOutput gradients, float learningRate) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
@@ -161,7 +181,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
      * @param hiddenActivation
      */
     public GeneticNetwork(int input, int output, Activation outputActivation, Activation hiddenActivation) {
-        super(input, output, outputActivation);
+        super(input, output, outputActivation, null);
         
         inputs = new ArrayList<>();
         hidden = new ArrayList<>();
@@ -506,7 +526,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
             result[i] = values[outputs.get(i).index];
         
         if(outputActivation != null)
-            outputActivation.compute(result);
+            outputActivation.compute(result, result, result.length, 1);
         
         return result;
     }
@@ -1060,7 +1080,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
             result[i] = _compute(outputs.get(i), values, computed);
         
         if(outputActivation != null)
-            outputActivation.compute(result);
+            outputActivation.compute(result, result, result.length, 1);
         
         return result;
     }

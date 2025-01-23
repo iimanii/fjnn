@@ -48,11 +48,10 @@ public class ReLU extends Activation {
     }
     
     @Override
-    public void compute(float[] input, int stride, int count) {
+    public void compute(float[] input, float[] output, int stride, int count) {
         for(int i=0; i < stride * count; i++) {
-            if(input[i] < 0) {
-                input[i] = 0;
-            }
+            output[i] = input[i] < 0.0f ? 0.0f : input[i];
+
         }
     }
 
@@ -62,8 +61,8 @@ public class ReLU extends Activation {
     }
     
     @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.activation.ReLU(ptr, stride * count, stream);
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activation.ReLU(input, output, stride * (long)count, stream);
     }
 
     @Override
@@ -80,8 +79,8 @@ public class ReLU extends Activation {
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
-        CudaFunctions.activationDerivative.ReLUDerivative(preActivation, postActivation, output, stride * count, stream);
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activationDerivative.ReLUDerivative(preActivation, postActivation, output, stride * (long)count, stream);
     }
     
     @Override
@@ -94,7 +93,7 @@ public class ReLU extends Activation {
     }
 
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
-        CudaFunctions.activationGradient.ReLUGradient(preActivation, postActivation, gradient, stride * count, stream);
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
+        CudaFunctions.activationGradient.ReLUGradient(preActivation, postActivation, gradient, stride * (long)count, stream);
     }
 }

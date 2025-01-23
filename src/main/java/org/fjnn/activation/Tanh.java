@@ -24,16 +24,9 @@
 package org.fjnn.activation;
 
 import java.nio.FloatBuffer;
-import jcuda.Pointer;
 import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
-import jcuda.driver.JCudaDriver;
-import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CUdeviceptr2D;
 import org.fjnn.cuda.CudaFunctions;
-import org.fjnn.cuda.CudaUtil;
 import org.fjnn.util.intrinsic;
 
 /**
@@ -48,9 +41,9 @@ public class Tanh extends Activation {
     }
     
     @Override
-    public void compute(float[] input, int stride, int count) {
+    public void compute(float[] input, float[] output, int stride, int count) {
         for(int i=0; i < input.length; i++)
-            input[i] = (float)Math.tanh(input[i]);
+            output[i] = (float)Math.tanh(input[i]);
     }
 
     @Override
@@ -59,8 +52,8 @@ public class Tanh extends Activation {
     }
     
     @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long count, CUstream stream) {
-        CudaFunctions.activation.Tanh(ptr, stride * count, stream);        
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activation.Tanh(input, output, stride * (long)count, stream);        
     }
     
     @Override
@@ -78,8 +71,8 @@ public class Tanh extends Activation {
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, long stride, long count, CUstream stream) {
-        CudaFunctions.activationDerivative.TanhDerivative(preActivation, postActivation, output, stride * count, stream);
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
+        CudaFunctions.activationDerivative.TanhDerivative(preActivation, postActivation, output, stride * (long)count, stream);
     }
     
     
@@ -91,8 +84,8 @@ public class Tanh extends Activation {
     }
     
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
-        CudaFunctions.activationGradient.TanhGradient(preActivation, postActivation, gradient, stride * count, stream);
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
+        CudaFunctions.activationGradient.TanhGradient(preActivation, postActivation, gradient, stride * (long)count, stream);
     }
 
 }

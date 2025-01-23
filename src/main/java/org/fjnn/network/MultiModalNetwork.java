@@ -52,7 +52,7 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
     NeuralNetwork base;
     
     public MultiModalNetwork(NeuralNetwork[] inputs, int output, Activation outputActivation) {
-        super(getInputSize(inputs), output, outputActivation);
+        super(getInputSize(inputs), output, outputActivation, null);
         
         for(Network n : inputs) {
             if(!n.isFinalized())
@@ -69,7 +69,7 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
     }
     
     MultiModalNetwork(NeuralNetwork[] inputs, NeuralNetwork base) {
-        super(getInputSize(inputs), base.getOutputSize(), base.getOutputLayer().activation);
+        super(getInputSize(inputs), base.getOutputSize(), base.getOutputLayer().activation, base.getOutputLayer().normalizer);
         
         for(Network n : inputs) {
             if(!n.isFinalized())
@@ -438,12 +438,12 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
     }
 
     @Override
-    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss, float learningRate) {
+    public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
     @Override
-    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, float learningRate, CUstream stream) {
+    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
@@ -459,6 +459,26 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
 
     @Override
     public void updateWeightsFromGPU() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public long getParametersCount() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public long getBackpropagateMemoryRequired(int batchCount) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void applyGradients(BackpropagateOutput gradients, float learningRate) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 }

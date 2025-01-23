@@ -21,23 +21,51 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.loss;
+package org.fjnn.normalizer;
 
+import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
+import org.fjnn.base.ModelComponent;
 
 /**
  *
  * @author ahmed
  */
-public abstract class Loss {
+public abstract class Normalizer extends ModelComponent {
+    protected final float epsilon = 1e-5f;
     
-    public static Loss MeanSquareError = new MeanSquareError();
-    public static Loss BinaryCrossEntropy = new BinaryCrossEntropy();
+    protected final int neurons;
     
-    abstract public float compute(float[] output, float[] expected);
+    public Normalizer() {
+        this(0);
+    }
     
-    abstract public float[] derivative(float[] output, float[] expected);
+    protected Normalizer(int neurons) {
+        this.neurons = neurons;
+    }
     
-    abstract public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream);
+    public abstract Normalizer withNeurons(int neurons);
+        
+    public abstract void compute(float[] input, int count);
+    
+    public abstract void computeGPU(CUdeviceptr ptr, long count, CUstream stream);
+
+    public static Normalizer deserialize(Map serialized) {
+        String type = (String)serialized.get("type");
+        
+        switch (type) {
+            case "LayerNormalizer":
+                return LayerNormalizer.deserialize(serialized);
+                
+            // Add other normalizer types here as they're implemented
+            // case "BatchNormalizer":
+            //     return BatchNormalizer.deserialize(serialized);
+            // case "InstanceNormalizer":
+            //     return InstanceNormalizer.deserialize(serialized);
+            
+            default:
+                throw new RuntimeException("Unknown normalizer type: " + type);
+        }
+    }
 }

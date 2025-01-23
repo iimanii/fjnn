@@ -37,8 +37,8 @@ public class AdapterForwardOutputGPU extends FeedForwardOutputGPU {
     private final CUdeviceptr output;
     private final boolean byReference;  /* whether or not the output ptr is just a reference to another pointer */
 
-    public AdapterForwardOutputGPU(int batchSize, int batchCount, CUdeviceptr output, boolean byReference) {
-        super(batchSize, batchCount);
+    public AdapterForwardOutputGPU(int outputDim, int batchSize, CUdeviceptr output, boolean byReference) {
+        super(outputDim, batchSize);
         
         this.output = output;
         this.byReference = byReference;

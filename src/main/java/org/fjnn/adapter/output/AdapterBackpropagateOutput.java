@@ -28,8 +28,8 @@ import org.fjnn.base.output.BackpropagateOutput;
 public class AdapterBackpropagateOutput extends BackpropagateOutput {  
     private final float[] deltaLoss;
 
-    public AdapterBackpropagateOutput(int batchSize, int batchCount, float[] deltaLoss) {
-        super(batchSize, batchCount);
+    public AdapterBackpropagateOutput(int deltaLossDim, int batchSize, float[] deltaLoss) {
+        super(deltaLossDim, batchSize);
         
         this.deltaLoss = deltaLoss;
     }

@@ -46,11 +46,6 @@ public class Complex extends Activation {
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, long stride, long size, CUstream stream) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
     public float derivative(float preactivation, float postactivation) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
@@ -61,7 +56,7 @@ public class Complex extends Activation {
     }
 
     @Override
-    public void derivativeGPU(CUdeviceptr preactivation, CUdeviceptr postactivation, CUdeviceptr output, long stride, long count, CUstream stream) {
+    public void derivativeGPU(CUdeviceptr preactivation, CUdeviceptr postactivation, CUdeviceptr output, int stride, int count, CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
@@ -71,7 +66,17 @@ public class Complex extends Activation {
     }
 
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long stride, long count, CUstream stream) {
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void compute(float[] input, float[] output, int stride, int count) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
     
@@ -153,17 +158,17 @@ public class Complex extends Activation {
         throw new RuntimeException("Function not supported");
     }
     
-    @Override
-    public void compute(float[] input, int from, int to) {
-        int c = from;
-        
-        for(int i=0; i < count; i++) {
-            for(function f : functions) {
-                input[c] = f.compute(input[c]);
-                c++;
-            }
-        }
-        
-        activation.compute(input, c, input.length);
-    }
+//    @Override
+//    public void feedForward(float[] input, float[] output, int from, int to) {
+//        int c = from;
+//        
+//        for(int i=0; i < count; i++) {
+//            for(function f : functions) {
+//                output[c] = f.compute(input[c]);
+//                c++;
+//            }
+//        }
+//        
+//        activation.compute(input, c, input.length);
+//    }
 }

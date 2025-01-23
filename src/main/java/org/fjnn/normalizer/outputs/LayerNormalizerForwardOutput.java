@@ -21,35 +21,34 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network.outputs;
+package org.fjnn.normalizer.outputs;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import org.fjnn.base.output.BackpropagateOutput;
-import org.fjnn.network.ConnectionGradient;
+import org.fjnn.base.output.FeedForwardOutput;
 
-public class NeuralNetworkBackpropagateOutput extends BackpropagateOutput {
-    public final float[][] preActivationDeltas;
-    public final BackpropagateOutput[] normalizerGradients;
-    public final List<Map<Integer, ConnectionGradient>> layerConnectionGradients;
-
-    public NeuralNetworkBackpropagateOutput(int deltaLossDim, int batchSize, int layerCount) {
-        super(deltaLossDim, batchSize);
+/**
+ *
+ * @author ahmed
+ */
+public class LayerNormalizerForwardOutput extends FeedForwardOutput {
+    // Fields for layer normalization
+    public final float[] preNormalization;      // input values
+    public final float[] normalized;            // x̂ values (after normalization, before γ and β)
+    public final float[] postNormalization;     // final output (after γ and β)
+    public final float[] stds;                  // standard deviation per layer
+    
+    public LayerNormalizerForwardOutput(float[] preNormalization, int outputDim, int batchSize) {
+        super(outputDim, batchSize);
         
-        this.preActivationDeltas = new float[layerCount][];
-        this.normalizerGradients = new BackpropagateOutput[layerCount];
-        this.layerConnectionGradients = new ArrayList<>();        
+        int size = outputDim * batchSize;
         
-        // Initialize the ConnectionGradient Map to store gradients for all connections
-        for (int i = 0; i < layerCount; i++) {
-            layerConnectionGradients.add(new HashMap<>());
-        }
+        this.preNormalization = preNormalization;
+        this.normalized = new float[size];
+        this.postNormalization = new float[size];
+        this.stds = new float[batchSize];
     }
 
     @Override
-    public float[] deltaLoss() {
-        return preActivationDeltas[0];
+    public float[] output() {
+        return postNormalization;
     }
 }

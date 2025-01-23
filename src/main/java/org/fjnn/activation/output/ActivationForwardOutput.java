@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2024 ahmed.
+ * Copyright 2025 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,35 +21,27 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.base.output;
+package org.fjnn.activation.output;
+
+import org.fjnn.base.output.FeedForwardOutput;
 
 /**
  *
  * @author ahmed
  */
-import java.util.HashMap;
-import java.util.Map;
-
-public class BackpropagateOutputMap {
-    private final Map<Integer, BackpropagateOutput> results;
-
-    public BackpropagateOutputMap() {
-        this.results = new HashMap<>();
-    }
-
-    public void addOutput(int index, BackpropagateOutput result) {
-        if (results.containsKey(index))
-            throw new IllegalArgumentException("Output at index " + index + " already exists.");
-
-        results.put(index, result);
-    }
-
-    public BackpropagateOutput getOutput(int index) {
-        return results.get(index);
+public class ActivationForwardOutput extends FeedForwardOutput {
+    public final float[] preActivation;   // before activation
+    public final float[] postActivation;  // after activation
+    
+    public ActivationForwardOutput(float[] preActivation, int outputDim, int batchSize) {
+        super(outputDim, batchSize);
+        
+        this.preActivation = preActivation;
+        this.postActivation = new float[outputDim * batchSize];
     }
     
-    public int size() {
-        return results.size();
+    @Override
+    public float[] output() {
+        return postActivation;
     }
 }
-

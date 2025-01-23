@@ -28,6 +28,7 @@ import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import jcuda.Pointer;
 import jcuda.Sizeof;
 import jcuda.driver.CUdeviceptr;
@@ -105,10 +106,17 @@ public class CudaUtil {
         return copyAsync(src, size * FLOAT_SIZE, stream);
     }
 
+    static AtomicInteger netMemoryAllocCount = new AtomicInteger();
+    
+    public static int getNetMemoryAllocCounter() {
+        return netMemoryAllocCount.get();
+    }
     
     public static CUdeviceptr create(long size) {
         CUdeviceptr ptr = new CUdeviceptr();
         JCudaDriver.cuMemAlloc(ptr, size);
+
+        netMemoryAllocCount.incrementAndGet();
         
         return ptr;
     }
@@ -116,6 +124,8 @@ public class CudaUtil {
     public static CUdeviceptr createAsync(long size, CUstream stream) {
         CUdeviceptr ptr = new CUdeviceptr();
         JCudaDriver.cuMemAllocAsync(ptr, size, stream);
+        
+        netMemoryAllocCount.incrementAndGet();
         
         return ptr;
     }
@@ -131,10 +141,14 @@ public class CudaUtil {
     
     public static void free(CUdeviceptr ptr) {
         JCudaDriver.cuMemFree(ptr);
+        
+        netMemoryAllocCount.decrementAndGet();
     }
     
     public static void freeAsync(CUdeviceptr ptr, CUstream stream) {
         JCudaDriver.cuMemFreeAsync(ptr, stream);
+        
+        netMemoryAllocCount.decrementAndGet();
     }
     
     
@@ -164,8 +178,7 @@ public class CudaUtil {
 
     /* moving memory */
     public static CUdeviceptr toGPU(float[] array) {
-        CUdeviceptr ptr = new CUdeviceptr();
-        JCudaDriver.cuMemAlloc(ptr, array.length * FLOAT_SIZE);
+        CUdeviceptr ptr = create(array.length * FLOAT_SIZE);
         
         toGPU(array, ptr);
         
@@ -177,8 +190,7 @@ public class CudaUtil {
     }
     
     public static CUdeviceptr toGPUAsync(float[] array, CUstream stream) {
-        CUdeviceptr ptr = new CUdeviceptr();
-        JCudaDriver.cuMemAllocAsync(ptr, array.length * FLOAT_SIZE, stream);
+        CUdeviceptr ptr = createAsync(array.length * FLOAT_SIZE, stream);
         
         toGPUAsync(array, ptr, stream);
         

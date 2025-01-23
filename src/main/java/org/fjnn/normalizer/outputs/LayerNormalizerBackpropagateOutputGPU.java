@@ -21,42 +21,40 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.adapter.output;
+package org.fjnn.normalizer.outputs;
 
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.base.output.BackpropagateOutputGPU;
 import org.fjnn.cuda.CudaUtil;
 
-/**
- *
- * @author ahmed
- */
-public class AdapterBackpropagateOutputGPU extends BackpropagateOutputGPU {  
-    private final CUdeviceptr deltaLoss;
-    private final boolean byReference;  /* whether or not the output ptr is just a reference to another pointer */
-
-    public AdapterBackpropagateOutputGPU(int deltaLossDim, int batchSize, CUdeviceptr deltaLoss, boolean byReference) {
+public class LayerNormalizerBackpropagateOutputGPU extends BackpropagateOutputGPU {
+    public final CUdeviceptr gammaGradients;  // gradients for gamma parameters [neurons]
+    public final CUdeviceptr betaGradients;   // gradients for beta parameters [neurons]
+    public final CUdeviceptr deltaLoss;       // gradients for input layer [batchSize * neurons]
+    
+    public LayerNormalizerBackpropagateOutputGPU(CUdeviceptr deltaLoss, int deltaLossDim, int batchSize, CUstream stream) {
         super(deltaLossDim, batchSize);
         
         this.deltaLoss = deltaLoss;
-        this.byReference = byReference;
+        this.gammaGradients = CudaUtil.createFloatAsync(deltaLossDim, stream);
+        this.betaGradients = CudaUtil.createFloatAsync(deltaLossDim, stream);
     }
-
+    
     @Override
     public CUdeviceptr deltaLoss() {
         return deltaLoss;
-    }    
-
+    }
+    
     @Override
     public void free() {
-        if(!byReference)
-            CudaUtil.free(deltaLoss);
+        CudaUtil.free(gammaGradients);
+        CudaUtil.free(betaGradients);
     }
-
+    
     @Override
     public void freeAsync(CUstream stream) {
-        if(!byReference)
-            CudaUtil.freeAsync(deltaLoss, stream);
+        CudaUtil.freeAsync(gammaGradients, stream);
+        CudaUtil.freeAsync(betaGradients, stream);
     }
 }

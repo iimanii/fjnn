@@ -21,35 +21,26 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network.outputs;
+package org.fjnn.normalizer.outputs;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import org.fjnn.base.output.BackpropagateOutput;
-import org.fjnn.network.ConnectionGradient;
 
-public class NeuralNetworkBackpropagateOutput extends BackpropagateOutput {
-    public final float[][] preActivationDeltas;
-    public final BackpropagateOutput[] normalizerGradients;
-    public final List<Map<Integer, ConnectionGradient>> layerConnectionGradients;
+public class LayerNormalizerBackpropagateOutput extends BackpropagateOutput {
+    public final float[] gammaGradients;    // gradients for gamma parameters
+    public final float[] betaGradients;     // gradients for beta parameters
+    public final float[] deltaLoss;         // gradients for input layer
 
-    public NeuralNetworkBackpropagateOutput(int deltaLossDim, int batchSize, int layerCount) {
+    public LayerNormalizerBackpropagateOutput(int deltaLossDim, int batchSize) {
         super(deltaLossDim, batchSize);
         
-        this.preActivationDeltas = new float[layerCount][];
-        this.normalizerGradients = new BackpropagateOutput[layerCount];
-        this.layerConnectionGradients = new ArrayList<>();        
-        
-        // Initialize the ConnectionGradient Map to store gradients for all connections
-        for (int i = 0; i < layerCount; i++) {
-            layerConnectionGradients.add(new HashMap<>());
-        }
+        // Initialize arrays
+        this.gammaGradients = new float[deltaLossDim];  // one gamma per neuron
+        this.betaGradients = new float[deltaLossDim];   // one beta per neuron
+        this.deltaLoss = new float[deltaLossDim * batchSize];  // input gradients for all batches
     }
 
     @Override
     public float[] deltaLoss() {
-        return preActivationDeltas[0];
+        return deltaLoss;
     }
 }
