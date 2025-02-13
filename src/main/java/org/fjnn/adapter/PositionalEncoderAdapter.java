@@ -229,12 +229,12 @@ public class PositionalEncoderAdapter extends ModelComponent {
     }
 
     @Override
-    public void applyGradients(BackpropagateOutput gradients, float learningRate) {
+    public void applyGradients(BackpropagateOutput gradients, float learningRate, float weightDecay) {
         // no learnable parameters .. do nothing
     }
 
     @Override
-    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, CUstream stream) {
+    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, float weightDecay, CUstream stream) {
         // no learnable parameters .. do nothing
     }
 }

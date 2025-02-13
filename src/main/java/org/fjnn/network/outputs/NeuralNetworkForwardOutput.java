@@ -25,6 +25,7 @@ package org.fjnn.network.outputs;
 
 import org.fjnn.activation.output.ActivationForwardOutput;
 import org.fjnn.base.output.FeedForwardOutput;
+import org.fjnn.normalizer.outputs.DropoutForwardOutput;
 
 /**
  *
@@ -35,6 +36,8 @@ public class NeuralNetworkForwardOutput extends FeedForwardOutput {
     public final FeedForwardOutput[] normalizerOutputs;         // normalizer results if any
     public final ActivationForwardOutput[] activationOutputs;   // activation results
     public final float[][] layerOutputs;
+    public final DropoutForwardOutput[] dropoutOutputs;
+
     
     public NeuralNetworkForwardOutput(int outputDim, int batchSize, int layerCount) {
         super(outputDim, batchSize);
@@ -43,6 +46,7 @@ public class NeuralNetworkForwardOutput extends FeedForwardOutput {
         this.normalizerOutputs = new FeedForwardOutput[layerCount];
         this.activationOutputs = new ActivationForwardOutput[layerCount];
         this.layerOutputs = new float[layerCount][];
+        this.dropoutOutputs = new DropoutForwardOutput[layerCount];
     }
 
     @Override

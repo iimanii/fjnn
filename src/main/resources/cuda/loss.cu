@@ -43,12 +43,14 @@ __global__ void MeanSquareErrorDerivative(float* output, float* expected, float*
  * Binary Cross Entropy derivative
  */
 extern "C"
-__global__ void BinaryCrossEntropyDerivative(float* output, float* expected, float* result, long size) {
+__global__ void BinaryCrossEntropyDerivative(float* output, float* expected, float* result, float alpha, float beta, long size) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     
     if(i < size) {
         float clipped = fmaxf(1e-7f, fminf(1.0f - 1e-7f, output[i]));
-        result[i] = (clipped - expected[i]) / (clipped * (1.0f - clipped));
+        
+        float weight = (expected[i] == 1.0f) ? alpha : beta;
+        result[i] = weight * (clipped - expected[i]) / (clipped * (1.0f - clipped));
     }
 }
 /**

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Ahmed Tarek.
+ * Copyright 2025 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,32 +21,42 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network;
+package org.fjnn.transformer.output;
 
-import org.fjnn.activation.Activation;
-import org.fjnn.normalizer.Normalizer;
+import jcuda.driver.CUdeviceptr;
+import jcuda.driver.CUstream;
+import org.fjnn.base.output.FeedForwardOutputGPU;
+import org.fjnn.cuda.CudaUtil;
 
 /**
  *
  * @author ahmed
  */
-public class LayerPlan {
-    /* number of neurons in this layer */
-    public final int neurons;
+public class AttentionWeightsOutputGPU extends FeedForwardOutputGPU {
+    public final CUdeviceptr input;         // original input values
+    public final CUdeviceptr output;        // final output after weight transformation
+    
+    public AttentionWeightsOutputGPU(CUdeviceptr input, int inputDim, int batchSize, CUstream stream) {
+        super(inputDim, batchSize);
+        
+        this.input = input;
+        this.output = CudaUtil.createFloatAsync(outputDim * batchSize, stream);
+    }
 
-    /* normalizer for this layer */
-    public final Normalizer normalizer;
-    
-    /* activation function for this layer */
-    public final Activation activation;
-    
-    /* dropout */
-    float dropout;
-    
-    public LayerPlan(int neurons, Activation activation, Normalizer normalizer, float dropout) {
-        this.neurons = neurons;
-        this.activation = activation;
-        this.normalizer = normalizer;
-        this.dropout = dropout;
+    @Override
+    public CUdeviceptr output() {
+        return output;
+    }
+
+    @Override
+    public void free() {
+        // Don't free input as it was passed in
+        CudaUtil.free(output);
+    }
+
+    @Override
+    public void freeAsync(CUstream stream) {
+        // Don't free input as it was passed in
+        CudaUtil.freeAsync(output, stream);
     }
 }

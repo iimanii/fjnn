@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2024 ahmed.
+ * Copyright 2025 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,43 +21,45 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network;
+package org.fjnn.transformer.output;
 
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
+import org.fjnn.base.output.BackpropagateOutputGPU;
 import org.fjnn.cuda.CudaUtil;
 
 /**
  *
  * @author ahmed
  */
-public class ConnectionGradientGPU {
-    public final int neurons;
-    public final int links;
-    public CUdeviceptr weightGradients;  // Gradient for each weight in the connection
-    public CUdeviceptr biasGradients;    // Gradient for each bias in the connection
+public class AttentionWeightsBackpropOutputGPU extends BackpropagateOutputGPU {
+public final CUdeviceptr weightGradients;       // [vectorDim × vectorDim]
+    public final CUdeviceptr inputGradients;    // [batchSize * sequenceLen * vectorDim]
+    public final CUdeviceptr deltaLoss;         // gradients for input layer [batchSize * neurons]
 
-    public ConnectionGradientGPU(int neurons, int links, CUstream stream) {
-        this.neurons = neurons;
-        this.links = links;
+    public AttentionWeightsBackpropOutputGPU(CUdeviceptr deltaLoss, int vectorDim, int sequenceLen, int batchSize, CUstream stream) {
+        super(sequenceLen * vectorDim, batchSize);  // superclass takes total input dim and batch size
         
-        this.weightGradients = CudaUtil.createFloatAsync(neurons * links, stream);
-        this.biasGradients = CudaUtil.createFloatAsync(links, stream);
+        // Allocate memory for gradients
+        this.deltaLoss = deltaLoss;
+        this.weightGradients = CudaUtil.createFloatAsync(vectorDim * vectorDim, stream);
+        this.inputGradients = CudaUtil.createFloatAsync(batchSize * sequenceLen * vectorDim, stream);
     }
 
+    @Override
+    public CUdeviceptr deltaLoss() {
+        return inputGradients;  // Pass gradients to previous layer
+    }
+
+    @Override
     public void free() {
         CudaUtil.free(weightGradients);
-        CudaUtil.free(biasGradients);
-        
-        weightGradients = null;
-        biasGradients = null;
+        CudaUtil.free(inputGradients);
     }
-    
+
+    @Override
     public void freeAsync(CUstream stream) {
         CudaUtil.freeAsync(weightGradients, stream);
-        CudaUtil.freeAsync(biasGradients, stream);
-        
-        weightGradients = null;
-        biasGradients = null;
+        CudaUtil.freeAsync(inputGradients, stream);
     }
 }

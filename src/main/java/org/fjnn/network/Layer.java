@@ -47,7 +47,10 @@ import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
 import org.fjnn.network.outputs.NeuralNetworkForwardOutput;
 import org.fjnn.network.outputs.NeuralNetworkForwardOutputGPU;
+import org.fjnn.normalizer.Dropout;
 import org.fjnn.normalizer.Normalizer;
+import org.fjnn.normalizer.outputs.DropoutForwardOutput;
+import org.fjnn.normalizer.outputs.DropoutForwardOutputGPU;
 import org.fjnn.util.Rng;
 import org.fjnn.util.util;
 
@@ -67,29 +70,23 @@ public class Layer {
     
     public final Normalizer normalizer;
     
+    public final Dropout dropout;
+    
     /* connections from this layer to next layers */
     final Map<Integer, Connection> connections;
-   
-    /* List of incoming connections .. for backpropagation */
-//    final List<Integer> reverseConnections;
     
-//    public Layer(int index, int neurons, Activation activation) {
-//        this(index, neurons, activation, null);
-//    }
-    
-    public Layer(int index, int neurons, Activation activation, Normalizer normalizer) {
+    public Layer(int index, int neurons, Activation activation, Normalizer normalizer, float dropout) {
         this.index = index;
         this.neurons = neurons;
         this.activation = activation;
-        this.normalizer = normalizer != null ? normalizer.withNeurons(neurons) : null;
+        this.normalizer = normalizer;
+        this.dropout = new Dropout(neurons, dropout);
 
         this.connections = new HashMap<>();
-//        this.reverseConnections = new ArrayList<>();
     }
-
     
     Layer copy(boolean copyWeights, boolean createWeights) {
-        Layer result = new Layer(index, neurons, activation, normalizer == null ? null : (Normalizer)normalizer.copy());
+        Layer result = new Layer(index, neurons, activation, normalizer == null ? null : (Normalizer)normalizer.copy(), dropout.rate);
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             result.addConnection(e.getKey(), e.getValue().copy(copyWeights, createWeights));
@@ -124,13 +121,6 @@ public class Layer {
         connections.put(toLayer, connection);
     }
     
-//    protected void addReverseConnection(int fromLayer) {
-//        if (reverseConnections.contains(fromLayer))
-//            throw new RuntimeException("Already reverse connected to layer: " + fromLayer);
-//        
-//        reverseConnections.add(fromLayer);
-//    }
-        
     /* returns connection to the next layer */
     public Connection getConnection() {
         return getConnection(index+1);
@@ -140,17 +130,9 @@ public class Layer {
         return connections.get(toLayer);
     }
     
-//    public Connection getReverseConnection(int fromLayer) {
-//        return reverseConnections.get(fromLayer);
-//    }
-    
     public Map<Integer, Connection> getConnections() {
         return new HashMap<>(connections);
     }
-    
-//    public List<Connection> getReverseConnections() {
-//        return new ArrayList<>(reverseConnections.values());
-//    }
     
     public void initUniform(float min, float max) {
         for(Connection c : connections.values())
@@ -185,6 +167,9 @@ public class Layer {
         if(activation != null)
             activation.compute(input, input, neurons, count);
         
+        if(dropout.rate != 0)
+            dropout.feedForward(input, count);
+        
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             int toLayer = e.getKey();
             Connection c = e.getValue();
@@ -196,7 +181,7 @@ public class Layer {
         }
     }
     
-    protected void feedForward(NeuralNetworkForwardOutput activations) {
+    protected void feedForward(NeuralNetworkForwardOutput activations, boolean disableDropout) {
         int count = activations.batchSize;
         
         float[] processedInput = activations.layerInputs[this.index];
@@ -213,6 +198,12 @@ public class Layer {
             processedInput = activationOutput.output();
         }
         
+        if (dropout.rate != 0 && !disableDropout) {
+            DropoutForwardOutput dropoutOutput = dropout.feedForward(processedInput, count);
+            activations.dropoutOutputs[this.index] = dropoutOutput;
+            processedInput = dropoutOutput.output();
+        }
+
         activations.layerOutputs[this.index] = processedInput;
         
         for (Map.Entry<Integer, Connection> e : connections.entrySet()) {
@@ -263,6 +254,12 @@ public class Layer {
             ConnectionGradient gradient = connection.backpropagate(currentActivationDeltas, nextPreActivationDeltas, activations.layerOutputs[this.index], activations.batchSize);
             connectionGradients.put(nextLayerIndex, gradient);
         }
+        
+        // Dropout backprop
+        if(activations.dropoutOutputs[this.index] != null) {
+            BackpropagateOutput dropoutOutput = dropout.backpropagate(activations.dropoutOutputs[this.index], currentActivationDeltas);
+            currentActivationDeltas = dropoutOutput.deltaLoss();
+        }
 
         // Step 7: Convert Post-Activation Delta to Pre-Activation Delta for the current layer (l)
         // Equation: delta^{(l)}_j = Delta a^{(l)}_j * sigma'(z^{(l)}_j)
@@ -281,7 +278,14 @@ public class Layer {
         preActivationDeltas[this.index] = currentActivationDeltas;
     }
 
-    public void updateWeights(Map<Integer, ConnectionGradient> connectionGradients, float learningRate) {
+    public void updateWeights(Map<Integer, ConnectionGradient> connectionGradients, 
+                              BackpropagateOutput normalizerGradients, 
+                              float learningRate, 
+                              float normalizerLearningRate,
+                              float weightDecay) {
+        if(normalizer != null)
+            normalizer.applyGradients(normalizerGradients, normalizerLearningRate, weightDecay);
+        
         // Loop through each connection of the current layer
         for (Map.Entry<Integer, Connection> entry : connections.entrySet()) {
             int nextLayerIndex = entry.getKey();
@@ -294,7 +298,8 @@ public class Layer {
 
             // Update weights
             for (int i = 0; i < connection.weights.length; i++) {
-                connection.weights[i] -= learningRate * gradient.weightGradients[i];
+                float gradientWithDecay = gradient.weightGradients[i] + weightDecay * connection.weights[i];
+                connection.weights[i] -= learningRate * gradientWithDecay;
             }
 
             // Update biases
@@ -326,6 +331,9 @@ public class Layer {
     void updateWeightsFromGPU(CUstream stream) {
         for(Connection c : connections.values())
             c.updateWeightsFromGPU(stream);
+        
+        if(normalizer != null)
+            normalizer.updateWeightsFromGPU();
     }
     
     protected void freeCPU() {
@@ -363,6 +371,7 @@ public class Layer {
         result.put("neurons", neurons);
         result.put("activation", activation == null ? null : activation.serialize());
         result.put("normalizer", normalizer == null ? null : normalizer.serialize());
+        result.put("dropout", dropout.rate);
         
         List<HashMap> array = new ArrayList<>();
         result.put("connections", array);
@@ -388,8 +397,10 @@ public class Layer {
         
         Map normalizerMap = (Map)serialized.get("normalizer");
         Normalizer normalizer = normalizerMap == null ? null : Normalizer.deserialize(normalizerMap);
-
-        Layer layer = new Layer(index, neurons, activation, normalizer);
+        
+        float dropout = (Float)serialized.get("dropout");
+        
+        Layer layer = new Layer(index, neurons, activation, normalizer, dropout);
         
         List<HashMap> connections = (List)serialized.get("connections");
         
@@ -430,6 +441,8 @@ public class Layer {
         
         if(normalizer != null)
             normalizer.prepareGPU(stream);
+        
+        dropout.prepareGPU(stream);
     }
     
     protected long getMemoryRequirements() {
@@ -467,7 +480,7 @@ public class Layer {
         }
     }
     
-    protected void feedForwardGPU(NeuralNetworkForwardOutputGPU activations, CUstream stream, cublasHandle handle) {
+    protected void feedForwardGPU(NeuralNetworkForwardOutputGPU activations, boolean disableDropout, CUstream stream, cublasHandle handle) {
         int count = activations.batchSize;
         
         CUdeviceptr processedInput = activations.layerInputs[this.index];
@@ -482,6 +495,12 @@ public class Layer {
             ActivationForwardOutputGPU activationOutput = activation.feedForwardGPU(processedInput, neurons, count, stream);
             activations.activationOutputs[this.index] = activationOutput;
             processedInput = activationOutput.output();
+        }
+        
+        if (dropout.rate != 0 && !disableDropout) {
+            DropoutForwardOutputGPU dropoutOutput = dropout.feedForwardGPU(processedInput, count, stream);
+            activations.dropoutOutputs[this.index] = dropoutOutput;
+            processedInput = dropoutOutput.output();
         }
         
         activations.layerOutputs[this.index] = processedInput;
@@ -542,6 +561,12 @@ public class Layer {
             accumulateDeltas = true;
         }
 
+        // Dropout backprop
+        if(activations.dropoutOutputs[this.index] != null) {
+            BackpropagateOutputGPU dropoutOutput = dropout.backpropagateGPU(activations.dropoutOutputs[this.index], currentActivationDeltas, stream);
+            currentActivationDeltas = dropoutOutput.deltaLoss();
+        }
+        
         // Step 7: Convert Post-Activation Delta to Pre-Activation Delta for the current layer (l)
         // Equation: delta[l] = delta[l+1] * activation_derivative(...)
         if(activation != null) {
@@ -558,7 +583,13 @@ public class Layer {
         preActivationDeltas[this.index] = currentActivationDeltas;
     }
 
-    public void updateWeightsGPU(Map<Integer, ConnectionGradientGPU> connectionGradients, float learningRate, CUstream stream, cublasHandle handle) {
+    public void updateWeightsGPU(Map<Integer, ConnectionGradientGPU> connectionGradients, 
+                                 BackpropagateOutputGPU normalizerGradients, 
+                                 float learningRate, float normalizerLearningRate, float weightDecay,
+                                 CUstream stream, cublasHandle handle) {
+        if(normalizer != null)
+            normalizer.applyGradientsGPU(normalizerGradients, normalizerLearningRate, weightDecay, stream);
+        
         // Loop through each connection of the current layer
         for (Map.Entry<Integer, Connection> entry : connections.entrySet()) {
             int nextLayerIndex = entry.getKey();
@@ -570,7 +601,7 @@ public class Layer {
             if (gradient == null)
                 throw new RuntimeException("no gradient for connection " + index + " -> " + nextLayerIndex);
             
-            connection.updateWeightsGPU(gradient, learningRate, stream, handle);
+            connection.updateWeightsGPU(gradient, learningRate, weightDecay, stream, handle);
         }
     }
 
@@ -614,6 +645,8 @@ public class Layer {
         
         if(normalizer != null)
             normalizer.freeGPU(stream);
+        
+        dropout.freeGPU(stream);
     }
 
     protected void freeGPURng() {

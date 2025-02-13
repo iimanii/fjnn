@@ -21,32 +21,23 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network;
+#include <cuda.h>
+#include <cuda_runtime_api.h>
 
-import org.fjnn.activation.Activation;
-import org.fjnn.normalizer.Normalizer;
+#include "util.h"
 
-/**
- *
- * @author ahmed
- */
-public class LayerPlan {
-    /* number of neurons in this layer */
-    public final int neurons;
-
-    /* normalizer for this layer */
-    public final Normalizer normalizer;
+extern "C"
+__global__ void updateWeightsWithDecay(
+    float* weights,             // weights to update
+    const float* gradients,     // gradients
+    float learningRate,         // learning rate
+    float weightDecay,          // weight decay parameter
+    int size                    // total number of weights
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
     
-    /* activation function for this layer */
-    public final Activation activation;
-    
-    /* dropout */
-    float dropout;
-    
-    public LayerPlan(int neurons, Activation activation, Normalizer normalizer, float dropout) {
-        this.neurons = neurons;
-        this.activation = activation;
-        this.normalizer = normalizer;
-        this.dropout = dropout;
+    if (idx < size) {
+        // Combine gradient and weight decay in one update
+        weights[idx] -= learningRate * (gradients[idx] + weightDecay * weights[idx]);
     }
 }

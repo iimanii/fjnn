@@ -87,15 +87,16 @@ public class Sigmoid extends Activation {
         CudaFunctions.activationGradient.SigmoidGradient(preActivation, postActivation, gradient, stride * (long)count, stream);
     }
 
-    public void gradientCrossEntropy(float[] postActivation, float[] truth, float[] result, int outputSize, int batchSize) {
+    public void gradientCrossEntropy(float[] postActivation, float[] truth, float[] result, float alpha, float beta, int outputSize, int batchSize) {
         int size = outputSize * batchSize;
         for (int i = 0; i < size; i++) {
-            result[i] = postActivation[i] - truth[i];
+            float weight = (truth[i] == 1.0f) ? alpha : beta;
+            result[i] = weight * (postActivation[i] - truth[i]);
         }
     }
     
-    public void gradientGPUCrossEntropy(CUdeviceptr postActivation, CUdeviceptr truth, CUdeviceptr result, int outputSize, int batchSize, CUstream stream) {
-        CudaFunctions.activationGradient.SigmoidCrossEntropyGradient(postActivation, truth, result, outputSize * batchSize, stream);
+    public void gradientGPUCrossEntropy(CUdeviceptr postActivation, CUdeviceptr truth, CUdeviceptr result, float alpha, float beta, int outputSize, int batchSize, CUstream stream) {
+        CudaFunctions.activationGradient.SigmoidCrossEntropyGradient(postActivation, truth, result, alpha, beta, outputSize * batchSize, stream);
     }
 
 }

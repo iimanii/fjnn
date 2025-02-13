@@ -80,6 +80,9 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     /* I:size->H:size[activation].....->O:size[activation] */
     String signature;
     
+    /* note: not thread safe .. fix */
+    boolean disableDropout;
+    
     public NeuralNetwork(int input, int output, Activation outputActivation) {
         super(input, output, outputActivation, null);
         
@@ -87,7 +90,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     }
     
     public NeuralNetwork(int input, int output, Activation outputActivation, Normalizer outputNormalizer) {
-        super(input, output, outputActivation, outputNormalizer);
+        super(input, output, outputActivation, outputNormalizer != null ? outputNormalizer.withNeurons(output) : null);
         
         this.plan = new ArrayList<>();
     }
@@ -131,10 +134,16 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     }
     
     public NeuralNetwork addHiddenLayer(int neurons, Activation activation, Normalizer normalizer) {
+        return addHiddenLayer(neurons, activation, normalizer, 0);
+    }
+    
+    public NeuralNetwork addHiddenLayer(int neurons, Activation activation, Normalizer normalizer, float dropout) {
         if(finalized)
             throw new RuntimeException("network already finalized");
         
-        plan.add(new LayerPlan(neurons, activation, normalizer));
+        normalizer = normalizer != null ? normalizer.withNeurons(neurons) : null;
+        
+        plan.add(new LayerPlan(neurons, activation, normalizer, dropout));
         return this;
     }
     
@@ -167,31 +176,25 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         int i=0;
 
         /* input layer */
-        layers[0] = new Layer(i++, inputSize, null, null);
+        layers[0] = new Layer(i++, inputSize, null, null, 0);
 
         Layer prev = layers[0];
 
         for(LayerPlan p : plan) {
-            Layer layer = new Layer(i++, p.neurons, p.activation, p.normalizer);
+            Layer layer = new Layer(i++, p.neurons, p.activation, p.normalizer, p.dropout);
 
             // Add connection from previous layer to the current layer
             prev.addConnection(layer.index, layer.neurons);
-
-            // Also add the reverse connection from the current layer to the previous layer
-//            layer.addReverseConnection(prev.index);//, prev.getConnection(layer.index));
 
             layers[layer.index] = layer;            
             prev = layer;
         }
 
         /* output layer */
-        layers[i] = new Layer(i, outputSize, outputActivation, outputNormalizer);
+        layers[i] = new Layer(i, outputSize, outputActivation, outputNormalizer, 0);
 
         // Add connection from the last hidden layer to the output layer
         prev.addConnection(i, outputSize);
-
-        // Also add the reverse connection from output layer to the previous layer
-//        layers[i].addReverseConnection(prev.index);//, prev.getConnection(i));
 
         last = i;
 
@@ -312,7 +315,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         activations.layerInputs[0] = input;
         
         for (int i = 0; i < layers.length; i++)
-            layers[i].feedForward(activations);
+            layers[i].feedForward(activations, disableDropout);
 
         return activations;
     }
@@ -333,9 +336,10 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         
         /* handle special case */
         if(lossFunction instanceof BinaryCrossEntropy && layers[last].activation instanceof Sigmoid) {
+            BinaryCrossEntropy bceLoss = (BinaryCrossEntropy)lossFunction;
             Sigmoid sigmoid = (Sigmoid) layers[last].activation;
             
-            sigmoid.gradientCrossEntropy(output.activationOutputs[last].postActivation, truth, outputPreActivationDelta, outputSize, output.batchSize);
+            sigmoid.gradientCrossEntropy(output.activationOutputs[last].postActivation, truth, outputPreActivationDelta, bceLoss.alpha, bceLoss.beta, outputSize, output.batchSize);
             
             // If normalizer exists, apply its gradient
             BackpropagateOutput normOutput = null;
@@ -400,7 +404,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     }
     
     @Override
-    public void applyGradients(BackpropagateOutput gradients, float learningRate) {
+    public void applyGradients(BackpropagateOutput gradients, float learningRate, float weightDecay) {
         if(!(gradients instanceof NeuralNetworkBackpropagateOutput))
             throw new RuntimeException("Invalid gradients object");
         
@@ -410,7 +414,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         
         // Update weights and biases using the accumulated gradients
         for (int i = 0; i < layers.length; i++) {
-            layers[i].updateWeights(layerConnectionGradients.get(i), learningRate);
+            layers[i].updateWeights(layerConnectionGradients.get(i), output.normalizerGradients[i], learningRate, learningRate / 100.0f, weightDecay);
         }
     }
     /*
@@ -481,7 +485,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         activations.layerInputs[0] = input;
 
         for(int i=0; i < layers.length; i++) {
-            layers[i].feedForwardGPU(activations, stream, handle);
+            layers[i].feedForwardGPU(activations, disableDropout, stream, handle);
         }
         
         return activations;
@@ -497,9 +501,10 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         
         /* handle special case */
         if(lossFunction instanceof BinaryCrossEntropy && layers[last].activation instanceof Sigmoid) {
+            BinaryCrossEntropy bceLoss = (BinaryCrossEntropy)lossFunction;
             Sigmoid sigmoid = (Sigmoid) layers[last].activation;
             
-            sigmoid.gradientGPUCrossEntropy(output.activationOutputs[last].postActivation, truth, deltaLoss, outputSize, output.batchSize, stream);
+            sigmoid.gradientGPUCrossEntropy(output.activationOutputs[last].postActivation, truth, deltaLoss, bceLoss.alpha, bceLoss.beta, outputSize, output.batchSize, stream);
             
             // If normalizer exists, apply its gradient
             BackpropagateOutputGPU normOutput = null;
@@ -563,7 +568,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     }
     
     @Override
-    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, CUstream stream) {
+    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, float weightDecay, CUstream stream) {
         if(!(gradients instanceof NeuralNetworkBackpropagateOutputGPU))
             throw new RuntimeException("Invalid gradients object");
         
@@ -574,7 +579,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
 
         // Update weights and biases using the accumulated gradients
         for (int i = 0; i < layers.length; i++) {
-            layers[i].updateWeightsGPU(layerConnectionGradients.get(i), learningRate, stream, handle);
+            layers[i].updateWeightsGPU(layerConnectionGradients.get(i), output.normalizerGradients[i], learningRate, learningRate / 100.0f, weightDecay, stream, handle);
         }
     }
     
@@ -1048,5 +1053,13 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     @Override
     public long getBackpropagateMemoryRequired(int batchSize) {
         return getGPUComputeMemoryRequired(batchSize);
+    }
+    
+    public void enableDropout() {
+        disableDropout = false;
+    }
+    
+    public void disableDropout() {
+        disableDropout = true;
     }
 }

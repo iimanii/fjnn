@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2024 ahmed.
+ * Copyright 2025 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,43 +21,52 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network;
+package org.fjnn.normalizer.outputs;
 
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
+import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.cuda.CudaUtil;
 
 /**
  *
  * @author ahmed
  */
-public class ConnectionGradientGPU {
-    public final int neurons;
-    public final int links;
-    public CUdeviceptr weightGradients;  // Gradient for each weight in the connection
-    public CUdeviceptr biasGradients;    // Gradient for each bias in the connection
+public class DropoutForwardOutputGPU extends FeedForwardOutputGPU {
+   public CUdeviceptr input;  // reference to input
+   public CUdeviceptr output; // scaled and masked output
+   public CUdeviceptr mask;   // dropout mask
 
-    public ConnectionGradientGPU(int neurons, int links, CUstream stream) {
-        this.neurons = neurons;
-        this.links = links;
-        
-        this.weightGradients = CudaUtil.createFloatAsync(neurons * links, stream);
-        this.biasGradients = CudaUtil.createFloatAsync(links, stream);
-    }
+   public DropoutForwardOutputGPU(CUdeviceptr input, int outputDim, int batchSize, CUstream stream) {
+       super(outputDim, batchSize);
+       
+       this.input = input;
+       this.output = CudaUtil.createFloatAsync(outputDim * batchSize, stream);
+       this.mask = CudaUtil.createFloatAsync(outputDim, stream);
+   }
 
+   @Override
+   public CUdeviceptr output() {
+       return output;
+   }
+
+    @Override
     public void free() {
-        CudaUtil.free(weightGradients);
-        CudaUtil.free(biasGradients);
-        
-        weightGradients = null;
-        biasGradients = null;
+       CudaUtil.free(output);
+       CudaUtil.free(mask);
+       
+       input = null;
+       output = null;
+       mask = null;
     }
     
-    public void freeAsync(CUstream stream) {
-        CudaUtil.freeAsync(weightGradients, stream);
-        CudaUtil.freeAsync(biasGradients, stream);
-        
-        weightGradients = null;
-        biasGradients = null;
-    }
+   @Override 
+   public void freeAsync(CUstream stream) {
+       CudaUtil.freeAsync(output, stream);
+       CudaUtil.freeAsync(mask, stream);
+       
+       input = null;
+       output = null;
+       mask = null;
+   }
 }

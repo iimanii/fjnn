@@ -238,7 +238,9 @@ public class Connection {
                                            CUstream stream, 
                                            cublasHandle handle) {        
         ConnectionGradientGPU gradient = new ConnectionGradientGPU(neurons, links, stream);
-            
+        
+        
+        float scale = 1.0f / count;
         Pointer pAlpha = Pointer.to(new float[]{1.0f});
         Pointer pBeta = Pointer.to(new float[]{0.0f});
 
@@ -256,9 +258,10 @@ public class Connection {
 
             // Step 1: Compute the weight gradient using cuBLAS
             // gradW[l] = delta[l+1] * activations[l].transpose() 
+            // Include averaging in the alpha
             JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_N, cublasOperation.CUBLAS_OP_T, 
                                  m, n, k, 
-                                 pAlpha, a, m, b, n, 
+                                 Pointer.to(new float[]{scale}), a, m, b, n, 
                                  pBeta, c, m);
 
             // Step 2: Compute pre-activation deltas for current layer
@@ -281,7 +284,7 @@ public class Connection {
             // Step 4: If count > 1, average the gradients
             if (count > 1) {
                 Pointer alpha = Pointer.to(new float[]{1.0f / count});
-                JCublas2.cublasSscal(handle, neurons * links, alpha, gradient.weightGradients, 1);
+//                JCublas2.cublasSscal(handle, neurons * links, alpha, gradient.weightGradients, 1);
                 JCublas2.cublasSscal(handle, links, alpha, gradient.biasGradients, 1);
             }
         }
@@ -289,14 +292,19 @@ public class Connection {
         return gradient;
     }
 
-    void updateWeightsGPU(ConnectionGradientGPU gradient, float learningRate, CUstream stream, cublasHandle handle) {
+    void updateWeightsGPU(ConnectionGradientGPU gradient, float learningRate, float weightDecay, CUstream stream, cublasHandle handle) {
         float alpha = -learningRate;
-        
+
         synchronized(handle) {
             JCublas2.cublasSetStream(handle, new cudaStream_t(stream));
             
-            // Update biases using cuBLAS: weights = weights - learningRate * weightGradients
-            JCublas2.cublasSaxpy(handle, neurons * links, Pointer.to(new float[]{alpha}), gradient.weightGradients, 1, weightsGPU, 1);
+            if(weightDecay > 0) {
+                // Calculate new gradient = weightGradients + weightDecay * weights;
+                CudaFunctions.updateWeightsWithDecay(weightsGPU, gradient.weightGradients, learningRate, weightDecay, neurons * links, stream);
+            } else {
+                // Update weights using cuBLAS: weights = weights - learningRate * weightGradients
+               JCublas2.cublasSaxpy(handle, neurons * links, Pointer.to(new float[]{alpha}), gradient.weightGradients, 1, weightsGPU, 1);
+            }
 
             // Update biases using cuBLAS: biases = biases - learningRate * biasGradients
             JCublas2.cublasSaxpy(handle, links, Pointer.to(new float[]{alpha}), gradient.biasGradients, 1, biasesGPU, 1);

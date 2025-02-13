@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Ahmed Tarek.
+ * Copyright 2025 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,32 +21,25 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network;
+package org.fjnn.normalizer.outputs;
 
-import org.fjnn.activation.Activation;
-import org.fjnn.normalizer.Normalizer;
+import org.fjnn.base.output.BackpropagateOutput;
 
 /**
  *
  * @author ahmed
  */
-public class LayerPlan {
-    /* number of neurons in this layer */
-    public final int neurons;
+public class DropoutBackpropagateOutput extends BackpropagateOutput {
+   public final float[] deltaLoss;
 
-    /* normalizer for this layer */
-    public final Normalizer normalizer;
-    
-    /* activation function for this layer */
-    public final Activation activation;
-    
-    /* dropout */
-    float dropout;
-    
-    public LayerPlan(int neurons, Activation activation, Normalizer normalizer, float dropout) {
-        this.neurons = neurons;
-        this.activation = activation;
-        this.normalizer = normalizer;
-        this.dropout = dropout;
-    }
+   public DropoutBackpropagateOutput(int deltaLossDim, int batchSize) {
+       super(deltaLossDim, batchSize);
+       
+       this.deltaLoss = new float[deltaLossDim * batchSize];
+   }
+
+   @Override
+   public float[] deltaLoss() {
+       return deltaLoss;
+   }
 }

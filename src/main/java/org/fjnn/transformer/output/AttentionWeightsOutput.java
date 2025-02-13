@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Ahmed Tarek.
+ * Copyright 2025 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,32 +21,27 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network;
+package org.fjnn.transformer.output;
 
-import org.fjnn.activation.Activation;
-import org.fjnn.normalizer.Normalizer;
+import org.fjnn.base.output.FeedForwardOutput;
 
 /**
  *
  * @author ahmed
  */
-public class LayerPlan {
-    /* number of neurons in this layer */
-    public final int neurons;
+public class AttentionWeightsOutput extends FeedForwardOutput {
+    public final float[] input;             // original input values
+    public final float[] output;            // final output after weight transformation
+    
+    public AttentionWeightsOutput(float[] input, int outputDim, int batchSize) {
+        super(outputDim, batchSize);
+        
+        this.input = input;
+        this.output = new float[outputDim * batchSize];
+    }
 
-    /* normalizer for this layer */
-    public final Normalizer normalizer;
-    
-    /* activation function for this layer */
-    public final Activation activation;
-    
-    /* dropout */
-    float dropout;
-    
-    public LayerPlan(int neurons, Activation activation, Normalizer normalizer, float dropout) {
-        this.neurons = neurons;
-        this.activation = activation;
-        this.normalizer = normalizer;
-        this.dropout = dropout;
+    @Override
+    public float[] output() {
+        return output;
     }
 }

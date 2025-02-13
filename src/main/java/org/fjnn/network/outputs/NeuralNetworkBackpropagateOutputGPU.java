@@ -78,8 +78,7 @@ public class NeuralNetworkBackpropagateOutputGPU extends BackpropagateOutputGPU 
         // Free connection gradient weights and biases
         for (Map<Integer, ConnectionGradientGPU> connectionGradients : layerConnectionGradients) {
             for (ConnectionGradientGPU gradient : connectionGradients.values()) {
-                CudaUtil.free(gradient.weightGradients);
-                CudaUtil.free(gradient.biasGradients);
+                gradient.free();
             }
         }
     }
@@ -103,8 +102,7 @@ public class NeuralNetworkBackpropagateOutputGPU extends BackpropagateOutputGPU 
         // Free connection gradient weights and biases
         for (Map<Integer, ConnectionGradientGPU> connectionGradients : layerConnectionGradients) {
             for (ConnectionGradientGPU gradient : connectionGradients.values()) {
-                CudaUtil.freeAsync(gradient.weightGradients, stream);
-                CudaUtil.freeAsync(gradient.biasGradients, stream);
+                gradient.freeAsync(stream);
             }
         }
     }

@@ -65,7 +65,7 @@ public class MeanSquareError extends Loss {
     
     @Override
     public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
-        CudaFunctions.MeanSquareErrorDerivative(output, expected, result, size, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
+        CudaFunctions.MeanSquareErrorDerivative(output, expected, result, size, stream);
     }
 }
 

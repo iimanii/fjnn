@@ -39,6 +39,19 @@ import org.fjnn.cuda.CudaUtil;
  */
 public class BinaryCrossEntropy extends Loss {
     final static float eps = 1e-7f;
+
+    public final float alpha;
+    public final float beta;
+
+    public BinaryCrossEntropy() {
+        this(1.0f, 1.0f);
+    }
+    
+    public BinaryCrossEntropy(float alpha, float beta) {
+        this.alpha = alpha;
+        this.beta = beta;
+    }
+    
     
     @Override
     public float compute(float[] output, float[] expected) {
@@ -48,8 +61,9 @@ public class BinaryCrossEntropy extends Loss {
         float loss = 0;
         for (int i = 0; i < output.length; i++) {
             float clipped = Math.max(eps, Math.min(1-eps, output[i])); 
+            float weight = (expected[i] == 1.0f) ? alpha : beta;
 
-            loss += -expected[i] * Math.log(clipped) - (1 - expected[i]) * Math.log(1 - clipped);
+            loss += weight * (-expected[i] * Math.log(clipped) - (1 - expected[i]) * Math.log(1 - clipped));
         }
         
         return loss / output.length;
@@ -62,14 +76,15 @@ public class BinaryCrossEntropy extends Loss {
         for (int i = 0; i < output.length; i++) {
             float clipped = Math.max(eps, Math.min(1-eps, output[i]));
             
-            derivatives[i] = (clipped - expected[i]) / (clipped * (1 - clipped));
+            float weight = (expected[i] == 1.0f) ? alpha : beta;
+            derivatives[i] = weight * (clipped - expected[i]) / (clipped * (1 - clipped));
         }
         return derivatives;
     }
 
     @Override
     public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
-        CudaFunctions.BinaryCrossEntropyDerivative(output, expected, result, size, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
+        CudaFunctions.BinaryCrossEntropyDerivative(output, expected, result, alpha, beta, size, stream);
     }
     
 }

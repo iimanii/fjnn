@@ -468,17 +468,17 @@ public class MultiModalNetwork extends Network<MultiModalNetwork> {
     }
 
     @Override
-    public long getBackpropagateMemoryRequired(int batchCount) {
+    public long getBackpropagateMemoryRequired(int batchSize) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
     @Override
-    public void applyGradients(BackpropagateOutput gradients, float learningRate) {
+    public void applyGradients(BackpropagateOutput gradients, float learningRate, float weightDecay) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
     @Override
-    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, CUstream stream) {
+    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, float weightDecay, CUstream stream) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 }

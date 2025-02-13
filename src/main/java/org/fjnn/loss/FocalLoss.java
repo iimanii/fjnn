@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2024 ahmed.
+ * Copyright 2025 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,53 +25,59 @@ package org.fjnn.loss;
 
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
-import org.fjnn.cuda.CudaFunctions;
-import org.fjnn.cuda.CudaUtil;
 
 /**
  *
  * @author ahmed
+ * 
+ * Incomplete class .. needs testing
  */
-public class WeightedMeanSquareError extends Loss {
-
-    float[] weights;
-    CUdeviceptr weightsGPU;
-
-    public WeightedMeanSquareError(float[] weights, CUdeviceptr weightsGPU) {
-        this.weights = weights;
-        this.weightsGPU = weightsGPU;
+public class FocalLoss extends Loss {
+    private final float gamma; // focusing parameter
+    final static float eps = 1e-7f;
+    
+    public FocalLoss(float gamma) {
+        this.gamma = gamma;
     }
     
-    // Compute the Mean Squared Error
     @Override
     public float compute(float[] output, float[] expected) {
-        if(output.length != expected.length || output.length != weights.length)
+        if (output.length != expected.length)
             throw new RuntimeException();
         
-        float sum = 0;
+        float loss = 0;
         for (int i = 0; i < output.length; i++) {
-            float diff = output[i] - expected[i];
-            sum += weights[i] * diff * diff;
+            float clipped = Math.max(eps, Math.min(1-eps, output[i]));
+            
+            float pt = expected[i] == 1 ? clipped : (1 - clipped);
+            float modulating_factor = (float)Math.pow(1 - pt, gamma);
+            loss += -modulating_factor * (expected[i] * Math.log(clipped) + (1 - expected[i]) * Math.log(1 - clipped));
         }
-        return sum / (2 * output.length);
+        
+        return loss / output.length;
     }
 
-    // Compute the derivative of MSE with respect to the predicted values
     @Override
     public float[] derivative(float[] output, float[] expected) {
-        if(output.length != expected.length || output.length != weights.length)
-            throw new RuntimeException();
-        
         float[] derivatives = new float[output.length];
+        
         for (int i = 0; i < output.length; i++) {
-            derivatives[i] = weights[i] * (output[i] - expected[i]);
+            float clipped = Math.max(eps, Math.min(1-eps, output[i]));
+            float pt = expected[i] == 1 ? clipped : (1 - clipped);
+            float modulating_factor = (float)Math.pow(1 - pt, gamma);
+            
+            // Combining BCE derivative with focal loss terms
+            float bce_derivative = (clipped - expected[i]) / (clipped * (1 - clipped));
+            float focal_term = modulating_factor * (gamma * (float)Math.log(pt) * (expected[i] == 1 ? -1 : 1) + 1);
+            
+            derivatives[i] = bce_derivative * focal_term;
         }
         return derivatives;
     }
     
     @Override
     public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
-        CudaFunctions.MeanSquareErrorDerivative(output, expected, result, size, stream);
+        // GPU implementation would need to be added
+        throw new UnsupportedOperationException("GPU implementation not available");
     }
 }
-

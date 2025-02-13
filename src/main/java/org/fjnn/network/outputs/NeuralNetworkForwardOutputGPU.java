@@ -29,6 +29,7 @@ import org.fjnn.activation.output.ActivationForwardOutput;
 import org.fjnn.activation.output.ActivationForwardOutputGPU;
 import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.cuda.CudaUtil;
+import org.fjnn.normalizer.outputs.DropoutForwardOutputGPU;
 
 /**
  *
@@ -40,8 +41,9 @@ public class NeuralNetworkForwardOutputGPU extends FeedForwardOutputGPU {
     public final CUdeviceptr[] layerInputs;                         // initial input to each layer
     public final FeedForwardOutputGPU[] normalizerOutputs;          // stores normalizer outputs for each layer
     public final ActivationForwardOutputGPU[] activationOutputs;    // activation results
+    public final DropoutForwardOutputGPU[] dropoutOutputs;
     public final CUdeviceptr[] layerOutputs;                        // outputs from the layer activation
-
+   
     public NeuralNetworkForwardOutputGPU(int outputDim, int batchSize, int layerCount) {
         super(outputDim, batchSize);
         
@@ -49,6 +51,7 @@ public class NeuralNetworkForwardOutputGPU extends FeedForwardOutputGPU {
         this.layerInputs = new CUdeviceptr[layerCount];
         this.normalizerOutputs = new FeedForwardOutputGPU[layerCount];
         this.activationOutputs = new ActivationForwardOutputGPU[layerCount];
+        this.dropoutOutputs = new DropoutForwardOutputGPU[layerCount];
         this.layerOutputs = new CUdeviceptr[layerCount];
     }
 
@@ -75,6 +78,11 @@ public class NeuralNetworkForwardOutputGPU extends FeedForwardOutputGPU {
                 activationOutputs[i].free();
                 activationOutputs[i] = null;
             }
+            
+           if(dropoutOutputs[i] != null) {
+               dropoutOutputs[i].free();
+               dropoutOutputs[i] = null;
+           }
         }
     }
 
@@ -96,6 +104,11 @@ public class NeuralNetworkForwardOutputGPU extends FeedForwardOutputGPU {
                 activationOutputs[i].freeAsync(stream);
                 activationOutputs[i] = null;
             }
+            
+           if(dropoutOutputs[i] != null) {
+               dropoutOutputs[i].freeAsync(stream);
+               dropoutOutputs[i] = null;
+           }
         }
     }
 }

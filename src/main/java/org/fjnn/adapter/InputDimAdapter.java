@@ -184,12 +184,12 @@ public class InputDimAdapter extends ModelComponent {
     }
 
     @Override
-    public void applyGradients(BackpropagateOutput gradients, float learningRate) {
+    public void applyGradients(BackpropagateOutput gradients, float learningRate, float weightDecay) {
         // do nothing
     }
 
     @Override
-    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, CUstream stream) {
+    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, float weightDecay, CUstream stream) {
         // do nothing        
     }
 }

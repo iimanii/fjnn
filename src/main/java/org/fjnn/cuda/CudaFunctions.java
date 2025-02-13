@@ -207,6 +207,37 @@ public class CudaFunctions {
             );
         }
         
+        public static void multiplyStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, float alpha, long stride, long count, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "multiply_stride", device);
+            
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+            
+            int blockSizeX = (int) Math.min(threadsPerBlock, stride);
+            int blockSizeY = threadsPerBlock / blockSizeX;
+            int gridSizeX = (int)((stride - 1) / threadsPerBlock + 1);
+            int blocksCount = (int)((count - 1) / blockSizeY + 1);
+            
+            int gridSizeY = Math.min(CudaEngine.getMaxGridSize(device)[1], blocksCount);
+            int gridSizeZ = (blocksCount - 1) / gridSizeY + 1;
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(a),
+                Pointer.to(b),
+                Pointer.to(c),
+                Pointer.to(new float[]{alpha}),
+                Pointer.to(new long[]{stride}),
+                Pointer.to(new long[]{count * stride})
+            );
+
+            JCudaDriver.cuLaunchKernel(function,
+                gridSizeX, gridSizeY, gridSizeZ,
+                blockSizeX, blockSizeY, 1,
+                0, stream,
+                kernelParameters, null
+            );
+        }
+        
         public static void reduceStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long sizeA, long sizeB, CUstream stream) {
             if(sizeA < sizeB)
                 throw new RuntimeException("Size A must be larger or equal to Size B");
@@ -361,6 +392,31 @@ public class CudaFunctions {
             reduceStride(temp, temp.withByteOffset(stride * CudaUtil.FLOAT_SIZE), dest, stride, stride, stream);
             
             CudaUtil.freeAsync(temp, stream);
+        }
+
+        public static void threshold(CUdeviceptr mask, float rate, int size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "threshold", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(mask),
+                Pointer.to(new float[]{rate}),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
         }
     }
     
@@ -672,8 +728,37 @@ public class CudaFunctions {
             ActivationGradient("SigmoidGradient", preActivation, postActivation, gradient, size, stream);
         }
         
-        public static void SigmoidCrossEntropyGradient(CUdeviceptr postActivation, CUdeviceptr truth, CUdeviceptr gradient, long size, CUstream stream) {
-            ActivationGradient("SigmoidCrossEntropyGradient", postActivation, truth, gradient, size, stream);            
+        public static void SigmoidCrossEntropyGradient(CUdeviceptr postActivation, 
+                                                       CUdeviceptr truth, 
+                                                       CUdeviceptr gradient, 
+                                                       float alpha, float beta,
+                                                       long size, 
+                                                       CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "SigmoidCrossEntropyGradient", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(postActivation),
+                Pointer.to(truth),
+                Pointer.to(gradient),
+                Pointer.to(new float[]{alpha}),
+                Pointer.to(new float[]{beta}),                
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );          
         }
         
         public static void SinGradient(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long size, CUstream stream) {
@@ -823,8 +908,42 @@ public class CudaFunctions {
         }
         
     }
+    
+    /* Weights */
+    public static void updateWeightsWithDecay(CUdeviceptr weights, 
+                                              CUdeviceptr gradients, 
+                                              float learningRate, 
+                                              float weightDecay, 
+                                              long size, 
+                                              CUstream stream) {
+        int device = CudaEngine.getThreadDeviceId();
+
+        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONNECTION, "updateWeightsWithDecay", device);
+
+        Pointer kernelParameters = Pointer.to(
+            Pointer.to(weights),
+            Pointer.to(gradients),
+            Pointer.to(new float[]{learningRate}),
+            Pointer.to(new float[]{weightDecay}),
+            Pointer.to(new long[]{size})
+        );
+
+        int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+        long gridSizeX = (size - 1) / blockSizeX + 1;
+
+        if(gridSizeX > Integer.MAX_VALUE)
+            throw new RuntimeException();
+
+        JCudaDriver.cuLaunchKernel(function,
+        (int)gridSizeX, 1, 1,      // Grid dimension
+            blockSizeX, 1, 1,      // Block dimension
+            0, stream,             // Shared memory size and stream
+            kernelParameters, null // Kernel- and extra parameters
+        );
+    }
+    
     /* Loss Functions */
-    public static void MeanSquareErrorDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, int threadsPerBlock, CUstream stream) {
+    public static void MeanSquareErrorDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
         int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "MeanSquareErrorDerivative", device);
@@ -835,6 +954,8 @@ public class CudaFunctions {
             Pointer.to(result),
             Pointer.to(new long[]{size})
         );
+        
+        int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
         
         int blockSizeX = (int)Math.min(threadsPerBlock, size);
         long gridSizeX = (size - 1) / blockSizeX + 1;
@@ -850,7 +971,7 @@ public class CudaFunctions {
         );
     }
     
-    public static void BinaryCrossEntropyDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, int threadsPerBlock, CUstream stream) {
+    public static void BinaryCrossEntropyDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, float alpha, float beta, long size, CUstream stream) {
         int device = CudaEngine.getThreadDeviceId();
         
         CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "BinaryCrossEntropyDerivative", device);
@@ -859,8 +980,12 @@ public class CudaFunctions {
             Pointer.to(output),
             Pointer.to(expected),
             Pointer.to(result),
+            Pointer.to(new float[]{alpha}),
+            Pointer.to(new float[]{beta}),
             Pointer.to(new long[]{size})
         );
+        
+        int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
         
         int blockSizeX = (int)Math.min(threadsPerBlock, size);
         long gridSizeX = (size - 1) / blockSizeX + 1;

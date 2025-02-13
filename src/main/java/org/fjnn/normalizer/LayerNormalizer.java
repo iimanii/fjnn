@@ -77,8 +77,15 @@ public class LayerNormalizer extends Normalizer {
         Arrays.fill(beta, 0.0f);
     }
     
+     /*
+      * Requires at least 2 neurons to function properly since single-neuron normalization 
+      * would result in zero output.
+      */
     @Override
     public LayerNormalizer withNeurons(int neurons) {
+        if(neurons < 2)
+            throw new RuntimeException("LayerNormalizer requires at least 2 neurons to function properly");
+        
         return new LayerNormalizer(neurons);
     }
     
@@ -304,7 +311,7 @@ public class LayerNormalizer extends Normalizer {
     }
 
     @Override
-    public void applyGradients(BackpropagateOutput gradients, float learningRate) {
+    public void applyGradients(BackpropagateOutput gradients, float learningRate, float weightDecay) {
         if(!(gradients instanceof LayerNormalizerBackpropagateOutput))
             throw new RuntimeException("LayerNormalizerBackpropagateOutput required for applying gradients");
 
@@ -318,7 +325,7 @@ public class LayerNormalizer extends Normalizer {
     }
 
     @Override
-    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, CUstream stream) {
+    public void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, float weightDecay, CUstream stream) {
         if(!(gradients instanceof LayerNormalizerBackpropagateOutputGPU))
             throw new RuntimeException("LayerNormalizerBackpropagateOutputGPU required for applying gradients");
 
@@ -430,7 +437,15 @@ public class LayerNormalizer extends Normalizer {
     }
 
     @Override
-    public long getBackpropagateMemoryRequired(int batchCount) {
-        return neurons * batchCount * Float.SIZE * 4; // prenorm, postnorm, means, variances
+    public long getBackpropagateMemoryRequired(int batchSize) {
+        return neurons * batchSize * Float.SIZE * 4; // prenorm, postnorm, means, variances
+    }
+
+    public float[] getGamma() {
+        return gamma;
+    }
+
+    public float[] getBeta() {
+        return beta;
     }
 }

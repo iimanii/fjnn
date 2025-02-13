@@ -164,11 +164,12 @@ __global__ void SigmoidGradient(float* preActivation, float* postActivation, flo
 }
 
 extern "C"
-__global__ void SigmoidCrossEntropyGradient(float* postActivation, float* truth, float* result, long size) {
+__global__ void SigmoidCrossEntropyGradient(float* postActivation, float* truth, float* result, float alpha, float beta, long size) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     
     if(i < size) {
-        result[i] = postActivation[i] - truth[i];
+        float weight = (truth[i] == 1.0f) ? alpha : beta;
+        result[i] = weight * (postActivation[i] - truth[i]);
     }
 }
 

@@ -78,6 +78,24 @@ __global__ void add_stride(float* a, float* b, float* c, long stride_size, long 
     }
 }
 
+/**
+ * c[x + stride * stride_len] = alpha * a[x + stride * stride_len] * b[x]
+ * 
+ * each block calculates 1 or more strides
+ */
+extern "C"
+__global__ void multiply_stride(float* a, float* b, float* c, float alpha, long stride_size, long total_size) {
+   int b_index = threadIdx.x + blockIdx.x * blockDim.x;
+   
+   if(b_index < stride_size) {
+       int stride_id = threadIdx.y + (blockIdx.z * gridDim.y + blockIdx.y) * blockDim.y;
+       int a_index = b_index + stride_id * stride_size;
+       
+       if(a_index < total_size)
+           c[a_index] = alpha * a[a_index] * b[b_index];
+   }
+}
+
 extern "C"
 __global__ void reduce_stride(float* a, float* b, float* c, long sizeA, long sizeB) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -113,5 +131,14 @@ __global__ void optimized_reduce_stride(float* a, float* b, float* c, long sizeA
             c[index] = a[index] + b[index];
         else if(index < sizeA)
             c[index] = a[index];
+    }
+}
+
+extern "C" 
+__global__ void threshold(float* mask, float rate, int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (idx < n) {
+        mask[idx] = mask[idx] > rate ? 1.0f : 0.0f;
     }
 }

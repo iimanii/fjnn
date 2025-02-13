@@ -92,8 +92,8 @@ public abstract class ModelComponent {
     }
     protected abstract BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, CUstream stream);
     
-    public abstract void applyGradients(BackpropagateOutput gradients, float learningRate);
-    public abstract void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, CUstream stream);
+    public abstract void applyGradients(BackpropagateOutput gradients, float learningRate, float weightDecay);
+    public abstract void applyGradientsGPU(BackpropagateOutputGPU gradients, float learningRate, float weightDecay, CUstream stream);
 
     public abstract boolean gpuReady();
     
@@ -187,5 +187,5 @@ public abstract class ModelComponent {
     
     public abstract long getParametersCount();
     
-    public abstract long getBackpropagateMemoryRequired(int batchCount);
+    public abstract long getBackpropagateMemoryRequired(int batchSize);
 }

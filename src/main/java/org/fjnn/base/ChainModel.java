@@ -280,27 +280,28 @@ public class ChainModel {
         return result;        
     }
     
-    public void applyGradients(BackpropagateOutputMap gradients, float learningRate) {
+    public void applyGradients(BackpropagateOutputMap gradients, float learningRate, float weightDecay) {
         // Apply gradients to each component in reverse order (same as backprop)
         for (int i = components.size() - 1; i >= 0; i--) {
             ModelComponent component = components.get(i);
             BackpropagateOutput componentGradients = gradients.getOutput(i);
 
             // Apply gradients to this component
-            component.applyGradients(componentGradients, learningRate);
+            component.applyGradients(componentGradients, learningRate, weightDecay);
         }
     }
 
-    public void applyGradientsGPU(BackpropagateOutputMapGPU gradients, float learningRate, CUstream stream) {
+    public void applyGradientsGPU(BackpropagateOutputMapGPU gradients, float learningRate, float weightDecay, CUstream stream) {
         // Apply gradients to each component in reverse order (same as backprop)
         for (int i = components.size() - 1; i >= 0; i--) {
             ModelComponent component = components.get(i);
             BackpropagateOutputGPU componentGradients = gradients.getOutput(i);
 
             // Apply gradients to this component
-            component.applyGradientsGPU(componentGradients, learningRate, stream);
+            component.applyGradientsGPU(componentGradients, learningRate, weightDecay, stream);
         }
     }
+    
     public void prepareGPU() {
         prepareGPU(null);
     }
@@ -326,6 +327,10 @@ public class ChainModel {
         }
         
         return true;
+    }
+    
+    public final int getGPUDeviceId() {
+        return components.isEmpty() ? -1 : components.get(0).deviceId;
     }
     
     // Retrieve the list of components
@@ -410,13 +415,35 @@ public class ChainModel {
         return parametersCount;
     }
     
-    public long getBackpropagateMemoryRequired(int batchCount) {
+    public long getBackpropagateMemoryRequired(int batchSize) {
         long parametersCount = 0;
         
         for (ModelComponent component : components) {
-            parametersCount += component.getBackpropagateMemoryRequired(batchCount);
+            parametersCount += component.getBackpropagateMemoryRequired(batchSize);
         }
         
         return parametersCount;        
+    }
+
+    public int getComponentsCount() {
+        return components.size();
+    }
+
+    public void enableDropout() {
+        for(int i=0; i < components.size(); i++) {
+            ModelComponent component = components.get(i);
+            
+            if(component instanceof NeuralNetwork)
+               ((NeuralNetwork)component).enableDropout();
+        }
+    }
+    
+    public void disableDropout() {
+        for(int i=0; i < components.size(); i++) {
+            ModelComponent component = components.get(i);
+            
+            if(component instanceof NeuralNetwork)
+               ((NeuralNetwork)component).disableDropout();
+        }
     }
 }
