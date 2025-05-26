@@ -29,7 +29,7 @@ import org.fjnn.util.Rng;
  *
  * @author ahmed
  */
-public class GeneticConfig {
+public class GeneticNetworkConfig {
     
     public enum mutation {
         ADD_NODE (0.1f),

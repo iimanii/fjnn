@@ -44,12 +44,13 @@ public class CudaModule {
     public static final String UTIL_FILE = "util.h";
     
     public static final String MODULE_ACCUMULATE = "accumulate";
-    public static final String MODULE_CONNECTION = "connection";
     public static final String MODULE_ACTIVATION = "activation";
+    public static final String MODULE_CONNECTION = "connection";
+    public static final String MODULE_CONVOLUTION = "convolution";
     public static final String MODULE_NORMALIZER = "normalizer";    
     public static final String MODULE_GENETIC = "genetic";    
     public static final String MODULE_LOSS = "loss";
-    public static final String MODULE_VECTOR = "vector";   
+    public static final String MODULE_VECTOR = "vector";
     public static final String MODULE_TEST = "test";    
     
     public static final String MATRIX_HEADER = "matrix.h";

@@ -31,7 +31,7 @@ import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.base.output.BackpropagateOutputGPU;
 import org.fjnn.cuda.CudaUtil;
-import org.fjnn.network.ConnectionGradientGPU;
+import org.fjnn.network.gradient.ConnectionGradientGPU;
 
 /**
  *

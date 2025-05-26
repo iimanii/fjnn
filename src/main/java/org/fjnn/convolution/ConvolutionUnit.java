@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Ahmed Tarek.
+ * Copyright 2025 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,37 +21,47 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.genetic;
+package org.fjnn.convolution;
 
-import java.io.Serializable;
-import org.fjnn.genetic.GeneticNetworkConfig.mutation;
+import jcuda.driver.CUdeviceptr;
+import jcuda.driver.CUstream;
+import jcuda.jcublas.cublasHandle;
+import org.fjnn.convolution.output.ConvolutionUnitForwardOutput;
+import org.fjnn.convolution.output.ConvolutionUnitForwardOutputGPU;
 
 /**
- *
+ * Common interface for convolution layers
  * @author ahmed
  */
-public class Innovation implements Serializable {    
-    private static final long serialVersionUID = 7659747973936368991l;
-    
-    public final mutation m;
-    public final String from;
-    public final String to;
 
-    public Innovation(mutation m, String from, String to) {
-        this.m = m;
-        this.from = from;
-        this.to = to;
-    }
+public interface ConvolutionUnit {
+    /**
+     * CPU forward pass
+     */
+    ConvolutionUnitForwardOutput feedForward(float[] input, int batchSize);
     
-    public String id() {
-        return getId(m, from, to);
-    }
+    /**
+     * GPU forward pass  
+     */
+    ConvolutionUnitForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchSize, CUstream stream, cublasHandle handle);
     
-    public static String getId(mutation m, GeneticNode from, GeneticNode to) {
-        return from.id + ":" + to.id + ":" + m.toString();
-    }
+    /**
+     * Compute output size for given input
+     */
+    int computeOutputSize(int inputSize);
     
-    public static String getId(mutation m, String from, String to) {
-        return from + ":" + to + ":" + m.toString();
-    }
+    /**
+     * Prepare GPU resources
+     */
+    void prepareGPU(CUstream stream);
+    
+    /**
+     * Free GPU resources
+     */
+    void freeGPU(CUstream stream);
+    
+    /**
+     * Check if GPU ready
+     */
+    boolean gpuReady();
 }

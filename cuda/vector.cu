@@ -38,6 +38,17 @@ __global__ void add(float* a, float* b, float* c, long size) {
 }
 
 /**
+ * c[x] = a[x] + alpha * b[x]
+ */
+extern "C"
+__global__ void add_multiply(float* a, float* b, float* c, float alpha, long size) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+
+    if (idx < size)
+        c[idx] = a[idx] + alpha * b[idx];
+}
+
+/**
  * c[x] = a[x] * b[x]
  */
 extern "C"
@@ -57,6 +68,18 @@ __global__ void scale(float* data, float factor, long size) {
 
     if (tid < size) {
         data[tid] *= factor;
+    }
+}
+
+/**
+ * array[x] = array[x] + y;
+ */
+extern "C"
+__global__ void add_scalar(float* array, float scalar, long size) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if (idx < size) {
+        array[idx] += scalar;
     }
 }
 

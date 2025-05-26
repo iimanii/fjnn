@@ -45,7 +45,7 @@ import org.fjnn.base.output.BackpropagateOutput;
 import org.fjnn.base.output.BackpropagateOutputGPU;
 import org.fjnn.base.output.FeedForwardOutput;
 import org.fjnn.base.output.FeedForwardOutputGPU;
-import org.fjnn.genetic.GeneticConfig.mutation;
+import org.fjnn.genetic.GeneticNetworkConfig.mutation;
 import org.fjnn.genetic.GeneticNode.NodeType;
 import org.fjnn.loss.Loss;
 import org.fjnn.network.Connection;
@@ -316,7 +316,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
         return mutate(false);
     }
     public Innovation mutate(boolean smart) {
-        mutation m = GeneticConfig.getRandomMutation();
+        mutation m = GeneticNetworkConfig.getRandomMutation();
 
         switch(m) {
             case ADD_NODE:

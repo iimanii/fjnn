@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2024 ahmed.
+ * Copyright 2025 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,43 +21,43 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.network;
-
-import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUstream;
-import org.fjnn.cuda.CudaUtil;
+package org.fjnn.genetic;
 
 /**
  *
  * @author ahmed
  */
-public class ConnectionGradientGPU {
-    public final int neurons;
-    public final int links;
-    public CUdeviceptr weightGradients;  // Gradient for each weight in the connection
-    public CUdeviceptr biasGradients;    // Gradient for each bias in the connection
+public class GeneticParameterOptimizerConfig {
+    public int populationSize = 100;
+    public int tournamentSize = 3;
+    public int eliteCount = 10;
+    public double mutationRate = 0.1;
+    public double mutationStrength = 0.1;
+    public double crossoverRate = 0.8;
+    public SelectionType selectionType = SelectionType.TOURNAMENT;
+    public CrossoverType crossoverType = CrossoverType.UNIFORM;
+    public MutationType mutationType = MutationType.GAUSSIAN;
+    public boolean adaptiveMutation = true;
+    public int stagnationThreshold = 10;
+    public double mutationDecay = 0.95;
+    public boolean useGPU = false;
 
-    public ConnectionGradientGPU(int neurons, int links, CUstream stream) {
-        this.neurons = neurons;
-        this.links = links;
-        
-        this.weightGradients = CudaUtil.createFloatAsync(neurons * links, stream);
-        this.biasGradients = CudaUtil.createFloatAsync(links, stream);
+    public enum SelectionType {
+        TOURNAMENT,
+        ROULETTE,
+        RANK
     }
 
-    public void free() {
-        CudaUtil.free(weightGradients);
-        CudaUtil.free(biasGradients);
-        
-        weightGradients = null;
-        biasGradients = null;
+    public enum CrossoverType {
+        UNIFORM,
+        ARITHMETIC,
+        SINGLE_POINT,
+        BLEND_ALPHA
     }
-    
-    public void freeAsync(CUstream stream) {
-        CudaUtil.freeAsync(weightGradients, stream);
-        CudaUtil.freeAsync(biasGradients, stream);
-        
-        weightGradients = null;
-        biasGradients = null;
+
+    public enum MutationType {
+        GAUSSIAN,
+        UNIFORM,
+        POLYNOMIAL
     }
 }

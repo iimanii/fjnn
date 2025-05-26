@@ -23,6 +23,8 @@
  */
 package org.fjnn.network;
 
+import org.fjnn.network.gradient.ConnectionGradient;
+import org.fjnn.network.gradient.ConnectionGradientGPU;
 import org.fjnn.network.outputs.NeuralNetworkBackpropagateOutput;
 import org.fjnn.network.outputs.NeuralNetworkForwardOutput;
 import org.fjnn.network.outputs.NeuralNetworkForwardOutputGPU;

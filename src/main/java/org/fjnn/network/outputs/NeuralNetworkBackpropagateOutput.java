@@ -28,7 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.fjnn.base.output.BackpropagateOutput;
-import org.fjnn.network.ConnectionGradient;
+import org.fjnn.network.gradient.ConnectionGradient;
 
 public class NeuralNetworkBackpropagateOutput extends BackpropagateOutput {
     public final float[][] preActivationDeltas;

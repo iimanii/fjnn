@@ -24,6 +24,7 @@
 package org.fjnn.cuda;
 
 import jcuda.Pointer;
+import jcuda.Sizeof;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
@@ -71,6 +72,33 @@ public class CudaFunctions {
                 Pointer.to(a),
                 Pointer.to(b),
                 Pointer.to(c),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+        
+        public static void add(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, float alpha, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "add_multiply", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(a),
+                Pointer.to(b),
+                Pointer.to(c),
+                Pointer.to(new float[]{alpha}),
                 Pointer.to(new long[]{size})
             );
 
@@ -141,16 +169,22 @@ public class CudaFunctions {
                 kernelParameters, null              // Kernel- and extra parameters
             );
         }
-
+        
+        /**
+         * a[x + stride * stride_len] += b[x]
+         * @param a
+         * @param b
+         * @param stride
+         * @param count
+         * @param stream 
+         */
         public static void addStride(CUdeviceptr a, CUdeviceptr b, int stride, int count, CUstream stream) {
-            addStride(a, b, stride, count, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
-        }
-
-        public static void addStride(CUdeviceptr a, CUdeviceptr b, int stride, int count, int threadsPerBlock, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
             CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACCUMULATE, "add_stride", device);
-
+            
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+            
             int blockSizeX = Math.min(threadsPerBlock, stride);
             int blockSizeY = threadsPerBlock / blockSizeX;
             int gridSizeX = (stride - 1) / threadsPerBlock + 1;
@@ -174,15 +208,22 @@ public class CudaFunctions {
             );
         }
         
-        public static void addStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, int stride, int count, CUstream stream) {
-            addStride(a, b, c, stride, count, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
-        }
-        
-        public static void addStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long stride, long count, int threadsPerBlock, CUstream stream) {
+        /**
+         * c[x + stride * stride_len] = a[x + stride * stride_len] + b[x]
+         * @param a
+         * @param b
+         * @param c
+         * @param stride
+         * @param count
+         * @param stream 
+         */
+        public static void addStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long stride, long count, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
             CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "add_stride", device);
 
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+            
             int blockSizeX = (int) Math.min(threadsPerBlock, stride);
             int blockSizeY = threadsPerBlock / blockSizeX;
             int gridSizeX = (int)((stride - 1) / threadsPerBlock + 1);
@@ -416,6 +457,266 @@ public class CudaFunctions {
                 blockSizeX, 1, 1,      // Block dimension
                 0, stream,             // Shared memory size and stream
                 kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+
+        public static void addScalar(CUdeviceptr array, float scalar, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "add_scalar", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(array),
+                Pointer.to(new float[]{scalar}),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+                (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,          // Block dimension
+                0, stream,                 // Shared memory size and stream
+                kernelParameters, null     // Kernel- and extra parameters
+            );
+        }
+    }
+    
+    public static class convolution {
+        /**
+         * Transforms input data for 1D convolution using im2col on GPU.
+         * 
+         * @param input The input data on GPU
+         * @param inputDim The dimension of each input (sequence length)
+         * @param kernelWidth
+         * @param unitSize
+         * @param outputDim
+         * @param batchSize Number of batches in the input
+         * @param stream CUDA stream
+         * @return The transformed im2col matrix on GPU
+         */
+        public static CUdeviceptr im2col(CUdeviceptr input, int inputDim, int kernelWidth, int unitSize, int outputDim, int batchSize, CUstream stream) {
+            int totalSize = batchSize * outputDim * kernelWidth;
+
+            // Allocate output memory on GPU
+            CUdeviceptr im2colOutput = CudaUtil.createFloatAsync(totalSize, stream);
+
+            // Launch custom CUDA kernel to perform im2col operation
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONVOLUTION, "im2col", device);
+
+            // Set up kernel parameters
+            Pointer kernelParams = Pointer.to(
+                Pointer.to(input),
+                Pointer.to(im2colOutput),
+                Pointer.to(new int[]{inputDim}),
+                Pointer.to(new int[]{outputDim}),
+                Pointer.to(new int[]{kernelWidth}),
+                Pointer.to(new int[]{unitSize}),
+                Pointer.to(new int[]{batchSize})
+            );
+
+            // Each thread processes one element in the output matrix
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+            int blocksPerGrid = (totalSize + threadsPerBlock - 1) / threadsPerBlock;
+
+            JCudaDriver.cuLaunchKernel(function,
+                                     blocksPerGrid, 1, 1,         // Grid dimensions
+                                     threadsPerBlock, 1, 1,       // Block dimensions  
+                                     0, stream,                   // Shared memory and stream
+                                     kernelParams, null);         // Parameters
+
+            return im2colOutput;
+        }
+        
+        /**
+        * Extracts channel data from interleaved input for KernelGroup processing
+         * @param input
+         * @param output
+         * @param inputStride
+         * @param unitSize
+         * @param channelOffset
+         * @param numChunks
+         * @param batchSize
+         * @param stream
+        */
+        public static void extractChannel(CUdeviceptr input, CUdeviceptr output, 
+                                          int inputStride, int unitSize, int channelOffset, 
+                                          int totalChunks, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONVOLUTION, "extractChannel", device);
+
+            int totalElements = unitSize * totalChunks;
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, totalElements);
+            int gridSizeX = (totalElements - 1) / blockSizeX + 1;
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(input),
+                Pointer.to(output),
+                Pointer.to(new int[]{inputStride}),
+                Pointer.to(new int[]{unitSize}),
+                Pointer.to(new int[]{channelOffset}),
+                Pointer.to(new int[]{totalChunks})
+            );
+
+            JCudaDriver.cuLaunchKernel(function,
+                gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,     // Block dimension
+                0, stream,            // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+        
+        /**
+         * Distributes gradients from a channel back to interleaved input positions
+         */
+        public static void distributeChannelGradients(CUdeviceptr channelGradients, 
+                                                     CUdeviceptr inputGradients,
+                                                     int inputStride, 
+                                                     int unitSize, 
+                                                     int channelOffset, 
+                                                     int totalChunks, 
+                                                     CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONVOLUTION, 
+                                                     "distributeChannelGradients", device);
+
+            int totalElements = unitSize * totalChunks;
+            int threadsPerBlock = 256;
+            int blocksPerGrid = (totalElements + threadsPerBlock - 1) / threadsPerBlock;
+
+            Pointer kernelParams = Pointer.to(
+                Pointer.to(channelGradients),
+                Pointer.to(inputGradients),
+                Pointer.to(new int[]{inputStride}),
+                Pointer.to(new int[]{unitSize}),
+                Pointer.to(new int[]{channelOffset}),
+                Pointer.to(new int[]{totalChunks})
+            );
+
+            JCudaDriver.cuLaunchKernel(function,
+                                     blocksPerGrid, 1, 1,
+                                     threadsPerBlock, 1, 1,
+                                     0, stream,
+                                     kernelParams, null);
+        }
+        
+        /**
+         * Distribute output gradients to input gradients (col2im operation)
+         */
+        public static void computeInputGradients(CUdeviceptr inputGradients, 
+                                                 CUdeviceptr outputGradients, 
+                                                 CUdeviceptr weights,
+                                                 int unitSize,
+                                                 int inputSize, 
+                                                 int outputSize, 
+                                                 int kernelWidth, 
+                                                 int batchSize, 
+                                                 CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONVOLUTION, 
+                                                     "computeInputGradients", device);
+
+            int totalElements = inputSize * batchSize;
+            int threadsPerBlock = 256;
+            int blocksPerGrid = (totalElements + threadsPerBlock - 1) / threadsPerBlock;
+
+            Pointer kernelParams = Pointer.to(
+                Pointer.to(inputGradients),
+                Pointer.to(outputGradients),
+                Pointer.to(weights),
+                Pointer.to(new int[]{unitSize}),
+                Pointer.to(new int[]{inputSize}),
+                Pointer.to(new int[]{outputSize}),
+                Pointer.to(new int[]{kernelWidth}),
+                Pointer.to(new int[]{batchSize})
+            );
+
+            JCudaDriver.cuLaunchKernel(function,
+                                     blocksPerGrid, 1, 1,
+                                     threadsPerBlock, 1, 1,
+                                     0, stream,
+                                     kernelParams, null);
+        }
+        
+        public static void adamUpdateWeights(CUdeviceptr weights,
+                                           CUdeviceptr gradients,
+                                           CUdeviceptr momentum,
+                                           CUdeviceptr velocity,
+                                           float learningRate,
+                                           float beta1,
+                                           float beta2,
+                                           float epsilon,
+                                           float beta1Power,
+                                           float beta2Power,
+                                           long size,
+                                           CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONVOLUTION, "adamUpdateWeights", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(weights),
+                Pointer.to(gradients),
+                Pointer.to(momentum),
+                Pointer.to(velocity),
+                Pointer.to(new float[]{learningRate}),
+                Pointer.to(new float[]{beta1}),
+                Pointer.to(new float[]{beta2}),
+                Pointer.to(new float[]{epsilon}),
+                Pointer.to(new float[]{beta1Power}),
+                Pointer.to(new float[]{beta2Power}),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+                (int)gridSizeX, 1, 1,
+                blockSizeX, 1, 1,
+                0, stream,
+                kernelParameters, null
+            );
+        }
+
+        public static void adamUpdateBias(CUdeviceptr bias,
+                                        CUdeviceptr gradient,
+                                        CUdeviceptr momentum,
+                                        CUdeviceptr velocity,
+                                        float learningRate,
+                                        float beta1,
+                                        float beta2,
+                                        float epsilon,
+                                        float beta1Power,
+                                        float beta2Power,
+                                        CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONVOLUTION, "adamUpdateBias", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(bias),
+                Pointer.to(gradient),
+                Pointer.to(momentum),
+                Pointer.to(velocity),
+                Pointer.to(new float[]{learningRate}),
+                Pointer.to(new float[]{beta1}),
+                Pointer.to(new float[]{beta2}),
+                Pointer.to(new float[]{epsilon}),
+                Pointer.to(new float[]{beta1Power}),
+                Pointer.to(new float[]{beta2Power})
+            );
+
+            JCudaDriver.cuLaunchKernel(function,
+                1, 1, 1,
+                1, 1, 1,
+                0, stream,
+                kernelParameters, null
             );
         }
     }
@@ -942,6 +1243,7 @@ public class CudaFunctions {
         );
     }
     
+    
     /* Loss Functions */
     public static void MeanSquareErrorDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
         int device = CudaEngine.getThreadDeviceId();
@@ -1318,4 +1620,5 @@ public class CudaFunctions {
         
         return 128;
     }
+
 }

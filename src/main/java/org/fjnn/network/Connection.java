@@ -23,6 +23,8 @@
  */
 package org.fjnn.network;
 
+import org.fjnn.network.gradient.ConnectionGradient;
+import org.fjnn.network.gradient.ConnectionGradientGPU;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
