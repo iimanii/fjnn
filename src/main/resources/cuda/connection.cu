@@ -41,3 +41,81 @@ __global__ void updateWeightsWithDecay(
         weights[idx] -= learningRate * (gradients[idx] + weightDecay * weights[idx]);
     }
 }
+
+/**
+ * Adam weight update kernel for Connection class
+ */
+extern "C"
+__global__ void adamUpdateConnectionWeights(float* weights,
+                                            float* gradients,
+                                            float* momentum,
+                                            float* velocity,
+                                            float learningRate,
+                                            float beta1,
+                                            float beta2,
+                                            float epsilon,
+                                            float beta1Power,
+                                            float beta2Power,
+                                            float weightDecay,
+                                            long size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (idx < size) {
+        float grad = gradients[idx];
+        
+        // Update momentum: m = beta1 * m + (1 - beta1) * grad
+        momentum[idx] = beta1 * momentum[idx] + (1.0f - beta1) * grad;
+        
+        // Update velocity: v = beta2 * v + (1 - beta2) * grad^2
+        velocity[idx] = beta2 * velocity[idx] + (1.0f - beta2) * grad * grad;
+        
+        // Bias correction
+        float mHat = momentum[idx] / (1.0f - beta1Power);
+        float vHat = velocity[idx] / (1.0f - beta2Power);
+        
+        // Update weight: w = w - lr * mHat / (sqrt(vHat) + epsilon)
+        weights[idx] -= learningRate * mHat / (sqrtf(vHat) + epsilon);
+        
+        // Apply weight decay after Adam update (similar to CPU implementation)
+        if (weightDecay > 0.0f) {
+            weights[idx] -= learningRate * weightDecay * weights[idx];
+        }
+    }
+}
+
+/**
+ * Adam bias update kernel for Connection class
+ */
+extern "C"
+__global__ void adamUpdateConnectionBiases(float* biases,
+                                           float* gradients,
+                                           float* momentum,
+                                           float* velocity,
+                                           float learningRate,
+                                           float beta1,
+                                           float beta2,
+                                           float epsilon,
+                                           float beta1Power,
+                                           float beta2Power,
+                                           long size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (idx < size) {
+        float grad = gradients[idx];
+        
+        // Update momentum: m = beta1 * m + (1 - beta1) * grad
+        momentum[idx] = beta1 * momentum[idx] + (1.0f - beta1) * grad;
+        
+        // Update velocity: v = beta2 * v + (1 - beta2) * grad^2
+        velocity[idx] = beta2 * velocity[idx] + (1.0f - beta2) * grad * grad;
+        
+        // Bias correction
+        float mHat = momentum[idx] / (1.0f - beta1Power);
+        float vHat = velocity[idx] / (1.0f - beta2Power);
+        
+        // Update bias: b = b - lr * mHat / (sqrt(vHat) + epsilon)
+        biases[idx] -= learningRate * mHat / (sqrtf(vHat) + epsilon);
+        
+        // Note: No weight decay applied to biases (consistent with CPU implementation)
+    }
+}

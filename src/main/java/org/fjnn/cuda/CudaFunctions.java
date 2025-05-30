@@ -29,6 +29,9 @@ import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
+import org.fjnn.convolution.output.ConvolutionForwardOutputGPU;
+import org.fjnn.convolution.output.layer.ConvolutionLayerForwardOutputGPU;
+import org.fjnn.convolution.output.unit.ConvolutionUnitForwardOutputGPU;
 import org.fjnn.util.util;
 
 /**
@@ -38,6 +41,7 @@ import org.fjnn.util.util;
 public class CudaFunctions {
     
     public static class vector {
+        /* a[i] *= factor */
         public static void scale(CUdeviceptr a, float factor, long size, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
@@ -62,7 +66,8 @@ public class CudaFunctions {
                 kernelParameters, null // Kernel- and extra parameters
             );
         }
-    
+        
+        /* c[i] = a[i] + b[i] */
         public static void add(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long size, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
@@ -89,6 +94,7 @@ public class CudaFunctions {
             );
         }
         
+        /* c[i] = a[i] + alpha * b[i] */
         public static void add(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, float alpha, long size, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
@@ -116,6 +122,7 @@ public class CudaFunctions {
             );
         }
         
+        /* c[i] = a[i] * b[i] */
         public static void multiply(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long size, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
@@ -142,82 +149,19 @@ public class CudaFunctions {
             );
         }
         
-        public static void copyStride(CUdeviceptr src, CUdeviceptr dst, int stride, int spread, int count, CUstream stream) {
-            int device = CudaEngine.getThreadDeviceId();
-            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
-
-            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACCUMULATE, "copy_stride", device);
-
-            int blockSizeX = Math.min(threadsPerBlock, stride);
-            int blockSizeY = threadsPerBlock / blockSizeX;
-            int gridSizeY  = (stride - 1) / threadsPerBlock + 1;
-
-            int gridSizeX = (count - 1) / blockSizeY + 1;
-
-            Pointer kernelParameters = Pointer.to(
-                Pointer.to(src),
-                Pointer.to(dst),
-                Pointer.to(new int[]{stride}),
-                Pointer.to(new int[]{spread}),
-                Pointer.to(new int[]{count})
-            );
-
-            JCudaDriver.cuLaunchKernel(function,
-                gridSizeX, gridSizeY, 1,            // Grid dimension
-                blockSizeX, blockSizeY, 1,          // Block dimension
-                0, stream,                          // Shared memory size and stream
-                kernelParameters, null              // Kernel- and extra parameters
-            );
+        /*
+         * stride_base = stride_id * stride_len -> stride_id in [0, batchSize)
+         * a[i + stride_base] += b[i]
+         */
+        public static void addStride(CUdeviceptr a, CUdeviceptr b, int stride, int batchSize, CUstream stream) {
+            addStride(a, b, a, stride, batchSize, stream);
         }
         
-        /**
-         * a[x + stride * stride_len] += b[x]
-         * @param a
-         * @param b
-         * @param stride
-         * @param count
-         * @param stream 
+        /*
+         * stride_base = stride_id * stride_len -> stride_id in [0, batchSize) 
+         * c[x + stride_base] = a[x + stride_base] + b[x]
          */
-        public static void addStride(CUdeviceptr a, CUdeviceptr b, int stride, int count, CUstream stream) {
-            int device = CudaEngine.getThreadDeviceId();
-
-            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACCUMULATE, "add_stride", device);
-            
-            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
-            
-            int blockSizeX = Math.min(threadsPerBlock, stride);
-            int blockSizeY = threadsPerBlock / blockSizeX;
-            int gridSizeX = (stride - 1) / threadsPerBlock + 1;
-
-            int blocksCount = (count - 1) / blockSizeY + 1;
-            int gridSizeY = Math.min(CudaEngine.getMaxGridSize(device)[1], blocksCount);
-            int gridSizeZ = (blocksCount - 1) / gridSizeY + 1;
-
-            Pointer kernelParameters = Pointer.to(
-                Pointer.to(a),
-                Pointer.to(b),
-                Pointer.to(new int[]{stride}),
-                Pointer.to(new long[]{(long)count * stride})
-            );
-
-            JCudaDriver.cuLaunchKernel(function,
-                gridSizeX, gridSizeY, gridSizeZ,    // Grid dimension
-                blockSizeX, blockSizeY, 1,          // Block dimension
-                0, stream,                          // Shared memory size and stream
-                kernelParameters, null              // Kernel- and extra parameters
-            );
-        }
-        
-        /**
-         * c[x + stride * stride_len] = a[x + stride * stride_len] + b[x]
-         * @param a
-         * @param b
-         * @param c
-         * @param stride
-         * @param count
-         * @param stream 
-         */
-        public static void addStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long stride, long count, CUstream stream) {
+        public static void addStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long stride, long batchSize, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
             CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "add_stride", device);
@@ -228,7 +172,7 @@ public class CudaFunctions {
             int blockSizeY = threadsPerBlock / blockSizeX;
             int gridSizeX = (int)((stride - 1) / threadsPerBlock + 1);
 
-            int blocksCount = (int)((count - 1) / blockSizeY + 1);
+            int blocksCount = (int)((batchSize - 1) / blockSizeY + 1);
             int gridSizeY = Math.min(CudaEngine.getMaxGridSize(device)[1], blocksCount);
             int gridSizeZ = (blocksCount - 1) / gridSizeY + 1;
 
@@ -237,7 +181,7 @@ public class CudaFunctions {
                 Pointer.to(b),
                 Pointer.to(c),
                 Pointer.to(new long[]{stride}),
-                Pointer.to(new long[]{(long)count * stride})
+                Pointer.to(new long[]{(long)batchSize * stride})
             );
 
             JCudaDriver.cuLaunchKernel(function,
@@ -248,6 +192,10 @@ public class CudaFunctions {
             );
         }
         
+        /*
+         * stride_base = stride_id * stride_len -> stride_id in [0, count)
+         * c[i + stride_base] = alpha * a[i + stride_base] * b[i]
+         */
         public static void multiplyStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, float alpha, long stride, long count, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
             CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "multiply_stride", device);
@@ -718,6 +666,113 @@ public class CudaFunctions {
                 0, stream,
                 kernelParameters, null
             );
+        }
+        
+        /**
+        * Copy one unit's output to the positional concatenation result with strided updates
+        * @param unitOutput      GPU pointer to this unit's output data [unitOutputSize * batchSize]
+        * @param result          GPU pointer to the final reshaped output buffer [refOutputSize * numUnits * batchSize]
+        * @param unitIdx         Index of this unit (0 to numUnits-1), determines stride offset in result
+        * @param numUnits        Total number of convolution units being combined (stride size)
+        * @param refFirstInput
+        * @param unitFirstInput
+        * @param unitOutputSize
+        * @param refOutputSize   Number of output values the reference unit produces (limits copy range)
+        * @param batchSize       Number of batches being processed
+        * @param stream          CUDA stream for asynchronous execution
+        */
+        public static void copyUnitToPositionalOutput(CUdeviceptr unitOutput,
+                                             CUdeviceptr result,
+                                             int unitIdx,
+                                             int numUnits,
+                                             int refFirstInput,
+                                             int unitFirstInput,
+                                             int unitOutputSize,
+                                             int refOutputSize,
+                                             int batchSize,
+                                             CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONVOLUTION, 
+                                                      "copyUnitToPositionalOutput", device);
+
+            int totalElements = refOutputSize * batchSize;
+            int blockSize = CudaUtil.PREFERRED_BLOCK_SIZE;
+            int gridSize = (totalElements + blockSize - 1) / blockSize;
+
+            Pointer kernelParams = Pointer.to(
+                Pointer.to(unitOutput),
+                Pointer.to(result),
+                Pointer.to(new int[]{unitIdx}),
+                Pointer.to(new int[]{numUnits}),
+                Pointer.to(new int[]{refFirstInput}),
+                Pointer.to(new int[]{unitFirstInput}),
+                Pointer.to(new int[]{unitOutputSize}),
+                Pointer.to(new int[]{refOutputSize}),
+                Pointer.to(new int[]{batchSize})
+            );
+
+            JCudaDriver.cuLaunchKernel(function, 
+                    gridSize, 1, 1, 
+                    blockSize, 1, 1, 
+                    0, stream, 
+                    kernelParams, null);
+        }
+        
+        public static void copyUnitStrided(CUdeviceptr src, int srcDim, int srcStart, 
+                                           CUdeviceptr dst, int dstDim, int dstStart,
+                                           int stride, int count, int batchSize,
+                                           CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONVOLUTION, 
+                                                      "copyUnitStrided", device);
+
+            int totalElements = count * batchSize;
+            int blockSize = CudaUtil.PREFERRED_BLOCK_SIZE;
+            int gridSize = (totalElements + blockSize - 1) / blockSize;
+
+            Pointer kernelParams = Pointer.to(
+                Pointer.to(src),
+                Pointer.to(new int[]{srcDim}),
+                Pointer.to(new int[]{srcStart}),
+                Pointer.to(dst),
+                Pointer.to(new int[]{dstDim}),
+                Pointer.to(new int[]{dstStart}),
+                Pointer.to(new int[]{stride}),
+                Pointer.to(new int[]{count}),
+                Pointer.to(new int[]{batchSize})
+            );
+
+            JCudaDriver.cuLaunchKernel(function, gridSize, 1, 1, blockSize, 1, 1,
+                                     0, stream, kernelParams, null);
+        }
+        
+        public static void copyUnitStridedReverse(CUdeviceptr src, CUdeviceptr dst,
+                                                 int srcStart, int dstStart,
+                                                 int srcSize, int stride, int dstSize,
+                                                 int count, int batchSize,
+                                                 CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONVOLUTION, 
+                                                      "copyUnitStridedReverse", device);
+
+            int totalElements = count * batchSize;
+            int blockSize = CudaUtil.PREFERRED_BLOCK_SIZE;
+            int gridSize = (totalElements + blockSize - 1) / blockSize;
+
+            Pointer kernelParams = Pointer.to(
+                Pointer.to(src),
+                Pointer.to(dst),
+                Pointer.to(new int[]{srcStart}),
+                Pointer.to(new int[]{dstStart}),
+                Pointer.to(new int[]{srcSize}),
+                Pointer.to(new int[]{stride}),
+                Pointer.to(new int[]{dstSize}),
+                Pointer.to(new int[]{count}),
+                Pointer.to(new int[]{batchSize})
+            );
+
+            JCudaDriver.cuLaunchKernel(function, gridSize, 1, 1, blockSize, 1, 1,
+                                     0, stream, kernelParams, null);
         }
     }
     
@@ -1210,124 +1265,216 @@ public class CudaFunctions {
         
     }
     
-    /* Weights */
-    public static void updateWeightsWithDecay(CUdeviceptr weights, 
-                                              CUdeviceptr gradients, 
-                                              float learningRate, 
-                                              float weightDecay, 
-                                              long size, 
-                                              CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
+    public static class connection {
+        /* Weights */
+        public static void updateWeightsWithDecay(CUdeviceptr weights, 
+                                                  CUdeviceptr gradients, 
+                                                  float learningRate, 
+                                                  float weightDecay, 
+                                                  long size, 
+                                                  CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
 
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONNECTION, "updateWeightsWithDecay", device);
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONNECTION, "updateWeightsWithDecay", device);
 
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(weights),
-            Pointer.to(gradients),
-            Pointer.to(new float[]{learningRate}),
-            Pointer.to(new float[]{weightDecay}),
-            Pointer.to(new long[]{size})
-        );
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(weights),
+                Pointer.to(gradients),
+                Pointer.to(new float[]{learningRate}),
+                Pointer.to(new float[]{weightDecay}),
+                Pointer.to(new long[]{size})
+            );
 
-        int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
-        long gridSizeX = (size - 1) / blockSizeX + 1;
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
 
-        if(gridSizeX > Integer.MAX_VALUE)
-            throw new RuntimeException();
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
 
-        JCudaDriver.cuLaunchKernel(function,
-        (int)gridSizeX, 1, 1,      // Grid dimension
-            blockSizeX, 1, 1,      // Block dimension
-            0, stream,             // Shared memory size and stream
-            kernelParameters, null // Kernel- and extra parameters
-        );
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+        
+        public static void adamUpdateConnectionWeights(CUdeviceptr weights,
+                                                       CUdeviceptr gradients,
+                                                       CUdeviceptr momentum,
+                                                       CUdeviceptr velocity,
+                                                       float learningRate,
+                                                       float beta1,
+                                                       float beta2,
+                                                       float epsilon,
+                                                       float beta1Power,
+                                                       float beta2Power,
+                                                       float weightDecay,
+                                                       long size,
+                                                       CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONNECTION, "adamUpdateConnectionWeights", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(weights),
+                Pointer.to(gradients),
+                Pointer.to(momentum),
+                Pointer.to(velocity),
+                Pointer.to(new float[]{learningRate}),
+                Pointer.to(new float[]{beta1}),
+                Pointer.to(new float[]{beta2}),
+                Pointer.to(new float[]{epsilon}),
+                Pointer.to(new float[]{beta1Power}),
+                Pointer.to(new float[]{beta2Power}),
+                Pointer.to(new float[]{weightDecay}),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+                (int)gridSizeX, 1, 1,
+                blockSizeX, 1, 1,
+                0, stream,
+                kernelParameters, null
+            );
+        }
+
+        public static void adamUpdateConnectionBiases(CUdeviceptr biases,
+                                                      CUdeviceptr gradients,
+                                                      CUdeviceptr momentum,
+                                                      CUdeviceptr velocity,
+                                                      float learningRate,
+                                                      float beta1,
+                                                      float beta2,
+                                                      float epsilon,
+                                                      float beta1Power,
+                                                      float beta2Power,
+                                                      long size,
+                                                      CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_CONNECTION, "adamUpdateConnectionBiases", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(biases),
+                Pointer.to(gradients),
+                Pointer.to(momentum),
+                Pointer.to(velocity),
+                Pointer.to(new float[]{learningRate}),
+                Pointer.to(new float[]{beta1}),
+                Pointer.to(new float[]{beta2}),
+                Pointer.to(new float[]{epsilon}),
+                Pointer.to(new float[]{beta1Power}),
+                Pointer.to(new float[]{beta2Power}),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+                (int)gridSizeX, 1, 1,
+                blockSizeX, 1, 1,
+                0, stream,
+                kernelParameters, null
+            );
+        }
     }
     
     
     /* Loss Functions */
-    public static void MeanSquareErrorDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
-        
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "MeanSquareErrorDerivative", device);
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(output),
-            Pointer.to(expected),
-            Pointer.to(result),
-            Pointer.to(new long[]{size})
-        );
-        
-        int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
-        
-        int blockSizeX = (int)Math.min(threadsPerBlock, size);
-        long gridSizeX = (size - 1) / blockSizeX + 1;
-        
-        if(gridSizeX > Integer.MAX_VALUE)
-            throw new RuntimeException();
-        
-        JCudaDriver.cuLaunchKernel(function,
-        (int)gridSizeX, 1, 1,      // Grid dimension
-            blockSizeX, 1, 1,      // Block dimension
-            0, stream,             // Shared memory size and stream
-            kernelParameters, null // Kernel- and extra parameters
-        );
-    }
-    
-    public static void BinaryCrossEntropyDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, float alpha, float beta, long size, CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
-        
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "BinaryCrossEntropyDerivative", device);
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(output),
-            Pointer.to(expected),
-            Pointer.to(result),
-            Pointer.to(new float[]{alpha}),
-            Pointer.to(new float[]{beta}),
-            Pointer.to(new long[]{size})
-        );
-        
-        int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
-        
-        int blockSizeX = (int)Math.min(threadsPerBlock, size);
-        long gridSizeX = (size - 1) / blockSizeX + 1;
-        
-        if(gridSizeX > Integer.MAX_VALUE)
-            throw new RuntimeException();
-        
-        JCudaDriver.cuLaunchKernel(function,
-        (int)gridSizeX, 1, 1,      // Grid dimension
-            blockSizeX, 1, 1,      // Block dimension
-            0, stream,             // Shared memory size and stream
-            kernelParameters, null // Kernel- and extra parameters
-        );
-    }
-    
-    public static void WeightedMeanSquareErrorPrime(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr weights, CUdeviceptr result, long size, int threadsPerBlock, CUstream stream) {
-        int device = CudaEngine.getThreadDeviceId();
-        
-        CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "WeightedMeanSquareErrorPrime", device);
-        
-        Pointer kernelParameters = Pointer.to(
-            Pointer.to(output),
-            Pointer.to(expected),
-            Pointer.to(weights),
-            Pointer.to(result),
-            Pointer.to(new long[]{size})
-        );
-        
-        int blockSizeX = (int)Math.min(threadsPerBlock, size);
-        long gridSizeX = (size - 1) / blockSizeX + 1;
-        
-        if(gridSizeX > Integer.MAX_VALUE)
-            throw new RuntimeException();
-        
-        JCudaDriver.cuLaunchKernel(function,
-        (int)gridSizeX, 1, 1,      // Grid dimension
-            blockSizeX, 1, 1,      // Block dimension
-            0, stream,             // Shared memory size and stream
-            kernelParameters, null // Kernel- and extra parameters
-        );
+    public static class loss {
+        public static void MeanSquareErrorDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "MeanSquareErrorDerivative", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(output),
+                Pointer.to(expected),
+                Pointer.to(result),
+                Pointer.to(new long[]{size})
+            );
+
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+
+            int blockSizeX = (int)Math.min(threadsPerBlock, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+
+        public static void BinaryCrossEntropyDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, float alpha, float beta, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "BinaryCrossEntropyDerivative", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(output),
+                Pointer.to(expected),
+                Pointer.to(result),
+                Pointer.to(new float[]{alpha}),
+                Pointer.to(new float[]{beta}),
+                Pointer.to(new long[]{size})
+            );
+
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+
+            int blockSizeX = (int)Math.min(threadsPerBlock, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+
+        public static void WeightedMeanSquareErrorPrime(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr weights, CUdeviceptr result, long size, int threadsPerBlock, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "WeightedMeanSquareErrorPrime", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(output),
+                Pointer.to(expected),
+                Pointer.to(weights),
+                Pointer.to(result),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int)Math.min(threadsPerBlock, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
     }
     
     /* utility functions */
@@ -1619,6 +1766,144 @@ public class CudaFunctions {
         }
         
         return 128;
+    }
+    
+    public static class playground {
+        /**
+         * Simple 1D version: c[x + stride * i] = a[x + stride * i] + b[x]
+         * Uses 1D grid, no shared memory.
+         */
+        public static void addStride1DSimple(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long stride, long count, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_TEST, "add_stride_1d_simple", device);
+
+            long totalElements = stride * count;
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+            long gridSize = (totalElements + threadsPerBlock - 1) / threadsPerBlock;
+
+            if (gridSize > Integer.MAX_VALUE) {
+                throw new RuntimeException("Grid size too large: " + gridSize);
+            }
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(a),
+                Pointer.to(b),
+                Pointer.to(c),
+                Pointer.to(new long[]{stride}),
+                Pointer.to(new long[]{totalElements})
+            );
+
+            JCudaDriver.cuLaunchKernel(function,
+                (int)gridSize, 1, 1,         // Grid dimension
+                threadsPerBlock, 1, 1,       // Block dimension
+                0, stream,                   // Shared memory size and stream
+                kernelParameters, null       // Kernel parameters
+            );
+        }
+
+        /**
+         * Shared memory 1D version: c[x + stride * i] = a[x + stride * i] + b[x]
+         * Uses 1D grid with shared memory for array b.
+         */
+        public static void addStride1DShared(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long stride, long count, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_TEST, "add_stride_1d_shared", device);
+
+            long totalElements = stride * count;
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+            long gridSize = (totalElements + threadsPerBlock - 1) / threadsPerBlock;
+
+            if (gridSize > Integer.MAX_VALUE) {
+                throw new RuntimeException("Grid size too large: " + gridSize);
+            }
+
+            int sharedMemSize = (int)(stride * CudaUtil.FLOAT_SIZE);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(a),
+                Pointer.to(b),
+                Pointer.to(c),
+                Pointer.to(new long[]{stride}),
+                Pointer.to(new long[]{totalElements})
+            );
+
+            JCudaDriver.cuLaunchKernel(function,
+                (int)gridSize, 1, 1,         // Grid dimension
+                threadsPerBlock, 1, 1,       // Block dimension
+                sharedMemSize, stream,       // Shared memory size and stream
+                kernelParameters, null       // Kernel parameters
+            );
+        }
+
+        /**
+         * Simple 2D version: c[x + stride * i] = a[x + stride * i] + b[x]
+         * Uses 2D grid similar to original implementation, no shared memory.
+         */
+        public static void addStride2DSimple(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long stride, long count, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_TEST, "add_stride_2d_simple", device);
+
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+
+            int blockSizeX = Math.min(threadsPerBlock, (int)stride);
+            int blockSizeY = threadsPerBlock / blockSizeX;
+            int gridSizeX = ((int)stride - 1) / blockSizeX + 1;
+
+            int blocksCount = ((int)count - 1) / blockSizeY + 1;
+            int gridSizeY = Math.min(CudaEngine.getMaxGridSize(device)[1], blocksCount);
+            int gridSizeZ = (blocksCount - 1) / gridSizeY + 1;
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(a),
+                Pointer.to(b),
+                Pointer.to(c),
+                Pointer.to(new long[]{stride}),
+                Pointer.to(new long[]{count * stride})
+            );
+
+            JCudaDriver.cuLaunchKernel(function,
+                gridSizeX, gridSizeY, gridSizeZ,    // Grid dimension
+                blockSizeX, blockSizeY, 1,          // Block dimension
+                0, stream,                          // Shared memory size and stream
+                kernelParameters, null              // Kernel parameters
+            );
+        }
+
+        /**
+         * Shared memory 2D version: c[x + stride * i] = a[x + stride * i] + b[x]
+         * Uses 2D grid with shared memory for array b.
+         */
+        public static void addStride2DShared(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long stride, long count, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_TEST, "add_stride_2d_shared", device);
+
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+
+            int blockSizeX = Math.min(threadsPerBlock, (int)stride);
+            int blockSizeY = threadsPerBlock / blockSizeX;
+            int gridSizeX = ((int)stride - 1) / blockSizeX + 1;
+
+            int blocksCount = ((int)count - 1) / blockSizeY + 1;
+            int gridSizeY = Math.min(CudaEngine.getMaxGridSize(device)[1], blocksCount);
+            int gridSizeZ = (blocksCount - 1) / gridSizeY + 1;
+
+            int sharedMemSize = (int)(stride * CudaUtil.FLOAT_SIZE);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(a),
+                Pointer.to(b),
+                Pointer.to(c),
+                Pointer.to(new long[]{stride}),
+                Pointer.to(new long[]{count})
+            );
+
+            JCudaDriver.cuLaunchKernel(function,
+                gridSizeX, gridSizeY, gridSizeZ,    // Grid dimension
+                blockSizeX, blockSizeY, 1,          // Block dimension
+                sharedMemSize, stream,              // Shared memory size and stream
+                kernelParameters, null              // Kernel parameters
+            );
+        }
     }
 
 }

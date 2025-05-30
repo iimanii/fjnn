@@ -149,16 +149,16 @@ __global__ void computeInputGradients(float* inputGradients,
  */
 extern "C"
 __global__ void adamUpdateWeights(float* weights,
-                                 float* gradients,
-                                 float* momentum,
-                                 float* velocity,
-                                 float learningRate,
-                                 float beta1,
-                                 float beta2,
-                                 float epsilon,
-                                 float beta1Power,
-                                 float beta2Power,
-                                 long size) {
+                                  float* gradients,
+                                  float* momentum,
+                                  float* velocity,
+                                  float learningRate,
+                                  float beta1,
+                                  float beta2,
+                                  float epsilon,
+                                  float beta1Power,
+                                  float beta2Power,
+                                  long size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     
     if (idx < size) {
@@ -184,15 +184,15 @@ __global__ void adamUpdateWeights(float* weights,
  */
 extern "C"
 __global__ void adamUpdateBias(float* bias,
-                              float* gradient,
-                              float* momentum,
-                              float* velocity,
-                              float learningRate,
-                              float beta1,
-                              float beta2,
-                              float epsilon,
-                              float beta1Power,
-                              float beta2Power) {
+                               float* gradient,
+                               float* momentum,
+                               float* velocity,
+                               float learningRate,
+                               float beta1,
+                               float beta2,
+                               float epsilon,
+                               float beta1Power,
+                               float beta2Power) {
     // Update momentum
     momentum[0] = beta1 * momentum[0] + (1.0f - beta1) * gradient[0];
     
@@ -205,4 +205,37 @@ __global__ void adamUpdateBias(float* bias,
     
     // Update bias
     bias[0] -= learningRate * mHat / (sqrtf(vHat) + epsilon);
+}
+
+extern "C"
+__global__ void copyUnitStrided(float* src, int srcDim, int srcStart,
+                                float* dst, int dstDim, int dstStart,
+                                int stride, int count, int batchSize) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    int batch = idx / count;
+    int pos = idx % count;
+    
+    if (batch < batchSize) {
+        int srcIdx = batch * srcDim + srcStart + pos;
+        int dstIdx = batch * dstDim + dstStart + pos * stride;
+        dst[dstIdx] = src[srcIdx];
+    }
+}
+
+extern "C"
+__global__ void copyUnitStridedReverse(float* src, float* dst,
+                                       int srcStart, int dstStart,
+                                       int srcSize, int stride, int dstSize,
+                                       int count, int batchSize) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    int batch = idx / count;
+    int pos = idx % count;
+    
+    if (batch < batchSize) {
+        int srcIdx = batch * srcSize + srcStart + pos * stride;
+        int dstIdx = batch * dstSize + dstStart + pos;
+        dst[dstIdx] = src[srcIdx];
+    }
 }

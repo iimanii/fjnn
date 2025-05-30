@@ -28,10 +28,10 @@ import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import jcuda.jcublas.cublasHandle;
 import org.fjnn.activation.Sigmoid;
-import org.fjnn.convolution.output.ConvolutionUnitBackpropagateOutput;
-import org.fjnn.convolution.output.ConvolutionUnitBackpropagateOutputGPU;
-import org.fjnn.convolution.output.ConvolutionUnitForwardOutput;
-import org.fjnn.convolution.output.ConvolutionUnitForwardOutputGPU;
+import org.fjnn.convolution.output.unit.ConvolutionUnitBackpropagateOutput;
+import org.fjnn.convolution.output.unit.ConvolutionUnitBackpropagateOutputGPU;
+import org.fjnn.convolution.output.unit.ConvolutionUnitForwardOutput;
+import org.fjnn.convolution.output.unit.ConvolutionUnitForwardOutputGPU;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
 
@@ -45,9 +45,11 @@ import org.fjnn.cuda.CudaUtil;
  */
 public class KernelGroup implements ConvolutionUnit {
     private final Kernel[] kernels;
-    private final int inputStride;
     private final Sigmoid sigmoid;
     private boolean gpuReady;
+    
+    public final int inputStride;       /* each chunk of input must have this size */
+    public final int unitCount;
     
     public KernelGroup(Kernel... kernels) {
         if (kernels.length < 2)
@@ -58,11 +60,11 @@ public class KernelGroup implements ConvolutionUnit {
         this.gpuReady = false;
         
         // Validate all kernels have same unitCount
-        int expectedUnitCount = kernels[0].unitCount;
+        unitCount = kernels[0].unitCount;
         for (int i = 1; i < kernels.length; i++) {
-            if (kernels[i].unitCount != expectedUnitCount) {
+            if (kernels[i].unitCount != unitCount) {
                 throw new IllegalArgumentException(
-                    String.format("All kernels must have same unitCount. Expected %d but kernel %d has %d", expectedUnitCount, i, kernels[i].unitCount));
+                    String.format("All kernels must have same unitCount. Expected %d but kernel %d has %d", unitCount, i, kernels[i].unitCount));
             }
         }
         
@@ -137,7 +139,7 @@ public class KernelGroup implements ConvolutionUnit {
             }
         }
 
-        return new ConvolutionUnitForwardOutput(finalOutput, outputSize, batchSize, input, kernelOutputs, sigmoidOutputs, channelInputs);
+        return new ConvolutionUnitForwardOutput(finalOutput, outputSize, batchSize, input, unitCount, kernelOutputs, sigmoidOutputs, channelInputs);
     }
     
     @Override
@@ -159,8 +161,7 @@ public class KernelGroup implements ConvolutionUnit {
             channelInputs[k] = CudaUtil.createFloatAsync(channelSize, stream);
 
             // Extract channel data using CUDA kernel
-            CudaFunctions.convolution.extractChannel(
-                input, channelInputs[k], 
+            CudaFunctions.convolution.extractChannel(input, channelInputs[k], 
                 inputStride, kernels[k].unitSize, channelOffset, 
                 totalChunks, stream
             );
@@ -207,11 +208,12 @@ public class KernelGroup implements ConvolutionUnit {
         }
 
         return new ConvolutionUnitForwardOutputGPU(
-            finalOutput, outputSize, batchSize, input,
+            finalOutput, outputSize, batchSize, input, unitCount,
             kernelOutputs, sigmoidOutputs, channelInputs, im2colMatrices
         );
     }
 
+    @Override
     public ConvolutionUnitBackpropagateOutput backpropagate(ConvolutionUnitForwardOutput forwardOutput, float[] deltaLoss) {
         int outputSize = forwardOutput.outputSize;
         int batchSize = forwardOutput.batchSize;
@@ -241,7 +243,7 @@ public class KernelGroup implements ConvolutionUnit {
         ConvolutionUnitBackpropagateOutput[] kernelBackprops = new ConvolutionUnitBackpropagateOutput[kernels.length];
         for (int k = 0; k < kernels.length; k++) {
             /* reconstruct the kernelForwardOutput */
-            ConvolutionUnitForwardOutput kernelForwardOutput = new ConvolutionUnitForwardOutput(forwardOutput.kernelOutputs[k], outputSize, batchSize, forwardOutput.channelInputs[k]);
+            ConvolutionUnitForwardOutput kernelForwardOutput = new ConvolutionUnitForwardOutput(forwardOutput.kernelOutputs[k], outputSize, batchSize, forwardOutput.channelInputs[k], unitCount);
             /* pass it to backpropagate */
             kernelBackprops[k] = kernels[k].backpropagate(kernelForwardOutput, kernelGradients[k]);
         }
@@ -279,6 +281,7 @@ public class KernelGroup implements ConvolutionUnit {
         return new ConvolutionUnitBackpropagateOutput(inputGradients, sequenceLength, batchSize, weightGradients, biasGradients);
     }
 
+    @Override
     public ConvolutionUnitBackpropagateOutputGPU backpropagateGPU(ConvolutionUnitForwardOutputGPU forwardOutput, 
                                                             CUdeviceptr deltaLoss,
                                                             CUstream stream,
@@ -319,7 +322,7 @@ public class KernelGroup implements ConvolutionUnit {
             // Create individual kernel forward output from stored data
             ConvolutionUnitForwardOutputGPU kernelForwardOutput = new ConvolutionUnitForwardOutputGPU(
                 forwardOutput.kernelOutputs[k], outputSize, batchSize, 
-                forwardOutput.channelInputs[k], forwardOutput.im2colMatrix[k]
+                forwardOutput.channelInputs[k], forwardOutput.im2colMatrix[k], unitCount
             );
 
             kernelBackprops[k] = kernels[k].backpropagateGPU(kernelForwardOutput, 
@@ -347,8 +350,7 @@ public class KernelGroup implements ConvolutionUnit {
             }
 
             // Distribute gradients from this kernel's channel back to input positions
-            CudaFunctions.convolution.distributeChannelGradients(
-                kernelBackprops[k].inputGradients, inputGradients,
+            CudaFunctions.convolution.distributeChannelGradients(kernelBackprops[k].inputGradients, inputGradients,
                 inputStride, kernels[k].unitSize, channelOffset,
                 numChunks * batchSize, stream
             );
@@ -372,7 +374,9 @@ public class KernelGroup implements ConvolutionUnit {
                                                         weightGradients, biasGradients);
     }
     /**
-    * Update all kernels
+     * Update all kernels
+     * @param backpropOutput
+     * @param learningRate
     */
     public void updateWeights(ConvolutionUnitBackpropagateOutput backpropOutput, float learningRate) {
         for (int k = 0; k < kernels.length; k++) {
@@ -397,7 +401,13 @@ public class KernelGroup implements ConvolutionUnit {
     
     @Override
     public int computeOutputSize(int inputSize) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        // All kernels must have same unitCount, so output size is same as any kernel
+        // Input is divided by inputStride (total channel size) to get number of chunks
+        int numChunks = inputSize / inputStride;
+
+        // Each kernel processes numChunks units and outputs (numChunks - unitCount + 1)
+        // Since all kernels have same unitCount, use the first kernel's calculation
+        return numChunks - kernels[0].unitCount + 1;
     }
 
     @Override
@@ -421,8 +431,17 @@ public class KernelGroup implements ConvolutionUnit {
         return gpuReady;
     }
     
-    // Getters
-    public int getTotalInputSize() { return inputStride; }
-//    public int[] getChannelSizes() { return channelSizes.clone(); }
     public Kernel getKernel(int index) { return kernels[index]; }
+
+    @Override
+    public int getStrideSize() {
+        return inputStride;
+    }
+    
+    @Override
+    public void updateWeightsFromGPU() {
+        for (Kernel kernel : kernels) {
+            kernel.updateWeightsFromGPU();
+        }
+    }
 }

@@ -23,36 +23,42 @@
  */
 package org.fjnn.convolution.output;
 
+import jcuda.driver.CUdeviceptr;
+import jcuda.driver.CUstream;
+import org.fjnn.base.output.FeedForwardOutputGPU;
+import org.fjnn.convolution.output.layer.ConvolutionLayerForwardOutputGPU;
+import org.fjnn.cuda.CudaUtil;
+
 /**
  *
  * @author ahmed
  */
-public class ConvolutionUnitBackpropagateOutput {
-    public final float[] inputGradients;
-    public final int inputSize;
-    public final int batchSize;
-    
-    // Weight/bias gradients
-    public final float[][] weightGradients;  // [kernel_index][weight_index]
-    public final float[] biasGradients;      // [kernel_index]
-    
-    // Single kernel constructor
-    public ConvolutionUnitBackpropagateOutput(float[] inputGradients, int inputSize, int batchSize,
-                                             float[] weightGradients, float biasGradient) {
-        this.inputGradients = inputGradients;
-        this.inputSize = inputSize;
-        this.batchSize = batchSize;
-        this.weightGradients = new float[][]{weightGradients};
-        this.biasGradients = new float[]{biasGradient};
+public class ConvolutionForwardOutputGPU extends FeedForwardOutputGPU {
+    private final CUdeviceptr output;
+    public final ConvolutionLayerForwardOutputGPU originalInput;
+    public final int outputOrigin;          /* input position that maps to output[0] */
+
+    public ConvolutionForwardOutputGPU(CUdeviceptr reshapedOutput, int outputDim, int batchSize,
+                               ConvolutionLayerForwardOutputGPU originalInput, int outputOrigin) {
+        super(outputDim, batchSize);
+        this.output = reshapedOutput;
+        this.originalInput = originalInput;
+        this.outputOrigin = outputOrigin;
     }
     
-    // Multi-kernel constructor  
-    public ConvolutionUnitBackpropagateOutput(float[] inputGradients, int inputSize, int batchSize,
-                                             float[][] weightGradients, float[] biasGradients) {
-        this.inputGradients = inputGradients;
-        this.inputSize = inputSize;
-        this.batchSize = batchSize;
-        this.weightGradients = weightGradients;
-        this.biasGradients = biasGradients;
+    @Override
+    public CUdeviceptr output() {
+        return output;
+    }
+    
+    @Override
+    public void free() {
+        CudaUtil.free(output);
+        // originalInput owned by caller
+    }
+    
+    @Override
+    public void freeAsync(CUstream stream) {
+        CudaUtil.freeAsync(output, stream);
     }
 }

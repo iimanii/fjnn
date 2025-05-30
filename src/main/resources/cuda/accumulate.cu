@@ -26,40 +26,6 @@
 
 #include "util.h"
 
-/**
- * a[x + stride * stride_len] += b[x]
- * 
- * each block calculates 1 or more strides
- */
-extern "C"
-__global__ void add_stride(float* a, float* b, int stride_size, long total_size) {
-    int b_index = threadIdx.x + blockIdx.x * blockDim.x;
-    
-    if(b_index < stride_size) {
-        int stride_id = threadIdx.y + (blockIdx.z * gridDim.y + blockIdx.y) * blockDim.y;
-        int a_index = b_index + stride_id * stride_size;
-        
-        if(a_index < total_size)
-            a[a_index] += b[b_index];
-    }
-}
-
-extern "C"
-__global__ void copy_stride(float* src, float* dst, int stride_size, int spread_size, int count) {
-    int thread_index = threadIdx.x + blockIdx.y * blockDim.x;
-    
-    if(thread_index < stride_size) {
-        int stride_id = threadIdx.y + blockIdx.x * blockDim.y;
-        
-        if(stride_id < count) {
-            int src_index = stride_id * stride_size + thread_index;
-            int dst_index = stride_id * spread_size + thread_index;
-
-            dst[dst_index] = src[src_index];
-        }
-    }
-}
-
 
 extern "C"
 __global__ void add_stride_vectorized(float* a, float* b, int stride_size, long strides_count) {

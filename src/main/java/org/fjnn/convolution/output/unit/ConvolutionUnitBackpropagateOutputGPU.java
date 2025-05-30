@@ -21,7 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.convolution.output;
+package org.fjnn.convolution.output.unit;
 
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;

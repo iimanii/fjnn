@@ -27,42 +27,25 @@ package org.fjnn.base.output;
  *
  * @author ahmed
  */
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUstream;
-import org.fjnn.cuda.CudaUtil;
 
-public class BackpropagateOutputMapGPU {
-    private final Map<Integer, BackpropagateOutputGPU> results;
+public class ChainModeBackpropagateOutput {
+    private final Map<Integer, BackpropagateOutput> results;
 
-    public BackpropagateOutputMapGPU() {
+    public ChainModeBackpropagateOutput() {
         this.results = new HashMap<>();
     }
 
-    public void addOutput(int index, BackpropagateOutputGPU result) {
-        if (results.containsKey(index)) {
+    public void addOutput(int index, BackpropagateOutput result) {
+        if (results.containsKey(index))
             throw new IllegalArgumentException("Output at index " + index + " already exists.");
-        }
+
         results.put(index, result);
     }
 
-    public BackpropagateOutputGPU getOutput(int index) {
+    public BackpropagateOutput getOutput(int index) {
         return results.get(index);
-    }
-
-    public void free() {
-        for (BackpropagateOutputGPU result : results.values()) {
-            result.free();
-        }
-    }
-
-    public void freeAsync(CUstream stream) {
-        for (BackpropagateOutputGPU result : results.values()) {
-            result.freeAsync(stream);
-        }
     }
     
     public int size() {

@@ -91,11 +91,30 @@ public class Connection {
     /* memory requirement for prepare gpu */
     final long weightsLength;
     
-    Connection(int neurons, int links) {
+    // Adam optimizer state
+    private boolean useAdam = false;
+    public float[] weightMomentum;         // m for weights [neurons * links]
+    public float[] weightVelocity;         // v for weights [neurons * links] 
+    public float[] biasMomentum;           // m for biases [links]
+    public float[] biasVelocity;           // v for biases [links]
+    public int adamTimeStep = 0;           // t for bias correction
+
+    // Adam hyperparameters
+    private float beta1 = 0.9f;
+    private float beta2 = 0.999f; 
+    private float adamEpsilon = 1e-8f;
+
+    // GPU Adam state
+    public CUdeviceptr weightMomentumGPU;
+    public CUdeviceptr weightVelocityGPU;
+    public CUdeviceptr biasMomentumGPU;
+    public CUdeviceptr biasVelocityGPU;
+    
+    public Connection(int neurons, int links) {
         this(neurons, links, true);
     }
     
-    Connection(int neurons, int links, boolean creatWeights) {
+    public Connection(int neurons, int links, boolean creatWeights) {
         this.neurons = neurons;
         this.links = links;
         
@@ -163,33 +182,36 @@ public class Connection {
             intrinsic.sgemm(input, count, result, weightsCPU, biasCPU, neurons, links);
     }
     
-    void feedForwardGPU(CUdeviceptr input, int count, CUdeviceptr result, CUstream stream, cublasHandle handle) {
-        /* add bias to current result accumulator */
-        CudaFunctions.vector.addStride(result, biasesGPU, links, count, stream);
+    void feedForwardGPU(CUdeviceptr input, int batchSize, CUdeviceptr output, CUstream stream, cublasHandle handle) {
+        Pointer alpha = Pointer.to(new float[]{1.0f});
         
-        Pointer p = Pointer.to(new float[]{1.0f});
+        /* output might contain results from other connections .. make sure we accumulate */
+        Pointer beta = Pointer.to(new float[]{1.0f});
         
         /* NOTE: cublas uses column-major format */
         int m = links;
-        int n = count;
+        int n = batchSize;
         int k = neurons;
         
         CUdeviceptr a = weightsGPU;
         CUdeviceptr b = input;        
-        CUdeviceptr c = result;
+        CUdeviceptr c = output;
 
         synchronized(handle) {
             cudaStream_t cudaStream = stream == null ? null : new cudaStream_t(stream);
             JCublas2.cublasSetStream(handle, cudaStream);
             
             /* Compute Matrix Multiplication */
-            if(count == 1)
-                JCublas2.cublasSgemv(handle, cublasOperation.CUBLAS_OP_N, m, k, p, a, m, b, 1, p, c, 1);
+            if(batchSize == 1)
+                JCublas2.cublasSgemv(handle, cublasOperation.CUBLAS_OP_N, m, k, alpha, a, m, b, 1, beta, c, 1);
             else {
-                int status = JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_N, cublasOperation.CUBLAS_OP_N, m, n, k, p, a, m, b, k, p, c, m);
+                int status = JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_N, cublasOperation.CUBLAS_OP_N, m, n, k, alpha, a, m, b, k, beta, c, m);
 //                System.err.println("cublasSgemm status: " + status + " " + JCublas2.cublasGetStatusName(status));
             }
         }
+        
+        /* add bias */
+        CudaFunctions.vector.addStride(output, biasesGPU, links, batchSize, stream);
     }
     
     ConnectionGradient backpropagate(float[] currentActivationDeltas, float[] nextPreActivationDeltas, float[] currentPostActivations, int count) {
@@ -293,26 +315,101 @@ public class Connection {
         
         return gradient;
     }
-
-    void updateWeightsGPU(ConnectionGradientGPU gradient, float learningRate, float weightDecay, CUstream stream, cublasHandle handle) {
-        float alpha = -learningRate;
-
-        synchronized(handle) {
-            JCublas2.cublasSetStream(handle, new cudaStream_t(stream));
-            
-            if(weightDecay > 0) {
-                // Calculate new gradient = weightGradients + weightDecay * weights;
-                CudaFunctions.updateWeightsWithDecay(weightsGPU, gradient.weightGradients, learningRate, weightDecay, neurons * links, stream);
-            } else {
-                // Update weights using cuBLAS: weights = weights - learningRate * weightGradients
-               JCublas2.cublasSaxpy(handle, neurons * links, Pointer.to(new float[]{alpha}), gradient.weightGradients, 1, weightsGPU, 1);
+    
+    public void updateWeights(ConnectionGradient gradient, float learningRate, float weightDecay) {
+        if (useAdam) {
+            updateWeightsAdam(gradient, learningRate, weightDecay);
+        } else {
+            // Update weights
+            for (int i = 0; i < weights.length; i++) {
+                float gradientWithDecay = gradient.weightGradients[i] + weightDecay * weights[i];
+                weights[i] -= learningRate * gradientWithDecay;
             }
 
-            // Update biases using cuBLAS: biases = biases - learningRate * biasGradients
-            JCublas2.cublasSaxpy(handle, links, Pointer.to(new float[]{alpha}), gradient.biasGradients, 1, biasesGPU, 1);
+            // Update biases  
+            for (int i = 0; i < biases.length; i++) {
+                biases[i] -= learningRate * gradient.biasGradients[i];
+            }
         }
     }
+    
+    private void updateWeightsAdam(ConnectionGradient gradient, float learningRate, float weightDecay) {
+        adamTimeStep++;
 
+        // Update weights using Adam
+        for (int i = 0; i < weights.length; i++) {
+            float grad = gradient.weightGradients[i];
+
+            weightMomentum[i] = beta1 * weightMomentum[i] + (1 - beta1) * grad;
+            weightVelocity[i] = beta2 * weightVelocity[i] + (1 - beta2) * grad * grad;
+
+            float mHat = weightMomentum[i] / (1 - (float)Math.pow(beta1, adamTimeStep));
+            float vHat = weightVelocity[i] / (1 - (float)Math.pow(beta2, adamTimeStep));
+
+            weights[i] -= learningRate * mHat / ((float)Math.sqrt(vHat) + adamEpsilon);
+
+            // Apply weight decay after Adam update
+            if (weightDecay > 0) {
+                weights[i] -= learningRate * weightDecay * weights[i];
+            }
+        }
+
+        // Update biases using Adam
+        for (int i = 0; i < biases.length; i++) {
+            float grad = gradient.biasGradients[i];
+
+            biasMomentum[i] = beta1 * biasMomentum[i] + (1 - beta1) * grad;
+            biasVelocity[i] = beta2 * biasVelocity[i] + (1 - beta2) * grad * grad;
+
+            float mHat = biasMomentum[i] / (1 - (float)Math.pow(beta1, adamTimeStep));
+            float vHat = biasVelocity[i] / (1 - (float)Math.pow(beta2, adamTimeStep));
+
+            biases[i] -= learningRate * mHat / ((float)Math.sqrt(vHat) + adamEpsilon);
+        }
+    }
+    
+    public void updateWeightsGPU(ConnectionGradientGPU gradient, float learningRate, float weightDecay, CUstream stream, cublasHandle handle) {
+        if (useAdam) {
+            updateWeightsAdamGPU(gradient, learningRate, weightDecay, stream);
+        } else {
+            float alpha = -learningRate;
+
+            synchronized(handle) {
+                JCublas2.cublasSetStream(handle, new cudaStream_t(stream));
+
+                if(weightDecay > 0)
+                    // Calculate new gradient = weightGradients + weightDecay * weights;
+                    CudaFunctions.connection.updateWeightsWithDecay(weightsGPU, gradient.weightGradients, learningRate, weightDecay, neurons * links, stream);
+                else
+                    // Update weights using cuBLAS: weights = weights - learningRate * weightGradients
+                   JCublas2.cublasSaxpy(handle, neurons * links, Pointer.to(new float[]{alpha}), gradient.weightGradients, 1, weightsGPU, 1);
+
+                // Update biases using cuBLAS: biases = biases - learningRate * biasGradients
+                JCublas2.cublasSaxpy(handle, links, Pointer.to(new float[]{alpha}), gradient.biasGradients, 1, biasesGPU, 1);
+            }
+        }
+    }
+    
+    private void updateWeightsAdamGPU(ConnectionGradientGPU gradient, float learningRate, float weightDecay, CUstream stream) {
+        adamTimeStep++;
+
+        float beta1Power = (float)Math.pow(beta1, adamTimeStep);
+        float beta2Power = (float)Math.pow(beta2, adamTimeStep);
+
+        // Update weights on GPU
+        CudaFunctions.connection.adamUpdateConnectionWeights(weightsGPU, gradient.weightGradients, 
+                                                weightMomentumGPU, weightVelocityGPU,
+                                                learningRate, beta1, beta2, adamEpsilon, 
+                                                beta1Power, beta2Power, weightDecay,
+                                                neurons * links, stream);
+
+        // Update biases on GPU  
+        CudaFunctions.connection.adamUpdateConnectionBiases(biasesGPU, gradient.biasGradients,
+                                               biasMomentumGPU, biasVelocityGPU,
+                                               learningRate, beta1, beta2, adamEpsilon,
+                                               beta1Power, beta2Power,
+                                               links, stream);
+    }
     void prepareCPU() {
         weightsCPU = ByteBuffer.allocateDirect(weights.length * Float.BYTES).order(ByteOrder.nativeOrder()).asFloatBuffer();
         weightsCPU.put(weights);
@@ -331,21 +428,38 @@ public class Connection {
             biases = CudaUtil.fromGPUFloatAsync(biasesGPU, links, stream);
     }
     
-    void updateWeightsFromGPU(CUstream stream) {
+    public void syncWeightsFromGPU(CUstream stream) {
         weights = CudaUtil.fromGPUFloatAsync(weightsGPU, neurons * links, stream);        
         biases = CudaUtil.fromGPUFloatAsync(biasesGPU, links, stream);
+        
+        // If using Adam, also update momentum and velocity
+        if (useAdam && weightMomentumGPU != null) {
+            weightMomentum = CudaUtil.fromGPUFloatAsync(weightMomentumGPU, neurons * links, stream);
+            weightVelocity = CudaUtil.fromGPUFloatAsync(weightVelocityGPU, neurons * links, stream);
+            biasMomentum = CudaUtil.fromGPUFloatAsync(biasMomentumGPU, links, stream);
+            biasVelocity = CudaUtil.fromGPUFloatAsync(biasVelocityGPU, links, stream);
+        }
     }
     
     long getMemoryRequirements() {
         return weightsLength * FLOAT_SIZE;
     }
     
-    void prepareGPU(CUstream stream) {                
-        initGPU(stream);
+    public void prepareGPU(CUstream stream) {
+        if(weightsGPU != null || biasesGPU != null)
+            throw new RuntimeException("GPU already initialized for connection");
         
-        JCudaDriver.cuMemcpyHtoDAsync(weightsGPU, Pointer.to(weights), weights.length * FLOAT_SIZE, stream);
-        JCudaDriver.cuMemcpyHtoDAsync(biasesGPU, Pointer.to(biases), biases.length * FLOAT_SIZE, stream);
-
+        weightsGPU = CudaUtil.toGPUAsync(weights, stream);
+        biasesGPU = CudaUtil.toGPUAsync(biases, stream);
+        
+        // Initialize Adam state if needed
+        if (useAdam) {
+            weightMomentumGPU = CudaUtil.toGPUAsync(weightMomentum, stream);
+            weightVelocityGPU = CudaUtil.toGPUAsync(weightVelocity, stream);
+            biasMomentumGPU = CudaUtil.toGPUAsync(biasMomentum, stream);
+            biasVelocityGPU = CudaUtil.toGPUAsync(biasVelocity, stream);
+        }
+        
         gpuReady = true;
     }
 
@@ -361,12 +475,24 @@ public class Connection {
 //        gpuReady = false;
 //    }
     
-    void freeGPU(CUstream stream) {
-        if(weightsGPU != null)
-            CudaUtil.freeAsync(weightsGPU, stream);
+    public void freeGPU(CUstream stream) {
+        CudaUtil.freeAsync(weightsGPU, stream);
+        CudaUtil.freeAsync(biasesGPU, stream);
         
+        // Free Adam state if allocated
+        if (useAdam) {
+            if (weightMomentumGPU != null) CudaUtil.freeAsync(weightMomentumGPU, stream);
+            if (weightVelocityGPU != null) CudaUtil.freeAsync(weightVelocityGPU, stream);
+            if (biasMomentumGPU != null) CudaUtil.freeAsync(biasMomentumGPU, stream);
+            if (biasVelocityGPU != null) CudaUtil.freeAsync(biasVelocityGPU, stream);
+        }
+    
         weightsGPU = null;
         biasesGPU = null;
+        weightMomentumGPU = null;
+        weightVelocityGPU = null;
+        biasMomentumGPU = null;
+        biasVelocityGPU = null;
         
         freeGPURng();
         
@@ -379,18 +505,18 @@ public class Connection {
         
         rngPool = null;
     }
-    
-    private void initGPU(CUstream stream) {
-        if(weightsGPU != null || biasesGPU != null)
-            throw new RuntimeException("GPU already initialized for connection");
-        
-        long lengthWeights = CudaUtil.alignLength(neurons * links, CudaUtil.DEFAULT_MEM_ALIGN_FLOAT);
-        long lengthBias = links;
-        long lengthTotal = lengthWeights + lengthBias;
-        
-        weightsGPU = CudaUtil.createFloatAsync(lengthTotal, stream);
-        biasesGPU = weightsGPU.withByteOffset(lengthWeights * CudaUtil.FLOAT_SIZE);
-    }
+//    
+//    private void initGPU(CUstream stream) {
+//        if(weightsGPU != null || biasesGPU != null)
+//            throw new RuntimeException("GPU already initialized for connection");
+//        
+//        long lengthWeights = CudaUtil.alignLength(neurons * links, CudaUtil.DEFAULT_MEM_ALIGN_FLOAT);
+//        long lengthBias = links;
+//        long lengthTotal = lengthWeights + lengthBias;
+//        
+//        weightsGPU = CudaUtil.createFloatAsync(lengthTotal, stream);
+//        biasesGPU = weightsGPU.withByteOffset(lengthWeights * CudaUtil.FLOAT_SIZE);
+//    }
     
 //    private void initGPUWeights() {
 //        if(weightsGPU != null || biasesGPU != null)
@@ -517,7 +643,34 @@ public class Connection {
         nativeReady = false;
         gpuReady = false;        
     }
+    
+    /**
+     * Enable/disable Adam optimizer
+     */
+    public void setUseAdam(boolean useAdam) {
+        this.useAdam = useAdam;
+        if (useAdam && weightMomentum == null) {
+            initAdamState();
+        }
+    }
+    
+    /**
+     * Initialize Adam optimizer state
+     */
+    private void initAdamState() {
+        weightMomentum = new float[neurons * links];
+        weightVelocity = new float[neurons * links];
+        biasMomentum = new float[links];
+        biasVelocity = new float[links];
 
+        Arrays.fill(weightMomentum, 0.0f);
+        Arrays.fill(weightVelocity, 0.0f);
+        Arrays.fill(biasMomentum, 0.0f);
+        Arrays.fill(biasVelocity, 0.0f);
+
+        adamTimeStep = 0;
+    }
+    
     void freeCPU() {
         weights = null;
         biases = null;
@@ -556,7 +709,11 @@ public class Connection {
 
     void crossOverMutateGPU(Connection a, Connection b, float min, float max, double mutation, boolean nocopy, CUstream stream, curandGenerator generator) {
         /* mutate weights */
-        initGPU(stream);
+        if(weightsGPU != null || biasesGPU != null)
+            throw new RuntimeException("GPU already initialized for connection");
+        
+        weightsGPU = CudaUtil.createFloatAsync(neurons * links, stream);
+        biasesGPU = CudaUtil.createFloatAsync(links, stream);
 
         rngPool = CudaEngine.getMempoolFloat(weightsLength * 3);
         CUdeviceptr rngMutate = rngPool.withByteOffset(weightsLength * CudaUtil.FLOAT_SIZE);

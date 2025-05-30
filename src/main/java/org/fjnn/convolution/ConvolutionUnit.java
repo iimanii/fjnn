@@ -26,8 +26,10 @@ package org.fjnn.convolution;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import jcuda.jcublas.cublasHandle;
-import org.fjnn.convolution.output.ConvolutionUnitForwardOutput;
-import org.fjnn.convolution.output.ConvolutionUnitForwardOutputGPU;
+import org.fjnn.convolution.output.unit.ConvolutionUnitBackpropagateOutput;
+import org.fjnn.convolution.output.unit.ConvolutionUnitBackpropagateOutputGPU;
+import org.fjnn.convolution.output.unit.ConvolutionUnitForwardOutput;
+import org.fjnn.convolution.output.unit.ConvolutionUnitForwardOutputGPU;
 
 /**
  * Common interface for convolution layers
@@ -37,26 +39,42 @@ import org.fjnn.convolution.output.ConvolutionUnitForwardOutputGPU;
 public interface ConvolutionUnit {
     /**
      * CPU forward pass
+     * @param input
+     * @param batchSize
+     * @return 
      */
     ConvolutionUnitForwardOutput feedForward(float[] input, int batchSize);
     
     /**
      * GPU forward pass  
+     * @param input
+     * @param batchSize
+     * @param stream
+     * @param handle
+     * @return 
      */
     ConvolutionUnitForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchSize, CUstream stream, cublasHandle handle);
     
+    ConvolutionUnitBackpropagateOutput backpropagate(ConvolutionUnitForwardOutput forwardOutput, float[] deltaLoss);
+            
+    public ConvolutionUnitBackpropagateOutputGPU backpropagateGPU(ConvolutionUnitForwardOutputGPU forwardOutput, CUdeviceptr deltaLoss, CUstream stream, cublasHandle handle);
+    
     /**
      * Compute output size for given input
+     * @param inputSize
+     * @return 
      */
     int computeOutputSize(int inputSize);
     
     /**
      * Prepare GPU resources
+     * @param stream
      */
     void prepareGPU(CUstream stream);
     
     /**
      * Free GPU resources
+     * @param stream
      */
     void freeGPU(CUstream stream);
     
@@ -64,4 +82,8 @@ public interface ConvolutionUnit {
      * Check if GPU ready
      */
     boolean gpuReady();
+    
+    int getStrideSize();
+    
+    public void updateWeightsFromGPU();
 }

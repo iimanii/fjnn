@@ -191,3 +191,79 @@ __global__ void slowLoop(float* data) {
     }
     data[idx] = value;
 }
+
+
+// 1D Simple - no shared memory
+extern "C"
+__global__ void add_stride_1d_simple(float* a, float* b, float* c, long stride_size, long total_elements) {
+    long global_id = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (global_id < total_elements) {
+        long stride_id = global_id / stride_size;
+        long element_pos = global_id % stride_size;
+        
+        long index = stride_id * stride_size + element_pos;
+        c[index] = a[index] + b[element_pos];
+    }
+}
+
+// 1D Shared - loads b into shared memory, 1D indexing
+extern "C" 
+__global__ void add_stride_1d_shared(float* a, float* b, float* c, long stride_size, long total_elements) {
+    extern __shared__ float shared_b[];
+    
+    // Load b into shared memory cooperatively
+    for (long i = threadIdx.x; i < stride_size; i += blockDim.x) {
+        shared_b[i] = b[i];
+    }
+    __syncthreads();
+    
+    // Process elements using shared memory
+    long global_id = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (global_id < total_elements) {
+        long stride_id = global_id / stride_size;
+        long element_pos = global_id % stride_size;
+        
+        long index = stride_id * stride_size + element_pos;
+        c[index] = a[index] + shared_b[element_pos];
+    }
+}
+
+// 2D Simple - no shared memory, similar to original implementation
+extern "C"
+__global__ void add_stride_2d_simple(float* a, float* b, float* c, long stride_size, long total_size) {
+    int element_pos = threadIdx.x + blockIdx.x * blockDim.x;
+    
+    if (element_pos < stride_size) {
+        int stride_id = threadIdx.y + (blockIdx.z * gridDim.y + blockIdx.y) * blockDim.y;
+        long index = element_pos + stride_id * stride_size;
+        
+        if (index < total_size) {
+            c[index] = a[index] + b[element_pos];
+        }
+    }
+}
+
+// 2D Shared - loads b into shared memory, 2D indexing
+extern "C"
+__global__ void add_stride_2d_shared(float* a, float* b, float* c, long stride_size, long count) {
+    extern __shared__ float shared_b[];
+    
+    // Load b into shared memory cooperatively
+    for (long i = threadIdx.x; i < stride_size; i += blockDim.x) {
+        if (threadIdx.y == 0) { // Only first row loads
+            shared_b[i] = b[i];
+        }
+    }
+    __syncthreads();
+    
+    // Process elements using shared memory
+    int element_pos = threadIdx.x + blockIdx.x * blockDim.x;
+    int stride_id = threadIdx.y + (blockIdx.z * gridDim.y + blockIdx.y) * blockDim.y;
+    
+    if (element_pos < stride_size && stride_id < count) {
+        long index = element_pos + stride_id * stride_size;
+        c[index] = a[index] + shared_b[element_pos];
+    }
+}

@@ -298,16 +298,7 @@ public class Layer {
             if (gradient == null)
                 throw new RuntimeException("no gradient for connection " + index + " -> " + nextLayerIndex);
 
-            // Update weights
-            for (int i = 0; i < connection.weights.length; i++) {
-                float gradientWithDecay = gradient.weightGradients[i] + weightDecay * connection.weights[i];
-                connection.weights[i] -= learningRate * gradientWithDecay;
-            }
-
-            // Update biases
-            for (int i = 0; i < connection.biases.length; i++) {
-                connection.biases[i] -= learningRate * gradient.biasGradients[i];
-            }
+            connection.updateWeights(gradient, learningRate, weightDecay);
         }
     }
 
@@ -332,7 +323,7 @@ public class Layer {
     
     void updateWeightsFromGPU(CUstream stream) {
         for(Connection c : connections.values())
-            c.updateWeightsFromGPU(stream);
+            c.syncWeightsFromGPU(stream);
         
         if(normalizer != null)
             normalizer.updateWeightsFromGPU();
@@ -483,24 +474,24 @@ public class Layer {
     }
     
     protected void feedForwardGPU(NeuralNetworkForwardOutputGPU activations, boolean disableDropout, CUstream stream, cublasHandle handle) {
-        int count = activations.batchSize;
+        int batchSize = activations.batchSize;
         
         CUdeviceptr processedInput = activations.layerInputs[this.index];
         
         if (normalizer != null) {
-            FeedForwardOutputGPU normOutput = normalizer.feedForwardGPU(processedInput, count, stream);
+            FeedForwardOutputGPU normOutput = normalizer.feedForwardGPU(processedInput, batchSize, stream);
             activations.normalizerOutputs[this.index] = normOutput;
             processedInput = normOutput.output();
         }
         
         if (activation != null) {
-            ActivationForwardOutputGPU activationOutput = activation.feedForwardGPU(processedInput, neurons, count, stream);
+            ActivationForwardOutputGPU activationOutput = activation.feedForwardGPU(processedInput, neurons, batchSize, stream);
             activations.activationOutputs[this.index] = activationOutput;
             processedInput = activationOutput.output();
         }
         
         if (dropout.rate != 0 && !disableDropout) {
-            DropoutForwardOutputGPU dropoutOutput = dropout.feedForwardGPU(processedInput, count, stream);
+            DropoutForwardOutputGPU dropoutOutput = dropout.feedForwardGPU(processedInput, batchSize, stream);
             activations.dropoutOutputs[this.index] = dropoutOutput;
             processedInput = dropoutOutput.output();
         }
@@ -512,7 +503,7 @@ public class Layer {
             Connection connection = e.getValue();
 
             // Initialize space for the next layer's pre-activations if it hasn't been set yet
-            long size = connection.links * count;
+            long size = connection.links * batchSize;
             
             if (activations.layerInputs[toLayer] == null) {
                 activations.layerInputs[toLayer] = CudaUtil.createFloatAsync(size, stream);
@@ -520,7 +511,7 @@ public class Layer {
             }
 
             // Perform feedForward to the next layer's pre-activations
-            connection.feedForwardGPU(processedInput, count, activations.layerInputs[toLayer], stream, handle);
+            connection.feedForwardGPU(processedInput, batchSize, activations.layerInputs[toLayer], stream, handle);
         }
     }
 

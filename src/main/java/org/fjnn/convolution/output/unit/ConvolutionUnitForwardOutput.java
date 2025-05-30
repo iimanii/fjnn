@@ -21,13 +21,16 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.convolution.output;
+package org.fjnn.convolution.output.unit;
 
 /**
  *
  * @author ahmed
  */
 public class ConvolutionUnitForwardOutput {
+    public final int unitCount;
+    public final int outputOrigin;  /* the input position that maps to this unit's output[0] */
+    
     public final float[] output;
     public final int outputSize;
     public final int batchSize;
@@ -39,7 +42,10 @@ public class ConvolutionUnitForwardOutput {
     public final float[][] channelInputs;      // [kernel_index][channel_input] or null for single kernel
     
     // Single kernel constructor (for Kernel class)
-    public ConvolutionUnitForwardOutput(float[] output, int outputSize, int batchSize, float[] forwardPassInputs) {
+    public ConvolutionUnitForwardOutput(float[] output, int outputSize, int batchSize, float[] forwardPassInputs, int unitCount) {
+        this.unitCount = unitCount;
+        this.outputOrigin = (unitCount - 1) / 2;
+        
         this.output = output;
         this.outputSize = outputSize;
         this.batchSize = batchSize;
@@ -52,9 +58,12 @@ public class ConvolutionUnitForwardOutput {
     
     // Multi-kernel constructor (for KernelGroup class)
     public ConvolutionUnitForwardOutput(float[] finalOutput, int outputSize, int batchSize,
-                                        float[] forwardPassInputs,
+                                        float[] forwardPassInputs, int unitCount,
                                         float[][] kernelOutputs, float[][] sigmoidOutputs,
                                         float[][] channelInputs) {
+        this.unitCount = unitCount;
+        this.outputOrigin = (unitCount - 1) / 2;
+        
         this.output = finalOutput;
         this.outputSize = outputSize;
         this.batchSize = batchSize;

@@ -34,10 +34,10 @@ import jcuda.jcublas.cublasHandle;
 import jcuda.jcublas.cublasOperation;
 import jcuda.runtime.JCuda;
 import jcuda.runtime.cudaStream_t;
-import org.fjnn.convolution.output.ConvolutionUnitBackpropagateOutput;
-import org.fjnn.convolution.output.ConvolutionUnitBackpropagateOutputGPU;
-import org.fjnn.convolution.output.ConvolutionUnitForwardOutput;
-import org.fjnn.convolution.output.ConvolutionUnitForwardOutputGPU;
+import org.fjnn.convolution.output.unit.ConvolutionUnitBackpropagateOutput;
+import org.fjnn.convolution.output.unit.ConvolutionUnitBackpropagateOutputGPU;
+import org.fjnn.convolution.output.unit.ConvolutionUnitForwardOutput;
+import org.fjnn.convolution.output.unit.ConvolutionUnitForwardOutputGPU;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
 import org.fjnn.util.Rng;
@@ -57,7 +57,7 @@ public class Kernel implements ConvolutionUnit {
     public float[] weights;
     public float bias;
     
-    private boolean useAdam = false;        // Adam optimizer flag
+    private boolean useAdam = false;       // Adam optimizer flag
     public float[] weightMomentum;         // m for weights
     public float[] weightVelocity;         // v for weights
     public float biasMomentum = 0.0f;      // m for bias
@@ -149,7 +149,7 @@ public class Kernel implements ConvolutionUnit {
             }
         }
         
-        return new ConvolutionUnitForwardOutput(output, outputDim, batchSize, input);
+        return new ConvolutionUnitForwardOutput(output, outputDim, batchSize, input, unitCount);
     }
     
     @Override
@@ -201,7 +201,7 @@ public class Kernel implements ConvolutionUnit {
         // Add bias
         CudaFunctions.vector.addStride(output, biasGPU, output, 1, totalOutputSize, stream);
 
-        return new ConvolutionUnitForwardOutputGPU(output, outputDim, batchSize, input, im2colMatrix);
+        return new ConvolutionUnitForwardOutputGPU(output, outputDim, batchSize, input, im2colMatrix, unitCount);
     }
     
     /**
@@ -210,6 +210,7 @@ public class Kernel implements ConvolutionUnit {
      * @param deltaLoss gradients w.r.t. layer outputs
      * @return weight and bias gradients
     */
+    @Override
     public ConvolutionUnitBackpropagateOutput backpropagate(ConvolutionUnitForwardOutput forwardOutput, float[] deltaLoss) {
         float[] forwardPassInputs = forwardOutput.input;
         int inputSize = forwardPassInputs.length / forwardOutput.batchSize;
@@ -260,6 +261,7 @@ public class Kernel implements ConvolutionUnit {
     * @param handle cuBLAS handle
     * @return GPU gradients for weights, bias, and inputs
     */
+    @Override
     public ConvolutionUnitBackpropagateOutputGPU backpropagateGPU(ConvolutionUnitForwardOutputGPU forwardOutput, 
                                  CUdeviceptr deltaLoss,
                                  CUstream stream,
@@ -335,9 +337,6 @@ public class Kernel implements ConvolutionUnit {
         adamTimeStep = 0;
     }
     
-    /**
-    * Update weights using either Adam or SGD
-    */
     public void updateWeights(float[] weightGradients, float biasGradient, float learningRate) {
         if (useAdam) {
             updateWeightsAdam(weightGradients, biasGradient, learningRate);
@@ -546,6 +545,40 @@ public class Kernel implements ConvolutionUnit {
 
     @Override
     public boolean gpuReady() {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        return gpuReady;
+    }
+
+    @Override
+    public int getStrideSize() {
+        return unitSize;
+    }
+    
+    @Override
+    public void updateWeightsFromGPU() {
+        if (!gpuReady())
+            return;
+
+        CUstream stream = CudaUtil.createStream();
+
+        // Copy weights from GPU to CPU
+        weights = CudaUtil.fromGPUFloatAsync(weightsGPU, width, stream);
+
+        // Copy bias from GPU to CPU  
+        float[] biasArray = CudaUtil.fromGPUFloatAsync(biasGPU, 1, stream);
+        bias = biasArray[0];
+        
+        // If using Adam, also update momentum and velocity
+        if (useAdam && weightMomentumGPU != null) {
+            weightMomentum = CudaUtil.fromGPUFloatAsync(weightMomentumGPU, width, stream);
+            weightVelocity = CudaUtil.fromGPUFloatAsync(weightVelocityGPU, width, stream);
+
+            float[] biasMomArray = CudaUtil.fromGPUFloatAsync(biasMomentumGPU, 1, stream);
+            float[] biasVelArray = CudaUtil.fromGPUFloatAsync(biasVelocityGPU, 1, stream);
+            biasMomentum = biasMomArray[0];
+            biasVelocity = biasVelArray[0];
+        }
+        
+        JCudaDriver.cuStreamSynchronize(stream);
+        CudaUtil.freeStream(stream);
     }
 }

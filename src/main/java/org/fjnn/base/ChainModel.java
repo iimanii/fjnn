@@ -24,7 +24,7 @@
 package org.fjnn.base;
 
 import org.fjnn.base.output.FeedForwardOutput;
-import org.fjnn.base.output.FeedForwardOutputMap;
+import org.fjnn.base.output.ChainModelFeedForwardOutput;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -37,10 +37,10 @@ import org.fjnn.adapter.InputDimAdapter;
 import org.fjnn.adapter.PositionalEncoderAdapter;
 import org.fjnn.base.output.BackpropagateOutput;
 import org.fjnn.base.output.BackpropagateOutputGPU;
-import org.fjnn.base.output.BackpropagateOutputMap;
-import org.fjnn.base.output.BackpropagateOutputMapGPU;
+import org.fjnn.base.output.ChainModeBackpropagateOutput;
+import org.fjnn.base.output.ChainModeBackpropagateOutputMap;
 import org.fjnn.base.output.FeedForwardOutputGPU;
-import org.fjnn.base.output.FeedForwardOutputMapGPU;
+import org.fjnn.base.output.ChainModelFeedForwardOutputGPU;
 import org.fjnn.cuda.CudaUtil;
 import org.fjnn.loss.Loss;
 import org.fjnn.network.NeuralNetwork;
@@ -149,13 +149,13 @@ public class ChainModel {
      * @param inputDim  The number of features (or input dimensions) for each individual input sample.
      * @param batchSize The number of input samples in the batch to be processed together.
      * 
-     * @return A `FeedForwardOutputMap` containing the output of the forward pass for each component
+     * @return A `ChainModelFeedForwardOutput` containing the output of the forward pass for each component
      *         required by backpropagate method
      *
      * @throws IllegalArgumentException
      */
-    public FeedForwardOutputMap feedForward(float[] input, int inputDim, int batchSize) {
-        FeedForwardOutputMap context = new FeedForwardOutputMap();
+    public ChainModelFeedForwardOutput feedForward(float[] input, int inputDim, int batchSize) {
+        ChainModelFeedForwardOutput context = new ChainModelFeedForwardOutput();
         float[] currentOutput = input;
         int currentInputDim = inputDim;
         int currentBatchSize = batchSize;
@@ -172,8 +172,8 @@ public class ChainModel {
     }
     
     // Perform a forward pass through all components
-    public FeedForwardOutputMapGPU feedForwardGPU(CUdeviceptr input, int inputDim, int batchSize, CUstream stream) {
-        FeedForwardOutputMapGPU context = new FeedForwardOutputMapGPU();
+    public ChainModelFeedForwardOutputGPU feedForwardGPU(CUdeviceptr input, int inputDim, int batchSize, CUstream stream) {
+        ChainModelFeedForwardOutputGPU context = new ChainModelFeedForwardOutputGPU();
         CUdeviceptr currentOutput = input;
         int currentInputDim = inputDim;
         int currentBatchCount = batchSize;
@@ -190,13 +190,13 @@ public class ChainModel {
     }
         
     // Perform a backward pass through all components
-    public BackpropagateOutputMap backpropagate(FeedForwardOutputMap context, float[] truth, int truthDim, int batchSize, Loss lossFunction) {
+    public ChainModeBackpropagateOutput backpropagate(ChainModelFeedForwardOutput context, float[] truth, int truthDim, int batchSize, Loss lossFunction) {
         float[] deltaLoss = null;
         int deltaLossDim = truthDim;
         int deltaLossBatchSize = batchSize;
         boolean lossCalculated = false;
         
-        BackpropagateOutputMap result = new BackpropagateOutputMap();
+        ChainModeBackpropagateOutput result = new ChainModeBackpropagateOutput();
         
         BackpropagateOutput output;
         
@@ -234,14 +234,14 @@ public class ChainModel {
     }
         
     // Perform a backward pass through all components
-    public BackpropagateOutputMapGPU backpropagateGPU(FeedForwardOutputMapGPU context, CUdeviceptr truth, int truthDim, int batchSize, Loss lossFunction, CUstream stream) {
+    public ChainModeBackpropagateOutputMap backpropagateGPU(ChainModelFeedForwardOutputGPU context, CUdeviceptr truth, int truthDim, int batchSize, Loss lossFunction, CUstream stream) {
         CUdeviceptr deltaLoss = null;
         int deltaLossDim = truthDim;
         int deltaLossBatchSize = batchSize; 
         boolean lossCalculated = false;
 
         CUdeviceptr currentTruth = truth;
-        BackpropagateOutputMapGPU result = new BackpropagateOutputMapGPU();
+        ChainModeBackpropagateOutputMap result = new ChainModeBackpropagateOutputMap();
         BackpropagateOutputGPU output;
 
         for (int i = components.size() - 1; i >= 0; i--) {
@@ -280,7 +280,7 @@ public class ChainModel {
         return result;        
     }
     
-    public void applyGradients(BackpropagateOutputMap gradients, float learningRate, float weightDecay) {
+    public void applyGradients(ChainModeBackpropagateOutput gradients, float learningRate, float weightDecay) {
         // Apply gradients to each component in reverse order (same as backprop)
         for (int i = components.size() - 1; i >= 0; i--) {
             ModelComponent component = components.get(i);
@@ -291,7 +291,7 @@ public class ChainModel {
         }
     }
 
-    public void applyGradientsGPU(BackpropagateOutputMapGPU gradients, float learningRate, float weightDecay, CUstream stream) {
+    public void applyGradientsGPU(ChainModeBackpropagateOutputMap gradients, float learningRate, float weightDecay, CUstream stream) {
         // Apply gradients to each component in reverse order (same as backprop)
         for (int i = components.size() - 1; i >= 0; i--) {
             ModelComponent component = components.get(i);

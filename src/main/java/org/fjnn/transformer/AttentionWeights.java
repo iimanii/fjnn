@@ -243,7 +243,7 @@ public class AttentionWeights extends ModelComponent {
 
         AttentionWeightsBackpropOutputGPU backOutput = (AttentionWeightsBackpropOutputGPU)gradients;
         
-        CudaFunctions.updateWeightsWithDecay(
+        CudaFunctions.connection.updateWeightsWithDecay(
             weightsGPU,
             backOutput.weightGradients,
             learningRate,

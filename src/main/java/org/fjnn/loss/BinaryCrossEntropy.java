@@ -84,7 +84,7 @@ public class BinaryCrossEntropy extends Loss {
 
     @Override
     public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
-        CudaFunctions.BinaryCrossEntropyDerivative(output, expected, result, alpha, beta, size, stream);
+        CudaFunctions.loss.BinaryCrossEntropyDerivative(output, expected, result, alpha, beta, size, stream);
     }
     
 }

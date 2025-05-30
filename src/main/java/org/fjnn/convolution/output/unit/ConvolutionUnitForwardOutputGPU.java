@@ -21,7 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.convolution.output;
+package org.fjnn.convolution.output.unit;
 
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
@@ -33,6 +33,9 @@ import org.fjnn.cuda.CudaUtil;
  */
 public class ConvolutionUnitForwardOutputGPU {
     public final CUdeviceptr output;    
+    public final int unitCount;
+    public final int outputOrigin;      /* the input position that maps to this unit's output[0] */
+    
     public final int outputSize;
     public final int batchSize;
     
@@ -45,7 +48,10 @@ public class ConvolutionUnitForwardOutputGPU {
     
     // Single kernel constructor (for Kernel class)
     public ConvolutionUnitForwardOutputGPU(CUdeviceptr output, int outputSize, int batchSize, 
-                                           CUdeviceptr forwardPassInputs, CUdeviceptr im2colMatrix) {
+                                           CUdeviceptr forwardPassInputs, CUdeviceptr im2colMatrix, int unitCount) {
+        this.unitCount = unitCount;
+        this.outputOrigin = (unitCount - 1) / 2;
+        
         this.output = output;
         this.outputSize = outputSize;
         this.batchSize = batchSize;
@@ -59,9 +65,12 @@ public class ConvolutionUnitForwardOutputGPU {
     
     // Multi-kernel constructor (for KernelGroup class)
     public ConvolutionUnitForwardOutputGPU(CUdeviceptr output, int outputSize, int batchSize,
-                                           CUdeviceptr forwardPassInputs,
+                                           CUdeviceptr forwardPassInputs, int unitCount,
                                            CUdeviceptr[] kernelOutputs, CUdeviceptr[] sigmoidOutputs,
                                            CUdeviceptr[] channelInputs, CUdeviceptr[] im2colMatrix) {
+        this.unitCount = unitCount;
+        this.outputOrigin = (unitCount - 1) / 2;
+        
         this.output = output;
         this.outputSize = outputSize;
         this.batchSize = batchSize;

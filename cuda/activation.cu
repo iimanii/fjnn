@@ -359,7 +359,7 @@ __global__ void Tanh(float* input, float* output, long size) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
     
     if(row < size)
-        input[row] = tanhf(output[row]);
+        output[row] = tanhf(input[row]);
 }
 
 extern "C"

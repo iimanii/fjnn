@@ -37,7 +37,9 @@ import org.fjnn.cuda.CudaUtil;
 import org.fjnn.util.intrinsic;
 
 /**
- *
+ * Linear activation function: f(x) = x
+ * The identity function that outputs the input unchanged.
+ * 
  * @author ahmed
  */
 public class Linear extends Activation {
@@ -49,12 +51,16 @@ public class Linear extends Activation {
     
     @Override
     public void compute(float[] input, float[] output, int stride, int count) {
-        // do nothing        
+        /* Only copy if different arrays */
+        if (input != output)
+            System.arraycopy(input, 0, output, 0, stride * count);
     }
 
     @Override
     public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
-        // do nothing        
+        /* Only copy if different pointers */
+        if (!input.equals(output))
+            JCudaDriver.cuMemcpyAsync(output, input, stride * count * CudaUtil.FLOAT_SIZE, stream);
     }
     
     @Override

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2024 ahmed.
+ * Copyright 2025 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,39 +21,22 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.base.output;
+package org.fjnn.convolution.output.layer;
+
+import org.fjnn.convolution.output.unit.ConvolutionUnitForwardOutput;
 
 /**
  *
  * @author ahmed
  */
-import java.util.HashMap;
-import java.util.Map;
+public class ConvolutionLayerForwardOutput {
+    public final ConvolutionUnitForwardOutput[] unitOutputs;
+    public final float[] input;
+    public final int batchSize;
 
-public class FeedForwardOutputMap {
-    private final Map<Integer, FeedForwardOutput> results;
-
-    public FeedForwardOutputMap() {
-        this.results = new HashMap<>();
-    }
-
-    public void addOutput(int index, FeedForwardOutput result) {
-        if (results.containsKey(index))
-            throw new IllegalArgumentException("Output at index " + index + " already exists.");
-
-        results.put(index, result);
-    }
-
-    public FeedForwardOutput getOutput(int index) {
-        return results.get(index);
-    }
-    
-    public int size() {
-        return results.size();
-    }
-    
-    public float[] output() {
-        return results.get(results.size()-1).output();
+    public ConvolutionLayerForwardOutput(ConvolutionUnitForwardOutput[] unitOutputs, float[] forwardPassInputs, int batchSize) {
+        this.unitOutputs = unitOutputs;
+        this.input = forwardPassInputs;
+        this.batchSize = batchSize;
     }
 }
-

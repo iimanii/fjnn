@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2024 ahmed.
+ * Copyright 2025 ahmed.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,35 +21,24 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.base.output;
+package org.fjnn.convolution.output.layer;
+
+import org.fjnn.convolution.output.unit.ConvolutionUnitBackpropagateOutput;
 
 /**
  *
  * @author ahmed
  */
-import java.util.HashMap;
-import java.util.Map;
+public class ConvolutionLayerBackpropagateOutput {
+    public final float[] inputGradients;           // Aggregated
+    public final ConvolutionUnitBackpropagateOutput[] unitBackprops; // Individual outputs
+    public final int inputSize;
+    public final int batchSize;
 
-public class BackpropagateOutputMap {
-    private final Map<Integer, BackpropagateOutput> results;
-
-    public BackpropagateOutputMap() {
-        this.results = new HashMap<>();
-    }
-
-    public void addOutput(int index, BackpropagateOutput result) {
-        if (results.containsKey(index))
-            throw new IllegalArgumentException("Output at index " + index + " already exists.");
-
-        results.put(index, result);
-    }
-
-    public BackpropagateOutput getOutput(int index) {
-        return results.get(index);
-    }
-    
-    public int size() {
-        return results.size();
+    public ConvolutionLayerBackpropagateOutput(float[] inputGradients, ConvolutionUnitBackpropagateOutput[] unitBackprops, int inputSize, int batchSize) {
+        this.inputGradients = inputGradients;
+        this.unitBackprops = unitBackprops;
+        this.inputSize = inputSize;
+        this.batchSize = batchSize;
     }
 }
-

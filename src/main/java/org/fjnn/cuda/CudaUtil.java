@@ -44,6 +44,8 @@ import org.fjnn.util.util;
 public class CudaUtil {
     
     public static final long FLOAT_SIZE = Sizeof.FLOAT;
+    public static final long INT_SIZE = Sizeof.INT;
+    
     public static int DEFAULT_MEM_ALIGN = 256;
     public static int DEFAULT_MEM_ALIGN_FLOAT = 256 / Sizeof.FLOAT;
     public static int PREFERRED_BLOCK_SIZE = 128;
@@ -192,13 +194,17 @@ public class CudaUtil {
     public static CUdeviceptr toGPUAsync(float[] array, CUstream stream) {
         CUdeviceptr ptr = createAsync(array.length * FLOAT_SIZE, stream);
         
-        toGPUAsync(array, ptr, stream);
+        JCudaDriver.cuMemcpyHtoDAsync(ptr, Pointer.to(array), array.length * FLOAT_SIZE, stream);
         
         return ptr;
     }
-    
-    public static void toGPUAsync(float[] array, CUdeviceptr ptr, CUstream stream) {
-        JCudaDriver.cuMemcpyHtoDAsync(ptr, Pointer.to(array), array.length * FLOAT_SIZE, stream);
+
+    public static CUdeviceptr toGPUAsync(int[] array, CUstream stream) {
+        CUdeviceptr ptr = createAsync(array.length * Sizeof.INT, stream);
+        
+        JCudaDriver.cuMemcpyHtoDAsync(ptr, Pointer.to(array), array.length * Sizeof.INT, stream);
+        
+        return ptr;
     }
     
     public static byte[] fromGPU(CUdeviceptr src, int size) {
