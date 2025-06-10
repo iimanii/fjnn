@@ -448,4 +448,22 @@ public class LayerNormalizer extends Normalizer {
     public float[] getBeta() {
         return beta;
     }
+
+    @Override
+    public long getParameterCount() {
+        // gammaGPU + betaGPU
+        return 2 * neurons;
+    }
+
+    @Override
+    public long getForwardMemoryRequired(int batchSize) {
+        // normalized + postNormalization + stds
+        return (2 * neurons * batchSize + batchSize) * CudaUtil.FLOAT_SIZE;
+    }
+
+    @Override
+    public long getBackwardMemoryRequired(int batchSize) {
+        // gammaGradients + betaGradients
+        return 2 * neurons * CudaUtil.FLOAT_SIZE;
+    }
 }

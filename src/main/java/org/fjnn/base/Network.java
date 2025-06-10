@@ -76,7 +76,7 @@ public abstract class Network <T extends Network> extends ModelComponent {
     public final Object getOrDefault(String name, Object defaultValue) {
         return properties.getOrDefault(name, defaultValue);
     }
-    
+
     /**
      * 
      * @param name
@@ -124,11 +124,9 @@ public abstract class Network <T extends Network> extends ModelComponent {
         return outputSize;
     }    
 
-    public abstract long getWeightsCount();
-    
     public abstract long getGPUPrepareMemoryRequired();
     
-    public abstract long getGPUComputeMemoryRequired(int count);
+    public abstract long getGPUTrainingMemoryRequired(int count);
     
     public final boolean isFinalized() {
         return finalized;
@@ -154,9 +152,11 @@ public abstract class Network <T extends Network> extends ModelComponent {
      * @param min
      * @param max
      */
-    public abstract void randomize(float min, float max);
+    public abstract T randomize(float min, float max);
     
-    public abstract void kaiming();
+    public abstract T xavier();
+    
+    public abstract T kaiming();
     
     public final T copy(boolean copyWeights) {
         return copy(copyWeights, true);
@@ -183,7 +183,7 @@ public abstract class Network <T extends Network> extends ModelComponent {
 
     public abstract void clipWeights(float clipMin, float clipMax);
 
-    public abstract void ensureCPU();
+    public abstract void updateWeightsFromGPU();
     
     /* GPU Stuff */
     public abstract void crossOverMutateGPU(T n0, T n1, float min, float max, double mutation, boolean nocopy);

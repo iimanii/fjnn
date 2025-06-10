@@ -66,18 +66,12 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     
     /* index of last layer */
     int last;
-
-    /* memory requirement for prepare gpu */
-    long weightsMemReq;
-    
-    /* memory requirement a compute iteration */
-    long computeMemReq;
     
     /* true if CPU memory was emptied */
     boolean cpuFree;
     
-    /* for building the network */
-    List<LayerPlan> plan;
+    /* used for building the network */
+    List<Layer> hidden;
     
     /* I:size->H:size[activation].....->O:size[activation] */
     String signature;
@@ -88,13 +82,13 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     public NeuralNetwork(int input, int output, Activation outputActivation) {
         super(input, output, outputActivation, null);
         
-        this.plan = new ArrayList<>();
+        this.hidden = new ArrayList<>();
     }
     
     public NeuralNetwork(int input, int output, Activation outputActivation, Normalizer outputNormalizer) {
         super(input, output, outputActivation, outputNormalizer != null ? outputNormalizer.withNeurons(output) : null);
         
-        this.plan = new ArrayList<>();
+        this.hidden = new ArrayList<>();
     }
         
     NeuralNetwork(Layer[] layers) {
@@ -103,8 +97,6 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         this.layers = layers;
         this.finalized = true;
         this.last = layers.length - 1;
-
-        computeMemoryRequirements();
     }
     
     @Override
@@ -145,7 +137,8 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         
         normalizer = normalizer != null ? normalizer.withNeurons(neurons) : null;
         
-        plan.add(new LayerPlan(neurons, activation, normalizer, dropout));
+        int layerIndex = hidden.size() + 1;   // +1 for input layer
+        hidden.add(new Layer(layerIndex, neurons, activation, normalizer, dropout));
         return this;
     }
     
@@ -161,10 +154,6 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         // Add forward connection from source to target
         sourceLayer.addConnection(toLayer, targetNeurons);
         
-        // Add reverse connection from target to source (incoming)
-//        targetLayer.addReverseConnection(fromLayer);//, sourceLayer.getConnection(toLayer));
-    
-        computeMemoryRequirements();
         return this;
     }
     
@@ -173,18 +162,14 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
             throw new RuntimeException("network already finalized");
 
         /* input + output + hidden */
-        layers = new Layer[plan.size()+2];
-
-        int i=0;
+        layers = new Layer[hidden.size()+2];
 
         /* input layer */
-        layers[0] = new Layer(i++, inputSize, null, null, 0);
+        layers[0] = new Layer(0, inputSize, null, null, 0);
 
         Layer prev = layers[0];
 
-        for(LayerPlan p : plan) {
-            Layer layer = new Layer(i++, p.neurons, p.activation, p.normalizer, p.dropout);
-
+        for(Layer layer : hidden) {
             // Add connection from previous layer to the current layer
             prev.addConnection(layer.index, layer.neurons);
 
@@ -193,14 +178,11 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         }
 
         /* output layer */
-        layers[i] = new Layer(i, outputSize, outputActivation, outputNormalizer, 0);
+        last = hidden.size() + 1;
+        layers[last] = new Layer(last, outputSize, outputActivation, outputNormalizer, 0);
 
         // Add connection from the last hidden layer to the output layer
-        prev.addConnection(i, outputSize);
-
-        last = i;
-
-        computeMemoryRequirements();
+        prev.addConnection(last, outputSize);
 
         finalized = true;
 
@@ -230,42 +212,44 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     
     /* total number of weights including bias */
     @Override
-    public long getWeightsCount() {
+    public long getParametersCount() {
         long count = 0;
         
         for(Layer l : layers)
-            count += l.getWeightsCount();
+            count += l.getParameterCount();
         
         return count;
     }
     
-    @Override
-    public long getParametersCount() {
-        return getWeightsCount();
-    }
-    
     /* initialization functions */
     @Override
-    public void randomize(float min, float max) {
+    public NeuralNetwork randomize(float min, float max) {
         for(Layer l : layers)
             l.initUniform(min, max);
-    }
-    
-    public void xavier() {
-        xavier(1);
-    }
-    public void xavier(float scalar) {
-        for(Layer l : layers)
-            l.xavier(scalar);
+        
+        return this;
     }
     
     @Override
-    public void kaiming() {
-        kaiming(1);
+    public NeuralNetwork xavier() {
+        return xavier(1);
     }
-    public void kaiming(int scalar) {
+    public NeuralNetwork xavier(float scalar) {
+        for(Layer l : layers)
+            l.xavier(scalar);
+        
+        return this;
+    }
+    
+    @Override
+    public NeuralNetwork kaiming() {
+        return kaiming(1);
+    }
+    public NeuralNetwork kaiming(int scalar) {
         for(Layer l : layers)
             l.kaiming(scalar);
+        
+        return this;
     }
 
     /*
@@ -431,9 +415,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     }
     
     public float[] computeGPU(CUdeviceptr input, int batchSize, boolean memlock) {
-        long memory = getGPUComputeMemoryRequired(batchSize);
-        
-        int deviceId = getGPUDeviceId();
+        long memory = getGPUForwardMemoryRequired(batchSize);
         
         if(memlock)
             lockMemory(memory, deviceId);
@@ -585,25 +567,63 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         }
     }
     
-    @Override
-    public long getGPUComputeMemoryRequired(int batchSize) {
-        return computeMemReq * batchSize;
-    }
-    
-    public long getGPUBackpropagateMemoryRequired(int batchSize) {
-        /* pre and post activations stored */
-        long feedForward = 2 * computeMemReq * batchSize;
-        
-        /* activation deltas + gradients */
-        long backpropagate = computeMemReq * batchSize + weightsMemReq;
-        
-        return feedForward + backpropagate;
-    }
-    
+    /**
+     * Memory required for network parameters (delegated to layers)
+     * @return 
+    */
     @Override
     public long getGPUPrepareMemoryRequired() {
-        return weightsMemReq;
+        long memory = 0;
+        
+        for(Layer layer : layers) {
+            memory += layer.getParameterCount();
+        }
+        
+        return memory * CudaUtil.FLOAT_SIZE;
     }
+
+    /**
+     * Memory required during forward pass (delegated to layers)
+     * @param batchSize
+     * @return 
+     */
+    public long getGPUForwardMemoryRequired(int batchSize) {
+        long memory = 0;
+        for(Layer layer : layers) {
+            memory += layer.getForwardMemoryRequired(batchSize);
+        }
+        return memory;
+    }
+
+    /**
+     * Memory required during backward pass (initial deltaLoss + delegated to layers)
+     * @param batchSize
+     * @return 
+     */
+    public long getGPUBackwardMemoryRequired(int batchSize) {
+        long memory = 0;
+
+        // Initial deltaLoss allocation in backpropagateGPU()
+        memory += outputSize * batchSize * CudaUtil.FLOAT_SIZE;
+
+        // Delegate to layers
+        for(Layer layer : layers) {
+            memory += layer.getBackwardMemoryRequired(batchSize);
+        }
+
+        return memory;
+    }
+    
+    /**
+    * Total memory required during training (forward + backward)
+     * @param batchSize
+     * @return 
+    */
+    @Override
+    public long getGPUTrainingMemoryRequired(int batchSize) {
+       return getGPUForwardMemoryRequired(batchSize) + getGPUBackwardMemoryRequired(batchSize);
+    }
+    
 //    
 //    public double sumAbsWeightsGPU() {
 //        if(!gpuReady())
@@ -679,9 +699,11 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
             throw new RuntimeException("Invalid cuda context for device: " + deviceId + " must call CudaEngine.prepareThread(...)");
             
         this.deviceId = a.deviceId;
-            
+        
+        long memory = getParametersCount() * 4 * CudaUtil.FLOAT_SIZE;
+        
         /* 1x prepare gpu + 3x rng arrays */
-        lockMemory(weightsMemReq * 4, deviceId);
+        lockMemory(memory, deviceId);
         
         try {
             CUstream stream = CudaUtil.createStream();
@@ -696,7 +718,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
             for(int i=0; i < layers.length; i++)
                 layers[i].freeGPURng();
         } finally {
-            releaseMemory(weightsMemReq * 3);
+            releaseMemory(memory * 3);
         }
     }
     
@@ -785,7 +807,9 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         for(Layer l : layers)
             l.freeGPU(stream);
         
-        releaseMemory(weightsMemReq);
+        long memory = getParametersCount() * CudaUtil.FLOAT_SIZE;
+        
+        releaseMemory(memory);
     }
     
     /**
@@ -870,35 +894,6 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         return signature;
     }
 
-    private CUdeviceptr[] createComputeLayerGPUMemory(int count, CUstream stream) {
-        long totalSize = getGPUComputeMemoryRequired(count);
-        CUdeviceptr pool = CudaUtil.create(totalSize);
-        JCudaDriver.cuMemsetD32Async(pool, 0, totalSize/4, stream);
-        
-        CUdeviceptr[] result = new CUdeviceptr[getLayerCount()];
-        long ptr = 0;
-        
-        for(int j=1; j < layers.length; j++) {
-            result[j] = pool.withByteOffset(ptr);
-            ptr += CudaUtil.alignLength(layers[j].neurons * count * CudaUtil.FLOAT_SIZE, CudaUtil.DEFAULT_MEM_ALIGN);
-        }
-        
-        return result;
-    }
-
-    private void computeMemoryRequirements() {
-        computeMemReq = 0;
-        
-        for(int j=1; j < layers.length; j++)
-            computeMemReq += layers[j].neurons;
-        
-        computeMemReq *= Float.BYTES;
-        
-        weightsMemReq = 0;
-        for(Layer l : layers)
-            weightsMemReq += l.getMemoryRequirements();
-    }
-
     @Override
     public float[] compute(NetworkInput input) {
         switch(input.type) {
@@ -936,19 +931,19 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         
         cpuFree = true;
     }
-    
-    @Override
-    public void ensureCPU() {
-        checkGPUContext();
-        
-        CUstream stream = CudaUtil.createStream();
-        
-        for(Layer l : layers)
-            l.ensureCPU(stream);
-        
-        JCudaDriver.cuStreamSynchronize(stream);        
-        CudaUtil.freeStream(stream);
-    }
+//    
+//    @Override
+//    public void updateWeightsFromGPU() {
+//        checkGPUContext();
+//        
+//        CUstream stream = CudaUtil.createStream();
+//        
+//        for(Layer l : layers)
+//            l.ensureCPU(stream);
+//        
+//        JCudaDriver.cuStreamSynchronize(stream);        
+//        CudaUtil.freeStream(stream);
+//    }
     
     @Override
     public void updateWeightsFromGPU() {
@@ -1030,7 +1025,9 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     public void prepareGPU0(CUstream stream) {
         int device = CudaEngine.getThreadDeviceId();
         
-        lockMemory(weightsMemReq, device);
+        long memory = getParametersCount() * CudaUtil.FLOAT_SIZE;
+        
+        lockMemory(memory, device);
 
         for(Layer l : layers)
             l.prepareGPU(stream);
@@ -1054,7 +1051,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
 
     @Override
     public long getBackpropagateMemoryRequired(int batchSize) {
-        return getGPUComputeMemoryRequired(batchSize);
+        throw new RuntimeException();
     }
     
     public void enableDropout() {
@@ -1064,4 +1061,36 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     public void disableDropout() {
         disableDropout = true;
     }
+    
+    /**
+     * Enable/disable Adam optimizer for all connections
+     * @param useAdam
+     * @return 
+     */
+    public NeuralNetwork setUseAdam(boolean useAdam) {
+        for(Layer layer : layers) {
+            for(Connection connection : layer.getConnections().values()) {
+                connection.setUseAdam(useAdam);
+            }
+        }
+        
+        return this;
+    }
+    
+    /**
+     * Set Adam hyperparameters for all connections
+     * @param beta1
+     * @param beta2
+     * @param epsilon
+     */
+    public void setAdamHyperparameters(float beta1, float beta2, float epsilon) {
+        for(Layer layer : layers) {
+            for(Connection connection : layer.getConnections().values()) {
+                connection.beta1 = beta1;
+                connection.beta2 = beta2;
+                connection.adamEpsilon = epsilon;
+            }
+        }
+    }
+
 }

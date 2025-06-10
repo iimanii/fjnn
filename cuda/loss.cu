@@ -27,6 +27,19 @@
 #include "util.h"
 
 /**
+ * Mean Square Error compute
+ */
+extern "C"
+__global__ void MeanSquareError(float* output, float* expected, float* result, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(i < size) {
+        float diff = output[i] - expected[i];
+        result[i] = diff * diff;
+    }
+}
+
+/**
  * Mean Square Error derivative
  */
 extern "C"
@@ -37,6 +50,21 @@ __global__ void MeanSquareErrorDerivative(float* output, float* expected, float*
     
     if(i < size)
         result[i] = multiplier * (output[i] - expected[i]);
+}
+
+/**
+ * Binary Cross Entropy compute
+ */
+extern "C"
+__global__ void BinaryCrossEntropy(float* output, float* expected, float* result, float alpha, float beta, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(i < size) {
+        float clipped = fmaxf(1e-7f, fminf(1.0f - 1e-7f, output[i]));
+        
+        float weight = (expected[i] == 1.0f) ? alpha : beta;
+        result[i] = weight * (-expected[i] * logf(clipped) - (1.0f - expected[i]) * logf(1.0f - clipped));
+    }
 }
 
 /**
@@ -53,13 +81,65 @@ __global__ void BinaryCrossEntropyDerivative(float* output, float* expected, flo
         result[i] = weight * (clipped - expected[i]) / (clipped * (1.0f - clipped));
     }
 }
+
+/**
+ * Weighted Mean Square Error compute
+ */
+extern "C"
+__global__ void WeightedMeanSquareError(float* output, float* expected, float* weights, float* result, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(i < size) {
+        float diff = output[i] - expected[i];
+        result[i] = weights[i] * diff * diff;
+    }
+}
+
 /**
  * Weighted Mean Square Error derivative
  */
 extern "C"
-__global__ void WeightedMeanSquareErrorPrime(float* output, float* expected, float* weights, float* result, long size) {
+__global__ void WeightedMeanSquareErrorDerivative(float* output, float* expected, float* weights, float* result, long size) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     
+    float multiplier = 2.0f / size;
+
     if(i < size)
-        result[i] = weights[i] * (output[i] - expected[i]);
+        result[i] = multiplier * weights[i] * (output[i] - expected[i]);
+}
+
+/**
+ * Focal Loss compute
+ */
+extern "C"
+__global__ void FocalLoss(float* output, float* expected, float* result, float gamma, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(i < size) {
+        float clipped = fmaxf(1e-7f, fminf(1.0f - 1e-7f, output[i]));
+        
+        float pt = (expected[i] == 1.0f) ? clipped : (1.0f - clipped);
+        float modulating_factor = powf(1.0f - pt, gamma);
+        result[i] = -modulating_factor * (expected[i] * logf(clipped) + (1.0f - expected[i]) * logf(1.0f - clipped));
+    }
+}
+
+/**
+ * Focal Loss derivative
+ */
+extern "C"
+__global__ void FocalLossDerivative(float* output, float* expected, float* result, float gamma, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(i < size) {
+        float clipped = fmaxf(1e-7f, fminf(1.0f - 1e-7f, output[i]));
+        float pt = (expected[i] == 1.0f) ? clipped : (1.0f - clipped);
+        float modulating_factor = powf(1.0f - pt, gamma);
+        
+        // Combining BCE derivative with focal loss terms
+        float bce_derivative = (clipped - expected[i]) / (clipped * (1.0f - clipped));
+        float focal_term = modulating_factor * (gamma * logf(pt) * ((expected[i] == 1.0f) ? -1.0f : 1.0f) + 1.0f);
+        
+        result[i] = bce_derivative * focal_term;
+    }
 }

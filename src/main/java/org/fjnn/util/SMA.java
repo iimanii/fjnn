@@ -12,7 +12,7 @@ import java.util.ArrayList;
  * @author ahmed
  */
 public class SMA {
-    ArrayList<Double> list;
+    final ArrayList<Double> list;
     double sum;
     int window;
 
@@ -27,15 +27,17 @@ public class SMA {
     }
 
     public void add(double x) {
-        list.add(x);
-        if(Double.isFinite(x))
-            sum += x;
+        synchronized(list) {
+            list.add(x);
+            if(Double.isFinite(x))
+                sum += x;
 
-        if(list.size() > window) {
-            double y = list.remove(0);
-            
-            if(Double.isFinite(y))
-                sum -= y;
+            if(list.size() > window) {
+                double y = list.remove(0);
+
+                if(Double.isFinite(y))
+                    sum -= y;
+            }
         }
     }
     
@@ -54,11 +56,22 @@ public class SMA {
     }
 
     public double getNet() {
+        if(list.isEmpty())
+            return 0;
+        
         return sum / list.size();
     }
 
+    public boolean isEmpty() {
+        return list.isEmpty();
+    }
+    
     public void reset() {
-        this.list = new ArrayList<>();
+        this.list.clear();
         this.sum = 0;
     }    
+
+    public boolean isValid() {
+        return list.size() >= window;
+    }
 }

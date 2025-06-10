@@ -237,4 +237,24 @@ public class ConvolutionLayer {
             unit.updateWeightsFromGPU();
         }
     }
+
+    /**
+     * Xavier initialization for all units in the layer
+     * @param scalar multiplier for standard deviation
+     */
+    public void xavier(float scalar) {
+        for (ConvolutionUnit unit : units) {
+            unit.xavier(scalar);
+        }
+    }
+
+    /**
+     * Kaiming initialization for all units in the layer
+     * @param scalar multiplier for standard deviation
+     */
+    public void kaiming(float scalar) {
+        for (ConvolutionUnit unit : units) {
+            unit.kaiming(scalar);
+        }
+    }
 }

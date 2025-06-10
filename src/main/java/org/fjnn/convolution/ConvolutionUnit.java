@@ -86,4 +86,30 @@ public interface ConvolutionUnit {
     int getStrideSize();
     
     public void updateWeightsFromGPU();
+    
+    /**
+     * Initialize weights with Gaussian distribution
+     * @param mean Mean of the distribution
+     * @param std Standard deviation of the distribution
+     */
+    void initGaussian(float mean, float std);
+    
+    /**
+     * Initialize weights with uniform distribution
+     * @param min Minimum value
+     * @param max Maximum value
+     */
+    void initUniform(float min, float max);
+    
+    /**
+     * Xavier initialization with custom scalar
+     * @param scalar multiplier for standard deviation
+     */
+    void xavier(float scalar);
+    
+    /**
+     * Kaiming initialization with custom scalar
+     * @param scalar multiplier for standard deviation  
+     */
+    void kaiming(float scalar);
 }

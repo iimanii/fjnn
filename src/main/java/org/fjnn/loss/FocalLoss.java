@@ -23,8 +23,11 @@
  */
 package org.fjnn.loss;
 
+import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
+import org.fjnn.cuda.CudaFunctions;
+import org.fjnn.cuda.CudaUtil;
 
 /**
  *
@@ -33,7 +36,7 @@ import jcuda.driver.CUstream;
  * Incomplete class .. needs testing
  */
 public class FocalLoss extends Loss {
-    private final float gamma; // focusing parameter
+    public final float gamma;           // focusing parameter
     final static float eps = 1e-7f;
     
     public FocalLoss(float gamma) {
@@ -76,8 +79,35 @@ public class FocalLoss extends Loss {
     }
     
     @Override
+    public void computeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
+        // Create temporary buffer for per-element results
+        CUdeviceptr tempBuffer = CudaUtil.createFloatAsync(size, stream);
+
+        // Compute per-element focal loss
+        CudaFunctions.loss.FocalLoss(output, expected, tempBuffer, gamma, size, stream);
+
+        // Reduce sum and average
+        CudaFunctions.vector.reduceSum(result, tempBuffer, 1, (int)size, stream);
+        CudaFunctions.vector.scale(result, 1.0f / size, 1, stream);
+
+        // Cleanup
+        CudaUtil.freeAsync(tempBuffer, stream);
+    }
+    
+    @Override
     public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
-        // GPU implementation would need to be added
-        throw new UnsupportedOperationException("GPU implementation not available");
+        CudaFunctions.loss.FocalLossDerivative(output, expected, result, gamma, size, stream);
+    }
+    
+    @Override
+    public Map serialize() {
+        Map result = super.serialize();
+        result.put("gamma", gamma);
+        return result;
+    }
+    
+    public static FocalLoss deserialize(Map serialized) {
+        float gamma = (Float)serialized.get("gamma");
+        return new FocalLoss(gamma);
     }
 }

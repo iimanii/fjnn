@@ -1391,6 +1391,34 @@ public class CudaFunctions {
     
     /* Loss Functions */
     public static class loss {
+        public static void MeanSquareError(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "MeanSquareError", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(output),
+                Pointer.to(expected),
+                Pointer.to(result),
+                Pointer.to(new long[]{size})
+            );
+
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+
+            int blockSizeX = (int)Math.min(threadsPerBlock, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+        
         public static void MeanSquareErrorDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
@@ -1400,6 +1428,36 @@ public class CudaFunctions {
                 Pointer.to(output),
                 Pointer.to(expected),
                 Pointer.to(result),
+                Pointer.to(new long[]{size})
+            );
+
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+
+            int blockSizeX = (int)Math.min(threadsPerBlock, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+        
+        public static void BinaryCrossEntropy(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, float alpha, float beta, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "BinaryCrossEntropy", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(output),
+                Pointer.to(expected),
+                Pointer.to(result),
+                Pointer.to(new float[]{alpha}),
+                Pointer.to(new float[]{beta}),
                 Pointer.to(new long[]{size})
             );
 
@@ -1449,10 +1507,10 @@ public class CudaFunctions {
             );
         }
 
-        public static void WeightedMeanSquareErrorPrime(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr weights, CUdeviceptr result, long size, int threadsPerBlock, CUstream stream) {
+        public static void WeightedMeanSquareError(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr weights, CUdeviceptr result, long size, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
-            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "WeightedMeanSquareErrorPrime", device);
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "WeightedMeanSquareError", device);
 
             Pointer kernelParameters = Pointer.to(
                 Pointer.to(output),
@@ -1461,6 +1519,95 @@ public class CudaFunctions {
                 Pointer.to(result),
                 Pointer.to(new long[]{size})
             );
+
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+
+            int blockSizeX = (int)Math.min(threadsPerBlock, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+
+        public static void WeightedMeanSquareErrorDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr weights, CUdeviceptr result, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "WeightedMeanSquareErrorDerivative", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(output),
+                Pointer.to(expected),
+                Pointer.to(weights),
+                Pointer.to(result),
+                Pointer.to(new long[]{size})
+            );
+
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+
+            int blockSizeX = (int)Math.min(threadsPerBlock, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+
+        public static void FocalLoss(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, float gamma, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "FocalLoss", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(output),
+                Pointer.to(expected),
+                Pointer.to(result),
+                Pointer.to(new float[]{gamma}),
+                Pointer.to(new long[]{size})
+            );
+
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
+
+            int blockSizeX = (int)Math.min(threadsPerBlock, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+            (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,      // Block dimension
+                0, stream,             // Shared memory size and stream
+                kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+
+        public static void FocalLossDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, float gamma, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "FocalLossDerivative", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(output),
+                Pointer.to(expected),
+                Pointer.to(result),
+                Pointer.to(new float[]{gamma}),
+                Pointer.to(new long[]{size})
+            );
+
+            int threadsPerBlock = CudaUtil.PREFERRED_BLOCK_SIZE;
 
             int blockSizeX = (int)Math.min(threadsPerBlock, size);
             long gridSizeX = (size - 1) / blockSizeX + 1;

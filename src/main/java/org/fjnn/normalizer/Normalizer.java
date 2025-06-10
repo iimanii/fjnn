@@ -68,4 +68,24 @@ public abstract class Normalizer extends ModelComponent {
                 throw new RuntimeException("Unknown normalizer type: " + type);
         }
     }
+    
+    /**
+     * Memory required for normalizer parameters
+     * @return 
+     */
+    public abstract long getParameterCount();
+
+    /**
+     * Memory required during forward pass
+     * @param batchSize
+     * @return 
+     */
+    public abstract long getForwardMemoryRequired(int batchSize);
+
+    /**
+     * Memory required during backward pass
+     * @param batchSize
+     * @return 
+     */
+    public abstract long getBackwardMemoryRequired(int batchSize);
 }

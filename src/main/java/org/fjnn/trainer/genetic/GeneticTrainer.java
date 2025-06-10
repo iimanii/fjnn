@@ -304,7 +304,7 @@ public class GeneticTrainer <T extends Network> {
                 for(int j=0; j < poolsize; j++) {
                     T n = newGeneration.get(j);
                     futures.add(threadPool.submit(() -> {
-                        n.ensureCPU();
+                        n.updateWeightsFromGPU();
                     }));
                 }
             }

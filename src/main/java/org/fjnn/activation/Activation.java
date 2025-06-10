@@ -84,7 +84,7 @@ public abstract class Activation implements Serializable {
     
     public abstract void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream);
     
-    public HashMap serialize() {
+    public Map serialize() {
         HashMap obj = new HashMap();
         obj.put("type", getClass().getSimpleName());
         return obj;

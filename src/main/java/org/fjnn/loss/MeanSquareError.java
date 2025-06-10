@@ -23,6 +23,8 @@
  */
 package org.fjnn.loss;
 
+import java.util.HashMap;
+import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.cuda.CudaFunctions;
@@ -48,6 +50,22 @@ public class MeanSquareError extends Loss {
         return sum / output.length;
     }
 
+    @Override
+    public void computeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
+        // Create temporary buffer for per-element results
+        CUdeviceptr tempBuffer = CudaUtil.createFloatAsync(size, stream);
+        
+        // Compute per-element squared differences
+        CudaFunctions.loss.MeanSquareError(output, expected, tempBuffer, size, stream);
+        
+        // Reduce sum and average
+        CudaFunctions.vector.reduceSum(result, tempBuffer, 1, (int)size, stream);
+        CudaFunctions.vector.scale(result, 1.0f / size, 1, stream);
+        
+        // Cleanup
+        CudaUtil.freeAsync(tempBuffer, stream);
+    }
+    
     // Compute the derivative of MSE with respect to the predicted values
     @Override
     public float[] derivative(float[] output, float[] expected) {
@@ -66,6 +84,13 @@ public class MeanSquareError extends Loss {
     @Override
     public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
         CudaFunctions.loss.MeanSquareErrorDerivative(output, expected, result, size, stream);
+    }
+    
+    @Override
+    public Map serialize() {
+        Map result = new HashMap();
+        result.put("type", "MeanSquareError");
+        return result;
     }
 }
 

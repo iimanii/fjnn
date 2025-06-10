@@ -36,6 +36,7 @@ import org.fjnn.base.output.FeedForwardOutput;
 import org.fjnn.base.output.FeedForwardOutputGPU;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaFunctions;
+import org.fjnn.cuda.CudaUtil;
 import org.fjnn.normalizer.outputs.DropoutBackpropagateOutput;
 import org.fjnn.normalizer.outputs.DropoutBackpropagateOutputGPU;
 import org.fjnn.normalizer.outputs.DropoutForwardOutput;
@@ -195,5 +196,10 @@ public class Dropout extends ModelComponent {
     @Override
     public long getBackpropagateMemoryRequired(int batchSize) {
         return neurons * batchSize;
+    }
+    
+    public long getForwardMemoryRequired(int batchSize) {
+        // output + mask
+        return (neurons * batchSize + neurons) * CudaUtil.FLOAT_SIZE;
     }
 }

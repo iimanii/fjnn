@@ -23,6 +23,7 @@
  */
 package org.fjnn.loss;
 
+import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.cuda.CudaFunctions;
@@ -53,25 +54,50 @@ public class WeightedMeanSquareError extends Loss {
             float diff = output[i] - expected[i];
             sum += weights[i] * diff * diff;
         }
-        return sum / (2 * output.length);
+        return sum / output.length;
     }
 
+    @Override
+    public void computeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
+        // Create temporary buffer for per-element results
+        CUdeviceptr tempBuffer = CudaUtil.createFloatAsync(size, stream);
+        
+        // Compute per-element weighted squared differences
+        CudaFunctions.loss.WeightedMeanSquareError(output, expected, weightsGPU, tempBuffer, size, stream);
+        
+        // Reduce sum and average
+        CudaFunctions.vector.reduceSum(result, tempBuffer, 1, (int)size, stream);
+        CudaFunctions.vector.scale(result, 1.0f / size, 1, stream);
+        
+        // Cleanup
+        CudaUtil.freeAsync(tempBuffer, stream);
+    }
+    
     // Compute the derivative of MSE with respect to the predicted values
     @Override
     public float[] derivative(float[] output, float[] expected) {
         if(output.length != expected.length || output.length != weights.length)
             throw new RuntimeException();
         
-        float[] derivatives = new float[output.length];
+        float[] derivatives = new float[output.length];        
+        float multiplier = 2.0f / output.length;
+
         for (int i = 0; i < output.length; i++) {
-            derivatives[i] = weights[i] * (output[i] - expected[i]);
+            derivatives[i] = multiplier * weights[i] * (output[i] - expected[i]);
         }
         return derivatives;
     }
     
     @Override
     public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
-        CudaFunctions.loss.MeanSquareErrorDerivative(output, expected, result, size, stream);
+        CudaFunctions.loss.WeightedMeanSquareErrorDerivative(output, expected, weightsGPU, result, size, stream);
     }
+    
+    @Override
+    public Map serialize() {
+        Map result = super.serialize();
+        result.put("weights", weights);  // Store the weights array
+        return result;
+    }    
 }
 

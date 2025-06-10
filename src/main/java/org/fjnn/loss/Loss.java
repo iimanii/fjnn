@@ -23,6 +23,8 @@
  */
 package org.fjnn.loss;
 
+import java.util.HashMap;
+import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 
@@ -33,11 +35,35 @@ import jcuda.driver.CUstream;
 public abstract class Loss {
     
     public static Loss MeanSquareError = new MeanSquareError();
-    public static Loss BinaryCrossEntropy = new BinaryCrossEntropy();
     
     abstract public float compute(float[] output, float[] expected);
     
-    abstract public float[] derivative(float[] output, float[] expected);
+    abstract public void computeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream);
     
+    abstract public float[] derivative(float[] output, float[] expected);
+   
     abstract public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream);
+    
+    public Map serialize() {
+        HashMap result = new HashMap();
+        result.put("type", getClass().getSimpleName());
+        return result;
+    }
+    
+    public static Loss deserialize(Map serialized) {
+        String type = (String)serialized.get("type");
+
+        switch(type) {
+            case "MeanSquareError":
+                return new MeanSquareError();
+            case "BinaryCrossEntropy":
+                return BinaryCrossEntropy.deserialize(serialized);
+            case "WeightedMeanSquareError":
+                throw new RuntimeException("WeightedMeanSquareError deserialization not implemented");
+            case "FocalLoss":
+                return FocalLoss.deserialize(serialized);
+            default:
+                throw new RuntimeException("Unknown loss type: " + type);
+        }
+    }
 }

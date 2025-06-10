@@ -106,8 +106,8 @@ public class LeakyReLU extends Activation {
     }
     
     @Override
-    public HashMap serialize() {
-        HashMap obj = super.serialize();
+    public Map serialize() {
+        Map obj = super.serialize();
         obj.put("alpha", alpha);
         
         return obj;

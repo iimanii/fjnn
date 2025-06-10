@@ -380,7 +380,7 @@ public class Kernel implements ConvolutionUnit {
             updateWeightsAdamGPU(weightGradients, biasGradient, learningRate, stream);
         } else {
             // Update weights: w = w - lr * grad
-            CudaFunctions.vector.multiplyStride(weightsGPU, weightGradients, weightsGPU, -learningRate, width, 1, stream);
+            CudaFunctions.vector.add(weightsGPU, weightGradients, weightsGPU, -learningRate, width, stream);
 
             // Update bias: b = b - lr * grad
             CudaFunctions.vector.add(biasGPU, biasGradient, biasGPU, -learningRate, 1, stream);
@@ -419,6 +419,7 @@ public class Kernel implements ConvolutionUnit {
         this.gpuReady = false;
     }
     
+    @Override
     public void initGaussian(float mean, float sd) {
         // Initialize weights with Gaussian distribution
         for (int i = 0; i < width; i++) {
@@ -429,6 +430,35 @@ public class Kernel implements ConvolutionUnit {
         bias = (float) Rng.gaussian(mean, sd);
 
         gpuReady = false;
+    }
+    
+    @Override
+    public void initUniform(float min, float max) {
+        // Initialize weights with uniform distribution
+        for (int i = 0; i < weights.length; i++) {
+            weights[i] = (float) (Rng.nextFloat()* (max - min) + min);
+        }
+
+        // Initialize bias to zero (common practice for uniform init)
+        bias = 0.0f;
+
+        // Mark GPU as not ready since weights changed
+        gpuReady = false;
+    }
+    
+    @Override
+    public void xavier(float scalar) {
+        int fanIn = width;
+        int fanOut = 1;
+        float std = scalar * (float) Math.sqrt(2.0 / (fanIn + fanOut));
+        initGaussian(0.0f, std);
+    }
+
+    @Override
+    public void kaiming(float scalar) {
+        int fanIn = width;
+        float std = scalar * (float) Math.sqrt(2.0 / fanIn);
+        initGaussian(0.0f, std);
     }
     
     public HashMap<String, Object> serialize() {

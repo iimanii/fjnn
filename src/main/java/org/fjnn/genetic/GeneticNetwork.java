@@ -152,6 +152,16 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
+    @Override
+    public GeneticNetwork xavier() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public long getGPUTrainingMemoryRequired(int count) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
     static class mapping {
         final int layer;
         final int from;
@@ -279,9 +289,11 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
      * @param max
      */
     @Override
-    public void randomize(float min, float max) {
+    public GeneticNetwork randomize(float min, float max) {
         for(GeneticConnection c : connectionMap.all())
             c.weight = Rng.nextFloat(min, max);
+        
+        return this;
     }
     
     /**
@@ -1134,11 +1146,6 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
     }
 
     @Override
-    public void ensureCPU() {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
     public boolean gpuReady() {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
@@ -1182,16 +1189,6 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
     public void crossOverMutateGPU(GeneticNetwork n0, GeneticNetwork n1, float min, float max, double mutation, boolean nocopy) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
-    
-    @Override
-    public long getWeightsCount() {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public long getGPUComputeMemoryRequired(int count) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
 
     @Override
     public long getGPUPrepareMemoryRequired() {
@@ -1199,7 +1196,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
     }
 
     @Override
-    public void kaiming() {
+    public GeneticNetwork kaiming() {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 

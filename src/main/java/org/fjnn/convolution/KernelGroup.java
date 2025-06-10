@@ -444,4 +444,36 @@ public class KernelGroup implements ConvolutionUnit {
             kernel.updateWeightsFromGPU();
         }
     }
+    
+    @Override
+    public void initGaussian(float mean, float std) {
+        // Initialize all kernels in the group
+        for (Kernel kernel : kernels) {
+            kernel.initGaussian(mean, std);
+        }
+    }
+
+    @Override
+    public void initUniform(float min, float max) {
+        // Initialize all kernels in the group
+        for (Kernel kernel : kernels) {
+            kernel.initUniform(min, max);
+        }
+    }
+
+    @Override
+    public void xavier(float scalar) {
+        // Initialize all kernels in the group
+        for (Kernel kernel : kernels) {
+            kernel.xavier(scalar);
+        }
+    }
+
+    @Override
+    public void kaiming(float scalar) {
+        // Initialize all kernels in the group
+        for (Kernel kernel : kernels) {
+            kernel.kaiming(scalar);
+        }
+    }
 }

@@ -69,9 +69,7 @@ public class Layer {
     public final int neurons;
     
     public final Activation activation;
-    
-    public final Normalizer normalizer;
-    
+    public final Normalizer normalizer;    
     public final Dropout dropout;
     
     /* connections from this layer to next layers */
@@ -87,7 +85,7 @@ public class Layer {
         this.connections = new HashMap<>();
     }
     
-    Layer copy(boolean copyWeights, boolean createWeights) {
+    protected Layer copy(boolean copyWeights, boolean createWeights) {
         Layer result = new Layer(index, neurons, activation, normalizer == null ? null : (Normalizer)normalizer.copy(), dropout.rate);
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
@@ -100,7 +98,7 @@ public class Layer {
         return result;
     }
 
-    void copyWeights(Layer layer) {
+    protected void copyWeights(Layer layer) {
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             e.getValue().copyWeights(layer.getConnection(e.getKey()));
         }
@@ -315,12 +313,6 @@ public class Layer {
             c.prepareCPU();
     }
     
-
-    void ensureCPU(CUstream stream) {
-        for(Connection c : connections.values())
-            c.ensureCPU(stream);
-    }
-    
     void updateWeightsFromGPU(CUstream stream) {
         for(Connection c : connections.values())
             c.syncWeightsFromGPU(stream);
@@ -346,16 +338,80 @@ public class Layer {
         }
     }
     
-    protected int getWeightsCount() {
-        int count = 0;
-        
+    /**
+    * Memory required for layer parameters (connections + normalizer)
+     * @return 
+    */
+    protected long getParameterCount() {
+        long parameters = 0;
+
+        // Connection parameters (weights, biases, optimizer state)
+        for(Connection c : connections.values())
+            parameters += c.getParameterCount();
+
+        // Normalizer parameters (gamma, beta)
+        if(normalizer != null)
+            parameters += normalizer.getParameterCount();
+
+        // Dropout has no parameters
+
+        return parameters;
+    }
+    
+    /**
+    * Memory required during forward pass
+     * @param batchSize
+     * @return 
+    */
+    protected long getForwardMemoryRequired(int batchSize) {
+        long memory = 0;
+
+        // Layer inputs for NEXT layers - allocated by THIS layer in feedForwardGPU()
         for(Connection c : connections.values()) {
-            count += c.getWeights().length;
-            if(!c.disableBias)
-                count += c.getBias().length;
+            memory += c.links * batchSize * CudaUtil.FLOAT_SIZE;
         }
-        
-        return count;
+
+        // Component allocations (each component allocates its own memory)
+        if(activation != null)
+            // ActivationForwardOutputGPU allocates postActivation
+            memory += neurons * batchSize * CudaUtil.FLOAT_SIZE;
+
+        if(normalizer != null)
+            memory += normalizer.getForwardMemoryRequired(batchSize);
+
+        if(dropout.rate != 0)
+            memory += dropout.getForwardMemoryRequired(batchSize);
+
+        return memory;
+    }
+
+    /**
+     * Memory required during backward pass
+     * @param batchSize
+     * @return 
+     */
+    protected long getBackwardMemoryRequired(int batchSize) {
+        long memory = 0;
+
+        // Activation deltas for THIS layer - allocated in backpropagateGPU()
+        // Only allocated for non-input layers (input layer doesn't call backpropagateGPU)
+        if(index > 0) {
+            memory += neurons * batchSize * CudaUtil.FLOAT_SIZE;
+        }
+
+        // Connection gradients - allocated by Connection.backpropagateGPU()
+        for(Connection c : connections.values()) {
+            memory += c.getBackwardMemoryRequired(batchSize);
+        }
+
+        // Normalizer gradients - allocated by normalizer.backpropagateGPU()
+        if(normalizer != null) {
+            memory += normalizer.getBackwardMemoryRequired(batchSize);
+        }
+
+        // Dropout has no backward memory requirements
+
+        return memory;
     }
     
     HashMap serialize() {
@@ -412,11 +468,6 @@ public class Layer {
         return layer;
     }
     
-    /**
-     * deprecated stuff
-     * @return 
-     */
-    
     public boolean gpuReady() {
         boolean gpuReady = true;
         for(Connection c : connections.values())
@@ -437,16 +488,16 @@ public class Layer {
         
         dropout.prepareGPU(stream);
     }
-    
-    protected long getMemoryRequirements() {
-        long total = 0;
-        
-        for(Connection c : connections.values()) {
-            total += c.getMemoryRequirements();
-        }
-        
-        return total;
-    }
+//    
+//    protected long getMemoryRequirements() {
+//        long total = 0;
+//        
+//        for(Connection c : connections.values()) {
+//            total += c.getMemoryRequirements();
+//        }
+//        
+//        return total;
+//    }
     
     protected void computeGPU(CUdeviceptr input, int count, CUdeviceptr[] result, CUstream stream, cublasHandle handle) {
         if(normalizer != null)
@@ -598,40 +649,6 @@ public class Layer {
         }
     }
 
-    
-    protected void crossOverMutateGPU(Layer a, Layer b, float min, float max, double mutation, boolean nocopy, CUstream stream, curandGenerator generator) {
-        /* crossover mutate all connections */
-        for(Entry<Integer, Connection> e : connections.entrySet()) {
-            int layer = e.getKey();
-            Connection c = e.getValue();
-            
-            c.crossOverMutateGPU(a.getConnection(layer), b.getConnection(layer), min, max, mutation, nocopy, stream, generator);
-        }
-    }
-
-    void clipWeights(float min, float max) {
-        /* crossover mutate all connections */
-        for(Entry<Integer, Connection> e : connections.entrySet()) {
-            Connection c = e.getValue();
-            
-            c.clipWeights(min, max);
-        }
-    }
-    
-    void clipWeightsGPU(float min, float max, CUstream stream) {
-        /* crossover mutate all connections */
-        for(Entry<Integer, Connection> e : connections.entrySet()) {
-            Connection c = e.getValue();
-            
-            c.clipWeightsGPU(min, max, stream);
-        }
-    }
-
-//    protected void freeGPU() {
-//        for(Connection c : connections.values())
-//            c.freeGPU();
-//    }
-    
     protected void freeGPU(CUstream stream) {
         for(Connection c : connections.values())
             c.freeGPU(stream);
@@ -683,16 +700,6 @@ public class Layer {
 //        gpuReady = false;
     }
 
-    public boolean hasBias() {
-        return getConnection().hasBias();
-    }
-
-//    void sumAbsWeightsGPU(CUdeviceptr ptr, CUstream stream) {
-//        result[toLayer] = CudaEngine.getMempoolFloat(connections.size());
-//        JCudaDriver.cuMemsetD32Async(result[toLayer], 0, c.links * count, stream);   
-//        = CudaUtil.fromGPUFloat(layerResults[i], layers[i].getConnections().size(), stream);
-//    }
-
     public static class crossOverMutateResult {
         public int forcePick_A;
         public int forcePick_B;
@@ -728,6 +735,34 @@ public class Layer {
 //        gpuReady = false;
     }
     
+    protected void crossOverMutateGPU(Layer a, Layer b, float min, float max, double mutation, boolean nocopy, CUstream stream, curandGenerator generator) {
+        /* crossover mutate all connections */
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
+            int layer = e.getKey();
+            Connection c = e.getValue();
+            
+            c.crossOverMutateGPU(a.getConnection(layer), b.getConnection(layer), min, max, mutation, nocopy, stream, generator);
+        }
+    }
+
+    void clipWeights(float min, float max) {
+        /* crossover mutate all connections */
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
+            Connection c = e.getValue();
+            
+            c.clipWeights(min, max);
+        }
+    }
+    
+    void clipWeightsGPU(float min, float max, CUstream stream) {
+        /* crossover mutate all connections */
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
+            Connection c = e.getValue();
+            
+            c.clipWeightsGPU(min, max, stream);
+        }
+    }
+
     protected double compare(Layer l) {
         double score = 0;
         

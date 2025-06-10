@@ -23,6 +23,8 @@
  */
 package org.fjnn.loss;
 
+import java.util.HashMap;
+import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.cuda.CudaFunctions;
@@ -70,6 +72,22 @@ public class BinaryCrossEntropy extends Loss {
     }
 
     @Override
+    public void computeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
+        // Create temporary buffer for per-element results
+        CUdeviceptr tempBuffer = CudaUtil.createFloatAsync(size, stream);
+        
+        // Compute per-element cross entropy loss
+        CudaFunctions.loss.BinaryCrossEntropy(output, expected, tempBuffer, alpha, beta, size, stream);
+        
+        // Reduce sum and average
+        CudaFunctions.vector.reduceSum(result, tempBuffer, 1, (int)size, stream);
+        CudaFunctions.vector.scale(result, 1.0f / size, 1, stream);
+        
+        // Cleanup
+        CudaUtil.freeAsync(tempBuffer, stream);
+    }
+    
+    @Override
     public float[] derivative(float[] output, float[] expected) {
         float[] derivatives = new float[output.length];
         
@@ -87,4 +105,18 @@ public class BinaryCrossEntropy extends Loss {
         CudaFunctions.loss.BinaryCrossEntropyDerivative(output, expected, result, alpha, beta, size, stream);
     }
     
+    @Override
+    public Map serialize() {
+        Map result = new HashMap();
+        result.put("type", "BinaryCrossEntropy");
+        result.put("alpha", alpha);
+        result.put("beta", beta);
+        return result;
+    }
+    
+    public static BinaryCrossEntropy deserialize(Map serialized) {
+        float alpha = (Float)serialized.get("alpha");
+        float beta = (Float)serialized.get("beta");
+        return new BinaryCrossEntropy(alpha, beta);
+    }
 }
