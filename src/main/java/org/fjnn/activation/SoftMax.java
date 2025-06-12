@@ -39,17 +39,12 @@ public class SoftMax extends Activation {
     public float compute(float input) {
         throw new UnsupportedOperationException("SoftMax cannot be computed on a single value"); 
     }
-
-    @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        intrinsic.SoftMax(input, stride, count);
-    }
     
     @Override
-    public void compute(float[] input, float[] output, int stride, int count) {
-        for(int c=0; c < count; c++) {
-            int from = c * stride;
-            int to = from + stride;
+    public void compute(float[] input, float[] output, int inputDim, int batchSize) {
+        for(int c=0; c < batchSize; c++) {
+            int from = c * inputDim;
+            int to = from + inputDim;
             
             float max = Float.NEGATIVE_INFINITY;
             for(int i=from; i < to; i++) {
@@ -72,11 +67,6 @@ public class SoftMax extends Activation {
     }
 
     @Override
-    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activation.SoftMax(input, output, stride, count, stream);
-    }
-    
-    @Override
     public float derivative(float preActivation, float postActivation) {
         throw new UnsupportedOperationException("SoftMax derivative cannot be computed on single values"); 
     }
@@ -86,15 +76,14 @@ public class SoftMax extends Activation {
      * https://www.youtube.com/watch?v=09c7bkxpv9I
      * Softmax derivative is: Si * (δij - Sj) where S is softmax output
      * δij = 1 if  i ==j otherwise 0
-     *
      */
     @Override
-    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int inputDim, int batchSize) {
         throw new UnsupportedOperationException("Not supported, use gradient");
 
-//        for(int c = 0; c < count; c++) {
-//            int from = c * stride;
-//            int to = from + stride;
+//        for(int c = 0; c < batchSize; c++) {
+//            int from = c * inputDim;
+//            int to = from + inputDim;
 //            
 //            for(int i = from; i < to; i++) {
 //                float sum = 0.0f;
@@ -109,19 +98,14 @@ public class SoftMax extends Activation {
 //        }
     }
 
-    @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
-        throw new UnsupportedOperationException("Not supported, use gradient");
-    }
-    
     /*
      * gradient[i] = Si(gi - dot_product[Si.gi])
      */
     @Override
-    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
-        for(int c = 0; c < count; c++) {
-            int from = c * stride;
-            int to = from + stride;
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int inputDim, int batchSize) {
+        for(int c = 0; c < batchSize; c++) {
+            int from = c * inputDim;
+            int to = from + inputDim;
 
             // Calculate dot product between output and gradient
             float dot_product = 0;
@@ -136,8 +120,28 @@ public class SoftMax extends Activation {
         }
     }
     
+    
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
-        CudaFunctions.activationGradient.SoftMaxGradient(preActivation, postActivation, gradient, stride, count, stream);
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        if(batchSize > Integer.MAX_VALUE)
+            throw new RuntimeException("Batch size exceeds maximum for softmax compute: " + batchSize);
+        
+        CudaFunctions.activation.SoftMax(input, output, inputDim, (int)batchSize, stream);
+    }
+    
+    @Override
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        throw new UnsupportedOperationException("Not supported, use gradient");
+    }
+    
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationGradient.SoftMaxGradient(preActivation, postActivation, gradient, inputDim, batchSize, stream);
+    }
+    
+    
+    @Override
+    public void compute(FloatBuffer input, FloatBuffer output, int inputDim, int batchSize) {
+        intrinsic.SoftMax(input, output, inputDim, batchSize);
     }
 }

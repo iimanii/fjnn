@@ -219,20 +219,6 @@ public class Layer {
         }
     }
 
-    protected void feedForward(FloatBuffer input, int count, FloatBuffer[] result) {
-        if(activation != null)
-            activation.compute(input, neurons, count);
-        
-        for(Entry<Integer, Connection> e : connections.entrySet()) {
-            int layer = e.getKey();
-            Connection c = e.getValue();
-            
-            if(result[layer] == null)
-                result[layer] = ByteBuffer.allocateDirect(c.links * count * Float.BYTES).order(ByteOrder.nativeOrder()).asFloatBuffer();
-            
-            c.feedForward(input, count, result[layer]);
-        }
-    }
     
     public void backpropagate(NeuralNetworkForwardOutput activations, 
                               float[][] preActivationDeltas, 
@@ -877,5 +863,20 @@ public class Layer {
 //        
 //        weights = newWeights;
 //        bias = Arrays.copyOf(bias, links);
+    }
+    
+    protected void feedForward(FloatBuffer input, int count, FloatBuffer[] result) {
+        if(activation != null)
+            activation.compute(input, input, neurons, count);
+        
+        for(Entry<Integer, Connection> e : connections.entrySet()) {
+            int layer = e.getKey();
+            Connection c = e.getValue();
+            
+            if(result[layer] == null)
+                result[layer] = ByteBuffer.allocateDirect(c.links * count * Float.BYTES).order(ByteOrder.nativeOrder()).asFloatBuffer();
+            
+            c.feedForward(input, count, result[layer]);
+        }
     }
 }

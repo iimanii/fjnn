@@ -24,19 +24,10 @@
 package org.fjnn.activation;
 
 import java.nio.FloatBuffer;
-import java.util.HashMap;
 import java.util.Map;
-import jcuda.Pointer;
 import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
-import jcuda.driver.JCudaDriver;
-import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CUdeviceptr2D;
 import org.fjnn.cuda.CudaFunctions;
-import org.fjnn.cuda.CudaUtil;
-import org.fjnn.util.intrinsic;
 
 /**
  *
@@ -61,19 +52,9 @@ public class LeakyReLU extends Activation {
     }
     
     @Override
-    public void compute(float[] input, float[] output, int stride, int count) {
-        for(int i=0; i < input.length; i++)
+    public void compute(float[] input, float[] output, int inputDim, int batchSize) {
+        for(int i=0; i < inputDim * batchSize; i++)
             output[i] = input[i] < 0 ? input[i] * alpha : input[i];
-    }
-
-    @Override
-    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activation.LeakyReLU(input, output, stride * (long)count, alpha, stream);
-    }
-
-    @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        throw new UnsupportedOperationException("Not supported yet.");
     }
 
     @Override
@@ -82,28 +63,35 @@ public class LeakyReLU extends Activation {
     }
 
     @Override
-    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
-        for(int i = 0; i < stride * count; i++) {
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int inputDim, int batchSize) {
+        for(int i = 0; i < inputDim * batchSize; i++) {
             output[i] = preActivation[i] < 0 ? alpha : 1.0f;
         }
     }
-
-    @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activationDerivative.LeakyReLUDerivative(preActivation, postActivation, output, stride * (long)count, alpha, stream);
-    }
     
     @Override
-    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
-        for(int i = 0; i < stride * count; i++) {
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int inputDim, int batchSize) {
+        for(int i = 0; i < inputDim * batchSize; i++) {
             gradient[i] *= preActivation[i] < 0 ? alpha : 1.0f;
         }
     }
+
     
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
-        CudaFunctions.activationGradient.LeakyReLUGradient(preActivation, postActivation, gradient, stride * (long)count, alpha, stream);
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activation.LeakyReLU(input, output, inputDim * batchSize, alpha, stream);
     }
+
+    @Override
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationDerivative.LeakyReLUDerivative(preActivation, postActivation, output, inputDim * batchSize, alpha, stream);
+    }
+    
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationGradient.LeakyReLUGradient(preActivation, postActivation, gradient, inputDim * batchSize, alpha, stream);
+    }
+    
     
     @Override
     public Map serialize() {

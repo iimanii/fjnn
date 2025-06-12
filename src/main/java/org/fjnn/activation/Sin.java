@@ -24,16 +24,9 @@
 package org.fjnn.activation;
 
 import java.nio.FloatBuffer;
-import jcuda.Pointer;
 import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
-import jcuda.driver.JCudaDriver;
-import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CUdeviceptr2D;
 import org.fjnn.cuda.CudaFunctions;
-import org.fjnn.cuda.CudaUtil;
 import org.fjnn.util.intrinsic;
 
 /**
@@ -48,19 +41,9 @@ public class Sin extends Activation {
     }
 
     @Override
-    public void compute(float[] input, float[] output, int stride, int count) {
-        for(int i=0; i < stride * count; i++)
+    public void compute(float[] input, float[] output, int inputDim, int batchSize) {
+        for(int i=0; i < inputDim * batchSize; i++)
             output[i] = (float) Math.sin(input[i]);
-    }
-
-    @Override
-    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activation.Sin(input, output, stride * (long)count, stream);        
-    }
-
-    @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        intrinsic.Sin(input, stride * count);
     }
 
     @Override
@@ -70,27 +53,39 @@ public class Sin extends Activation {
     }
     
     @Override
-    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int inputDim, int batchSize) {
         /* cos(x) */
-        for (int i = 0; i < stride * count; i++) {
+        for (int i = 0; i < inputDim * batchSize; i++) {
             output[i] = (float) Math.cos(preActivation[i]);
         }
     }
     
     @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activationDerivative.SinDerivative(preActivation, postActivation, output, stride * (long)count, stream);
-    }
-    
-    @Override
-    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
-        for(int i = 0; i < stride * count; i++) {
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int inputDim, int batchSize) {
+        for(int i = 0; i < inputDim * batchSize; i++) {
             gradient[i] *= (float)Math.cos(preActivation[i]);
         }
     }
 
+
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
-        CudaFunctions.activationGradient.SinGradient(preActivation, postActivation, gradient, stride * (long)count, stream);
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activation.Sin(input, output, inputDim * batchSize, stream);        
+    }
+    
+    @Override
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationDerivative.SinDerivative(preActivation, postActivation, output, inputDim * batchSize, stream);
+    }
+    
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationGradient.SinGradient(preActivation, postActivation, gradient, inputDim * batchSize, stream);
+    }
+
+    
+    @Override
+    public void compute(FloatBuffer input, FloatBuffer output, int inputDim, int batchSize) {
+        intrinsic.Sin(input, output, inputDim * batchSize);
     }
 }

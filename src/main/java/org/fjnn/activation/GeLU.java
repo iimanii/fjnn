@@ -27,7 +27,6 @@ import java.nio.FloatBuffer;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.cuda.CudaFunctions;
-import org.fjnn.cuda.CudaUtil;
 
 /**
  *
@@ -44,23 +43,12 @@ public class GeLU extends Activation {
     }
 
     @Override
-    public void compute(float[] input, float[] output, int stride, int count) {
-        for (int i = 0; i < input.length; i++) {
+    public void compute(float[] input, float[] output, int inputDim, int batchSize) {
+        for (int i = 0; i < inputDim * batchSize; i++) {
             output[i] = 0.5f * input[i] * (1.0f + (float) Math.tanh(SQRT_2_PI * (input[i] + ALPHA * Math.pow(input[i], 3))));
         }
     }
-
-    @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        throw new UnsupportedOperationException("Not supported yet.");
-    }
     
-    @Override
-    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activation.GeLU(input, output, stride * (long)count, stream);
-    }
-
-
     @Override
     public float derivative(float preActivation, float postActivation) {
         // d/dx[GELU(x)] = 0.5 * (1 + tanh(sqrt(2/π) * (x + 0.044715x³))) + 0.5x * sech²(sqrt(2/π) * (x + 0.044715x³)) * sqrt(2/π) * (1 + 3*0.044715x²)
@@ -73,9 +61,9 @@ public class GeLU extends Activation {
     }
 
     @Override
-    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int inputDim, int batchSize) {
         // d/dx[GELU(x)] = 0.5 * (1 + tanh(sqrt(2/π) * (x + 0.044715x³))) + 0.5x * sech²(sqrt(2/π) * (x + 0.044715x³)) * sqrt(2/π) * (1 + 3*0.044715x²)
-        for (int i = 0; i < stride * count; i++) {
+        for (int i = 0; i < inputDim * batchSize; i++) {
             float x = preActivation[i];
             float inner = SQRT_2_PI * (x + ALPHA * x * x * x);
             float tanh = (float)Math.tanh(inner);
@@ -84,15 +72,10 @@ public class GeLU extends Activation {
             output[i] = 0.5f * (1.0f + tanh) + 0.5f * x * sech2 * SQRT_2_PI * (1.0f + 3 * ALPHA * x * x);
         }
     }
-
-    @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activationDerivative.GeLUDerivative(preActivation, postActivation, output, stride * (long)count, stream);
-    }
     
     @Override
-    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
-        for (int i = 0; i < stride * count; i++) {
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int inputDim, int batchSize) {
+        for (int i = 0; i < inputDim * batchSize; i++) {
             float x = preActivation[i];
             float inner = SQRT_2_PI * (x + ALPHA * x * x * x);
             float tanh = (float)Math.tanh(inner);
@@ -102,10 +85,21 @@ public class GeLU extends Activation {
             gradient[i] *= derivative;
         }
     }
+    
+    
+    @Override
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activation.GeLU(input, output, inputDim * batchSize, stream);
+    }
 
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
-        CudaFunctions.activationGradient.GeLUGradient(preActivation, postActivation, gradient, stride * (long)count, stream);
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationDerivative.GeLUDerivative(preActivation, postActivation, output, inputDim * batchSize, stream);
+    }
+
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationGradient.GeLUGradient(preActivation, postActivation, gradient, inputDim * batchSize, stream);
     }
 }
 

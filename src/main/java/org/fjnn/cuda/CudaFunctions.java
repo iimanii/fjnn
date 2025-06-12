@@ -161,7 +161,7 @@ public class CudaFunctions {
          * stride_base = stride_id * stride_len -> stride_id in [0, batchSize) 
          * c[x + stride_base] = a[x + stride_base] + b[x]
          */
-        public static void addStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long stride, long batchSize, CUstream stream) {
+        public static void addStride(CUdeviceptr a, CUdeviceptr b, CUdeviceptr c, long stride, int batchSize, CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
             CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_VECTOR, "add_stride", device);
@@ -846,20 +846,20 @@ public class CudaFunctions {
             Activation("Sin", input, output, size, stream);
         }
 
-        public static void SoftMax(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
-            if(count > Integer.MAX_VALUE || stride > Integer.MAX_VALUE)
+        public static void SoftMax(CUdeviceptr input, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+            if(inputDim > Integer.MAX_VALUE || batchSize > Integer.MAX_VALUE)
                 throw new RuntimeException();
 
             int device = CudaEngine.getThreadDeviceId();
             int blockSize;
             
-            if(stride <= 32)
+            if(inputDim <= 32)
                 blockSize = 32;
-            else if(stride <= 64)
+            else if(inputDim <= 64)
                 blockSize = 64;
-            else if(stride <= 128)
+            else if(inputDim <= 128)
                 blockSize = 128;
-            else if(stride <= 256)
+            else if(inputDim <= 256)
                 blockSize = 256;
             else
                 blockSize = 512;
@@ -868,12 +868,12 @@ public class CudaFunctions {
             CUfunction fn = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, true, String.format("SoftMax_%d", blockSize), device);
 
             int blockSizeX = blockSize;
-            int gridSizeX = (int)count;
+            int gridSizeX = batchSize;
 
             Pointer kernelParameters = Pointer.to(
                 Pointer.to(input),
                 Pointer.to(output),
-                Pointer.to(new long[]{stride})
+                Pointer.to(new long[]{inputDim})
             );
 
             JCudaDriver.cuLaunchKernel(fn,

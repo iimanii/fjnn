@@ -54,7 +54,7 @@ public class InputDimAdapter extends ModelComponent {
     @Override
     public AdapterForwardOutput feedForward(float[] input, int batchSize) {
         // Calculate the total number of samples
-        long totalSamples = batchSize * inputDim;
+        long totalSamples = batchSize * (long)inputDim;
 
         // Calculate the target batch size
         long targetBatchSize = totalSamples / targetDim;

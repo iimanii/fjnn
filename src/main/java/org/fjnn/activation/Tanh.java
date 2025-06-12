@@ -41,19 +41,9 @@ public class Tanh extends Activation {
     }
     
     @Override
-    public void compute(float[] input, float[] output, int stride, int count) {
-        for(int i=0; i < input.length; i++)
+    public void compute(float[] input, float[] output, int inputDim, int batchSize) {
+        for(int i=0; i < inputDim * batchSize; i++)
             output[i] = (float)Math.tanh(input[i]);
-    }
-
-    @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        intrinsic.Tanh(input, stride * count);
-    }
-    
-    @Override
-    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activation.Tanh(input, output, stride * (long)count, stream);        
     }
     
     @Override
@@ -63,29 +53,40 @@ public class Tanh extends Activation {
     }
     
     @Override
-    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int inputDim, int batchSize) {
         /* 1 - tanh(x)^2 */
-        for (int i = 0; i < stride * count; i++) {
+        for (int i = 0; i < inputDim * batchSize; i++) {
             output[i] = 1.0f - postActivation[i] * postActivation[i];
         }
     }
-
-    @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activationDerivative.TanhDerivative(preActivation, postActivation, output, stride * (long)count, stream);
-    }
-    
     
     @Override
-    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
-        for (int i = 0; i < stride * count; i++) {
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int inputDim, int batchSize) {
+        for (int i = 0; i < inputDim * batchSize; i++) {
             gradient[i] *= (1.0f - postActivation[i] * postActivation[i]);
         }
     }
     
+    
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
-        CudaFunctions.activationGradient.TanhGradient(preActivation, postActivation, gradient, stride * (long)count, stream);
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activation.Tanh(input, output, inputDim * batchSize, stream);        
     }
 
+    @Override
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationDerivative.TanhDerivative(preActivation, postActivation, output, inputDim * batchSize, stream);
+    }
+    
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationGradient.TanhGradient(preActivation, postActivation, gradient, inputDim * batchSize, stream);
+    }
+
+
+    @Override
+    public void compute(FloatBuffer input, FloatBuffer output, int inputDim, int batchSize) {
+        intrinsic.Tanh(input, output, inputDim * batchSize);
+    }
+    
 }

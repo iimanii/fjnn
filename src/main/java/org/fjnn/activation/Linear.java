@@ -23,18 +23,10 @@
  */
 package org.fjnn.activation;
 
-import java.nio.FloatBuffer;
-import jcuda.Pointer;
 import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUfunction;
 import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
-import org.fjnn.cuda.CudaEngine;
-import org.fjnn.cuda.CudaModule;
-import org.fjnn.cuda.CUdeviceptr2D;
-import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
-import org.fjnn.util.intrinsic;
 
 /**
  * Linear activation function: f(x) = x
@@ -50,22 +42,10 @@ public class Linear extends Activation {
     }
     
     @Override
-    public void compute(float[] input, float[] output, int stride, int count) {
+    public void compute(float[] input, float[] output, int inputDim, int batchSize) {
         /* Only copy if different arrays */
         if (input != output)
-            System.arraycopy(input, 0, output, 0, stride * count);
-    }
-
-    @Override
-    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
-        /* Only copy if different pointers */
-        if (!input.equals(output))
-            JCudaDriver.cuMemcpyAsync(output, input, stride * count * CudaUtil.FLOAT_SIZE, stream);
-    }
-    
-    @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        // do nothing
+            System.arraycopy(input, 0, output, 0, inputDim * batchSize);
     }
 
     @Override
@@ -74,24 +54,33 @@ public class Linear extends Activation {
     }
 
     @Override
-    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
-        for(int i = 0; i < stride * count; i++) {
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int inputDim, int batchSize) {
+        for(int i = 0; i < inputDim * batchSize; i++) {
             output[i] = 1.0f;  // fill array with 1.0f as derivative is constant
         }
     }
-
-    @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activationDerivative.LinearDerivative(preActivation, postActivation, output, stride * count, stream);
-    }
     
     @Override
-    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int inputDim, int batchSize) {
         // derivative is 1, so gradient remains unchanged
     }
 
+
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        /* Only copy if different pointers */
+        if (!input.equals(output))
+            JCudaDriver.cuMemcpyAsync(output, input, inputDim * batchSize * CudaUtil.FLOAT_SIZE, stream);
+    }
+    
+    @Override
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        // fill array with 1.0f as derivative is constant
+        JCudaDriver.cuMemsetD32Async(output, Float.floatToRawIntBits(1.0f), inputDim * batchSize, stream);
+    }
+    
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int inputDim, int batchSize, CUstream stream) {
         // derivative is 1, so gradient remains unchanged
     }
 }

@@ -41,19 +41,9 @@ public class Step extends Activation {
     }
 
     @Override
-    public void compute(float[] input, float[] output, int stride, int count) {
-        for(int i=0; i < stride * count; i++)
+    public void compute(float[] input, float[] output, int inputDim, int batchSize) {
+        for(int i=0; i < inputDim * batchSize; i++)
             output[i] = input[i] >= 0 ? 1 : 0;
-    }
-
-    @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        intrinsic.Step(input, stride * count);
-    }
-
-    @Override
-    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activation.Step(input, output, stride * count, stream);        
     }
     
     @Override
@@ -62,22 +52,34 @@ public class Step extends Activation {
     }
     
     @Override
-    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int inputDim, int batchSize) {
         throw new UnsupportedOperationException("Step function does not support derivatives");
     }
     
     @Override
-    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int inputDim, int batchSize) {
         throw new UnsupportedOperationException("Step function does not support gradients");
+    }
+
+    
+    @Override
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activation.Step(input, output, inputDim * batchSize, stream);        
     }
     
     @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
         throw new UnsupportedOperationException("Step function does not support derivatives");
     }
     
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int inputDim, int batchSize, CUstream stream) {
         throw new UnsupportedOperationException("Step function does not support gradients");
+    }
+    
+    
+    @Override
+    public void compute(FloatBuffer input, FloatBuffer output, int inputDim, int batchSize) {
+        intrinsic.Step(input, output, inputDim * batchSize);
     }
 }

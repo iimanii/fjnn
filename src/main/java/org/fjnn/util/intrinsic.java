@@ -46,12 +46,12 @@ public class intrinsic {
     public static native void sgemv(FloatBuffer input, FloatBuffer result, FloatBuffer weights, FloatBuffer bias, int neurons, int links);
     public static native void sgemm(FloatBuffer inputs, int inputsCount, FloatBuffer result, FloatBuffer weights, FloatBuffer bias, int neurons, int links);
 
-    public static native void ReLU(FloatBuffer input, int len);
-    public static native void Sigmoid(FloatBuffer input, int len);
-    public static native void Sin(FloatBuffer input, int len);
-    public static native void SoftMax(FloatBuffer input, int len, int count);
-    public static native void Step(FloatBuffer input, int len);
-    public static native void Tanh(FloatBuffer input, int len);
+    public static native void ReLU(FloatBuffer input, FloatBuffer output, int len);
+    public static native void Sigmoid(FloatBuffer input, FloatBuffer output, int len);
+    public static native void Sin(FloatBuffer input, FloatBuffer output, int len);
+    public static native void SoftMax(FloatBuffer input, FloatBuffer output, int len, int count);
+    public static native void Step(FloatBuffer input, FloatBuffer output, int len);
+    public static native void Tanh(FloatBuffer input, FloatBuffer output, int len);
     
     public static native void Add(FloatBuffer a, FloatBuffer b, int len);
 }

@@ -41,19 +41,9 @@ public class Sigmoid extends Activation {
     }
 
     @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        intrinsic.Sigmoid(input, stride * count);
-    }
-    
-    @Override
-    public void compute(float[] input, float[] output, int stride, int count) {
-        for(int i=0; i < stride * count; i++)
+    public void compute(float[] input, float[] output, int inputDim, int batchSize) {
+        for(int i=0; i < inputDim * batchSize; i++)
             output[i] = 1.0f / (1.0f + SafeExp(-input[i]));
-    }
-    
-    @Override
-    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activation.Sigmoid(input, output, stride * count, stream);
     }
 
     @Override
@@ -63,40 +53,51 @@ public class Sigmoid extends Activation {
     }
     
     @Override
-    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int inputDim, int batchSize) {
         /* sigmoid(x) * (1 - sigmoid(x)) */
-        for (int i=0; i < stride * count; i++) {
+        for (int i=0; i < inputDim * batchSize; i++) {
             output[i] = postActivation[i] * (1.0f - postActivation[i]);
         }
     }
     
     @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activationDerivative.SigmoidDerivative(preActivation, postActivation, output, stride * (long)count, stream);
-    }
-    
-    @Override
-    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
-        for(int i = 0; i < stride * count; i++) {
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int inputDim, int batchSize) {
+        for(int i = 0; i < inputDim * batchSize; i++) {
             gradient[i] *= postActivation[i] * (1.0f - postActivation[i]);
         }
     }
-
-    @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
-        CudaFunctions.activationGradient.SigmoidGradient(preActivation, postActivation, gradient, stride * (long)count, stream);
-    }
-
-    public void gradientCrossEntropy(float[] postActivation, float[] truth, float[] result, float alpha, float beta, int outputSize, int batchSize) {
-        int size = outputSize * batchSize;
+    
+    public void gradientCrossEntropy(float[] postActivation, float[] truth, float[] result, float alpha, float beta, int outputDim, int batchSize) {
+        int size = outputDim * batchSize;
         for (int i = 0; i < size; i++) {
             float weight = (truth[i] == 1.0f) ? alpha : beta;
             result[i] = weight * (postActivation[i] - truth[i]);
         }
     }
     
-    public void gradientGPUCrossEntropy(CUdeviceptr postActivation, CUdeviceptr truth, CUdeviceptr result, float alpha, float beta, int outputSize, int batchSize, CUstream stream) {
-        CudaFunctions.activationGradient.SigmoidCrossEntropyGradient(postActivation, truth, result, alpha, beta, outputSize * batchSize, stream);
+    
+    @Override
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activation.Sigmoid(input, output, inputDim * batchSize, stream);
+    }
+    
+    @Override
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationDerivative.SigmoidDerivative(preActivation, postActivation, output, inputDim * batchSize, stream);
     }
 
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationGradient.SigmoidGradient(preActivation, postActivation, gradient, inputDim * batchSize, stream);
+    }
+
+    public void gradientGPUCrossEntropy(CUdeviceptr postActivation, CUdeviceptr truth, CUdeviceptr result, float alpha, float beta, int outputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationGradient.SigmoidCrossEntropyGradient(postActivation, truth, result, alpha, beta, outputDim * batchSize, stream);
+    }
+    
+    
+    @Override
+    public void compute(FloatBuffer input, FloatBuffer output, int inputDim, int batchSize) {
+        intrinsic.Sigmoid(input, output, inputDim * batchSize);
+    }
 }

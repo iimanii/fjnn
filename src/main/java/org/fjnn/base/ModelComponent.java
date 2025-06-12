@@ -81,12 +81,12 @@ public abstract class ModelComponent {
     }
     protected abstract BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss);
     
-    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, int deltaLossSize, int deltaLossCount, CUstream stream) {
-        if(output.outputDim != deltaLossSize || getOutputSize() != deltaLossSize)
-            throw new RuntimeException("Invalid batch size " + deltaLossSize + " != " + getInputSize());
+    public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, int deltaLossDim, int batchSize, CUstream stream) {
+        if(output.outputDim != deltaLossDim || getOutputSize() != deltaLossDim)
+            throw new RuntimeException("Invalid batch size " + deltaLossDim + " != " + getInputSize());
         
-        if(output.batchSize != deltaLossCount)
-            throw new RuntimeException("Invalid batch count " + deltaLossCount + " != " + output.batchSize);
+        if(output.batchSize != batchSize)
+            throw new RuntimeException("Invalid batch count " + batchSize + " != " + output.batchSize);
         
         return backpropagateGPU(output, deltaLoss, stream);
     }

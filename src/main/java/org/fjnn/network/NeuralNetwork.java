@@ -270,31 +270,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         
         return results[last];
     }
-    
-    @Override
-    public float[] compute(FloatBuffer input) {
-        return compute(input, 1);
-    }
-    
-    @Override
-    public float[] compute(FloatBuffer input, int batchSize) {
-        if(!nativeReady())
-            prepareCPU();
-        
-        FloatBuffer[] results = new FloatBuffer[getLayerCount()];
-        results[0] = input;
-        
-        for(int i=0; i < layers.length; i++)
-            layers[i].feedForward(results[i], batchSize, results);
-        
-        float[] result = new float[outputSize * batchSize];
-        results[last].rewind();
-        results[last].get(result);
-
-        return result;
-    }
-    
-    
+       
     @Override
     public NeuralNetworkForwardOutput feedForward(float[] input, int batchSize) {
         NeuralNetworkForwardOutput activations = new NeuralNetworkForwardOutput(getOutputSize(), batchSize, getLayerCount());
@@ -1093,4 +1069,27 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         }
     }
 
+    @Override
+    public float[] compute(FloatBuffer input) {
+        return compute(input, 1);
+    }
+    
+    @Override
+    public float[] compute(FloatBuffer input, int batchSize) {
+        if(!nativeReady())
+            prepareCPU();
+        
+        FloatBuffer[] results = new FloatBuffer[getLayerCount()];
+        results[0] = input;
+        
+        for(int i=0; i < layers.length; i++)
+            layers[i].feedForward(results[i], batchSize, results);
+        
+        float[] result = new float[outputSize * batchSize];
+        results[last].rewind();
+        results[last].get(result);
+
+        return result;
+    }
+    
 }

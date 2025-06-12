@@ -40,34 +40,15 @@ public abstract class Activation implements Serializable {
     
     public abstract float compute(float input);
     
-    public final void compute(FloatBuffer input) {
-        compute(input, input.capacity(), 1);
+    public void compute(float[] input, int inputDim, int batchSize) {
+        compute(input, input, inputDim, batchSize);
     }
     
-    public void compute(float[] input, int stride, int count) {
-        compute(input, input, stride, count);
-    }
+    public abstract void compute(float[] input, float[] output, int inputDim, int batchSize);
     
-    public abstract void compute(float[] input, float[] output, int stride, int count);
-    
-    public abstract void compute(FloatBuffer input, int stride, int count);
-    
-    public void computeGPU(CUdeviceptr input, int stride, int count, CUstream stream) {
-        computeGPU(input, input, stride, count, stream);
-    }
-    
-    public abstract void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream);
-    
-    public ActivationForwardOutput feedForward(float[] input, int stride, int count) {
-        ActivationForwardOutput activationOutput = new ActivationForwardOutput(input, stride, count);
-        compute(activationOutput.preActivation, activationOutput.postActivation, stride, count);
-        
-        return activationOutput;
-    }
-    
-    public ActivationForwardOutputGPU feedForwardGPU(CUdeviceptr input, int stride, int count, CUstream stream) {
-        ActivationForwardOutputGPU activationOutput = new ActivationForwardOutputGPU(input, stride, count, stream);
-        computeGPU(activationOutput.preActivation, activationOutput.postActivation, stride, count, stream);
+    public ActivationForwardOutput feedForward(float[] input, int inputDim, int batchSize) {
+        ActivationForwardOutput activationOutput = new ActivationForwardOutput(input, inputDim, batchSize);
+        compute(activationOutput.preActivation, activationOutput.postActivation, inputDim, batchSize);
         
         return activationOutput;
     }
@@ -75,14 +56,29 @@ public abstract class Activation implements Serializable {
     public abstract float derivative(float preActivation, float postActivation);
     
     /* calculates derivative and place result in output */
-    public abstract void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count);
-    
-    public abstract void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream);
-    
+    public abstract void derivative(float[] preActivation, float[] postActivation, float[] output, int inputDim, int batchSize);
+        
     /* calculates derivative and multiplies it by gradient, puts result in gradient */
-    public abstract void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count);
+    public abstract void gradient(float[] preActivation, float[] postActivation, float[] gradient, int inputDim, int batchSize);
     
-    public abstract void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream);
+    
+    public void computeGPU(CUdeviceptr input, int inputDim, int batchSize, CUstream stream) {
+        computeGPU(input, input, inputDim, batchSize, stream);
+    }
+    
+    public abstract void computeGPU(CUdeviceptr input, CUdeviceptr output, int inputDim, int batchSize, CUstream stream);
+    
+    public ActivationForwardOutputGPU feedForwardGPU(CUdeviceptr input, int inputDim, int batchSize, CUstream stream) {
+        ActivationForwardOutputGPU activationOutput = new ActivationForwardOutputGPU(input, inputDim, batchSize, stream);
+        computeGPU(activationOutput.preActivation, activationOutput.postActivation, inputDim, batchSize, stream);
+        
+        return activationOutput;
+    }
+        
+    public abstract void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int inputDim, int batchSize, CUstream stream);
+    
+    public abstract void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int inputDim, int batchSize, CUstream stream);
+
     
     public Map serialize() {
         HashMap obj = new HashMap();
@@ -112,8 +108,6 @@ public abstract class Activation implements Serializable {
                 return new Linear();
             case "Swish":
                 return new Swish();
-            case "Complex":
-                return Complex.deserialize(serialized);
             default:
                 throw new RuntimeException("Unknown activation type: " + type);
         }
@@ -155,9 +149,6 @@ public abstract class Activation implements Serializable {
             case "swish":
                 return new Swish();
         }
-        
-        if(name.toLowerCase().startsWith("complex"))
-            return Complex.parse(name);
         
         return null;
     }
@@ -204,6 +195,10 @@ public abstract class Activation implements Serializable {
     protected static float MirrorSqrt(float a) {
         int sign = a < 0 ? -1 : 1;
         return (float) (sign * Math.sqrt(Math.abs(a)));
+    }
+    
+    public void compute(FloatBuffer input, FloatBuffer output, int inputDim, int batchSize) {
+        throw new UnsupportedOperationException("Not supported");
     }
     
 // TODO

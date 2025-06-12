@@ -40,19 +40,9 @@ public class Swish extends Activation {
     }
 
     @Override
-    public void compute(float[] input, float[] output, int stride, int count) {
-        for(int i=0; i < input.length; i++)
+    public void compute(float[] input, float[] output, int inputDim, int batchSize) {
+        for(int i=0; i < inputDim * batchSize; i++)
             output[i] = input[i] / (1 + SafeExp(-input[i]));
-    }
-
-    @Override
-    public void compute(FloatBuffer input, int stride, int count) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-    
-    @Override
-    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activation.Swish(input, output, stride * (long)count, stream);
     }
     
     @Override
@@ -62,29 +52,35 @@ public class Swish extends Activation {
     }
     
     @Override
-    public void derivative(float[] preActivation, float[] postActivation, float[] output, int stride, int count) {
-        for (int i = 0; i < stride * count; i++) {
+    public void derivative(float[] preActivation, float[] postActivation, float[] output, int inputDim, int batchSize) {
+        for (int i = 0; i < inputDim * batchSize; i++) {
             float sigmoid = 1.0f / (1.0f + SafeExp(-preActivation[i]));
             output[i] = postActivation[i] + sigmoid * (1.0f - postActivation[i]);
         }
     }
     
     @Override
-    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int stride, int count) {
-        for (int i = 0; i < stride * count; i++) {
+    public void gradient(float[] preActivation, float[] postActivation, float[] gradient, int inputDim, int batchSize) {
+        for (int i = 0; i < inputDim * batchSize; i++) {
             float sigmoid = 1.0f / (1.0f + SafeExp(-preActivation[i]));
             float deriv = postActivation[i] + sigmoid * (1.0f - postActivation[i]);
             gradient[i] *= deriv;
         }
     }
     
+    
     @Override
-    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int stride, int count, CUstream stream) {
-        CudaFunctions.activationDerivative.SwishDerivative(preActivation, postActivation, output, stride * (long)count, stream);
+    public void computeGPU(CUdeviceptr input, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activation.Swish(input, output, inputDim * batchSize, stream);
     }
     
     @Override
-    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int stride, int count, CUstream stream) {
-        CudaFunctions.activationGradient.SwishGradient(preActivation, postActivation, gradient, stride * (long)count, stream);
+    public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationDerivative.SwishDerivative(preActivation, postActivation, output, inputDim * batchSize, stream);
+    }
+    
+    @Override
+    public void gradientGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, int inputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationGradient.SwishGradient(preActivation, postActivation, gradient, inputDim * batchSize, stream);
     }
 }
