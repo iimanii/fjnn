@@ -30,7 +30,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import org.fjnn.base.Network;
 import org.fjnn.network.NeuralNetwork;
-import org.fjnn.util.Rng;
+import org.fjnn.util.rng;
 import org.fjnn.util.util;
 
 /**
@@ -54,7 +54,7 @@ public class GeneticUtil {
     public static <T extends Network> T pickRandom(List<T> pool, String property, Network avoid) {
         T n = null;
         
-        double r = Rng.nextDouble();
+        double r = rng.nextDouble();
 
         int index = 0;
 

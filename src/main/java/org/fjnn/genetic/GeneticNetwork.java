@@ -50,7 +50,7 @@ import org.fjnn.genetic.GeneticNode.NodeType;
 import org.fjnn.loss.Loss;
 import org.fjnn.network.Connection;
 import org.fjnn.network.NeuralNetwork;
-import org.fjnn.util.Rng;
+import org.fjnn.util.rng;
 
 /**
  *
@@ -291,7 +291,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
     @Override
     public GeneticNetwork randomize(float min, float max) {
         for(GeneticConnection c : connectionMap.all())
-            c.weight = Rng.nextFloat(min, max);
+            c.weight = rng.nextFloat(min, max);
         
         return this;
     }
@@ -355,7 +355,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
         if(enabled.isEmpty())
             return null;
         
-        GeneticConnection c = enabled.get(Rng.nextInt(enabled.size()));
+        GeneticConnection c = enabled.get(rng.nextInt(enabled.size()));
         return addHiddenNode(c);
     }
     public Innovation addHiddenNode(String from, String to) {
@@ -405,7 +405,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
             }
         }
         
-        GeneticNode from = l.get(Rng.nextInt(l.size()));
+        GeneticNode from = l.get(rng.nextInt(l.size()));
         GeneticNode to = selectRandomExcept(inputs, connectionMap.next(from));
 
         GeneticConnection c = createConnection(from, to, 1.0f);
@@ -437,7 +437,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
         if(disabled.isEmpty())
             return null;
 
-        int rand = Rng.nextInt(disabled.size());
+        int rand = rng.nextInt(disabled.size());
         
         GeneticConnection c = disabled.get(rand);
         c.disabled = false;
@@ -467,7 +467,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
         if(enabled.isEmpty())
             return null;
 
-        int rand = Rng.nextInt(enabled.size());
+        int rand = rng.nextInt(enabled.size());
         
         GeneticConnection c = enabled.get(rand);
         c.disabled = true;
@@ -1064,7 +1064,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
         if(pool.isEmpty())
             return null;
         
-        return pool.get(Rng.nextInt(pool.size()));
+        return pool.get(rng.nextInt(pool.size()));
     }
     
     /**

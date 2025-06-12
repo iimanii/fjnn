@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.fjnn.base.Network;
 import org.fjnn.network.NeuralNetwork;
-import org.fjnn.util.SMA;
+import org.fjnn.util.sma;
 import org.fjnn.util.statistics;
 
 /**
@@ -17,13 +17,13 @@ import org.fjnn.util.statistics;
  * @author ahmed
  */
 public class GeneticMutation {
-    final SMA mutation;
+    final sma mutation;
     final double maxValue;
     final double minValue;
     final double initialValue;
 
     public GeneticMutation(int window, double initialValue, double minValue, double maxValue) {
-        this.mutation = new SMA(window);
+        this.mutation = new sma(window);
         this.maxValue = maxValue;
         this.minValue = minValue;
         this.initialValue = initialValue;

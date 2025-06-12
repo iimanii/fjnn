@@ -36,11 +36,6 @@ import org.fjnn.loss.Loss;
  */
 public class TrainingConfig {
     /**
-     * Name of training session
-     */
-    public final String name;
-    
-    /**
      * Learning rate for gradient descent
      */
     public final float learningRate;
@@ -81,21 +76,17 @@ public class TrainingConfig {
      */
     public final boolean useGPU;
     
-    public TrainingConfig(String name, float learningRate, float weightDecay, 
-                         Loss lossFunction, long maxTimeMs, int minEpochs, int maxEpochs) {
-        this(name, learningRate, weightDecay, lossFunction, maxTimeMs, minEpochs, maxEpochs, null);
+    public TrainingConfig(float learningRate, float weightDecay, Loss lossFunction, long maxTimeMs, int minEpochs, int maxEpochs) {
+        this(learningRate, weightDecay, lossFunction, maxTimeMs, minEpochs, maxEpochs, null);
     }
     
-    public TrainingConfig(String name, float learningRate, float weightDecay, 
-                          Loss lossFunction, long maxTimeMs, int minEpochs, int maxEpochs, boolean useGPU) {
-        this(name, learningRate, weightDecay, lossFunction, maxTimeMs, minEpochs, maxEpochs, useGPU ? getAllAvailableDevices() : null);
+    public TrainingConfig(float learningRate, float weightDecay, Loss lossFunction, long maxTimeMs, int minEpochs, int maxEpochs, boolean useGPU) {
+        this(learningRate, weightDecay, lossFunction, maxTimeMs, minEpochs, maxEpochs, useGPU ? getAllAvailableDevices() : null);
     }
     
-    public TrainingConfig(String name, float learningRate, float weightDecay,
-                          Loss lossFunction, long maxTimeMs, int minEpochs, int maxEpochs, int[] devices) {
-        validateConstructorParameters(name, learningRate, weightDecay, lossFunction, maxTimeMs, minEpochs, maxEpochs, devices);
+    public TrainingConfig(float learningRate, float weightDecay, Loss lossFunction, long maxTimeMs, int minEpochs, int maxEpochs, int[] devices) {
+        validateConstructorParameters(learningRate, weightDecay, lossFunction, maxTimeMs, minEpochs, maxEpochs, devices);
         
-        this.name = name;
         this.learningRate = learningRate;
         this.weightDecay = weightDecay;
         this.lossFunction = lossFunction;
@@ -127,11 +118,7 @@ public class TrainingConfig {
         return allDevices;
     }
     
-    private static void validateConstructorParameters(String name, float learningRate, float weightDecay, 
-                                                      Loss lossFunction, long maxTimeMs, int minEpochs, int maxEpochs, int[] devices) {        
-        if (name == null || name.trim().isEmpty())
-            throw new IllegalArgumentException("Training session name cannot be null or empty");
-        
+    private static void validateConstructorParameters(float learningRate, float weightDecay, Loss lossFunction, long maxTimeMs, int minEpochs, int maxEpochs, int[] devices) {                
         if (!Float.isFinite(learningRate) || learningRate <= 0)
             throw new IllegalArgumentException("Learning rate must be a positive finite number, got: " + learningRate);
         
@@ -169,9 +156,8 @@ public class TrainingConfig {
         }
     }
     
-    public HashMap serialize() {
+    public Map serialize() {
         HashMap result = new HashMap();
-        result.put("name", name);
         result.put("learningRate", learningRate);
         result.put("weightDecay", weightDecay);
         result.put("lossFunction", lossFunction.serialize());
@@ -186,7 +172,6 @@ public class TrainingConfig {
     }    
     
     public static TrainingConfig deserialize(Map serialized) {
-        String name = (String)serialized.get("name");
         float learningRate = (Float)serialized.get("learningRate");
         float weightDecay = (Float)serialized.get("weightDecay");
         Loss lossFunction = Loss.deserialize((HashMap)serialized.get("lossFunction"));
@@ -201,11 +186,11 @@ public class TrainingConfig {
         }
 
         if (devices != null) {
-            return new TrainingConfig(name, learningRate, weightDecay, lossFunction, maxTimeMs, minEpochs, maxEpochs, devices);
+            return new TrainingConfig(learningRate, weightDecay, lossFunction, maxTimeMs, minEpochs, maxEpochs, devices);
         } else if (useGPU) {
-            return new TrainingConfig(name, learningRate, weightDecay, lossFunction, maxTimeMs, minEpochs, maxEpochs, true);
+            return new TrainingConfig(learningRate, weightDecay, lossFunction, maxTimeMs, minEpochs, maxEpochs, true);
         } else {
-            return new TrainingConfig(name, learningRate, weightDecay, lossFunction, maxTimeMs, minEpochs, maxEpochs);
+            return new TrainingConfig(learningRate, weightDecay, lossFunction, maxTimeMs, minEpochs, maxEpochs);
         }
     }
 }

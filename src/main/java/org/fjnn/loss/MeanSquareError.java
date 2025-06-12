@@ -92,5 +92,10 @@ public class MeanSquareError extends Loss {
         result.put("type", "MeanSquareError");
         return result;
     }
+    
+    @Override
+    public String name() {
+        return "MSE";
+    }
 }
 

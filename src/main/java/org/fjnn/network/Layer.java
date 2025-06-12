@@ -53,7 +53,7 @@ import org.fjnn.normalizer.Dropout;
 import org.fjnn.normalizer.Normalizer;
 import org.fjnn.normalizer.outputs.DropoutForwardOutput;
 import org.fjnn.normalizer.outputs.DropoutForwardOutputGPU;
-import org.fjnn.util.Rng;
+import org.fjnn.util.rng;
 import org.fjnn.util.util;
 
 /**
@@ -784,23 +784,23 @@ public class Layer {
         float w, m = 0;
         
         if(rangeA < rangeB/2) {
-            if(Rng.nextDouble() < mutation)
-                m = (float) Rng.nextDoubleGaussian(minA, maxA);
+            if(rng.nextDouble() < mutation)
+                m = (float) rng.nextDoubleGaussian(minA, maxA);
             r.forcePick_A++;
             w = wa;
         } else if(rangeB < rangeA/2) {
-            if(Rng.nextDouble() < mutation)
-                m = (float) Rng.nextDoubleGaussian(minB, maxB);
+            if(rng.nextDouble() < mutation)
+                m = (float) rng.nextDoubleGaussian(minB, maxB);
             r.forcePick_B++;
             w = wb;
-        } else if(Rng.nextBoolean()) {
-            if(Rng.nextDouble() < mutation)
-                m = (float) Rng.nextDoubleGaussian(minA, maxA);
+        } else if(rng.nextBoolean()) {
+            if(rng.nextDouble() < mutation)
+                m = (float) rng.nextDoubleGaussian(minA, maxA);
             r.randomPick_A++;
             w = wa;
         } else {
-            if(Rng.nextDouble() < mutation)
-                m = (float) Rng.nextDoubleGaussian(minB, maxB);
+            if(rng.nextDouble() < mutation)
+                m = (float) rng.nextDoubleGaussian(minB, maxB);
             r.randomPick_B++;
             w = wb;
         }

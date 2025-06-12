@@ -38,7 +38,7 @@ import org.fjnn.base.output.BackpropagateOutputGPU;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
-import org.fjnn.util.Rng;
+import org.fjnn.util.rng;
 
 /**
  * Genetic Parameter Optimizer

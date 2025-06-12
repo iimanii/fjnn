@@ -66,4 +66,6 @@ public abstract class Loss {
                 throw new RuntimeException("Unknown loss type: " + type);
         }
     }
+    
+    abstract public String name();
 }

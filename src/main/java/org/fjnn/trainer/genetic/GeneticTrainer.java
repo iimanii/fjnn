@@ -26,7 +26,7 @@ import org.fjnn.base.NetworkInput;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.trainer.genetic.GeneticTrainerConfig.ComputeMode;
 import org.fjnn.trainer.genetic.TrainingSet.TrainingResult;
-import org.fjnn.util.Rng;
+import org.fjnn.util.rng;
 import org.fjnn.util.util;
 
 /**

@@ -25,7 +25,7 @@ package org.fjnn.trainer.backpropagate;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.fjnn.util.SMA;
+import org.fjnn.util.sma;
 
 /**
  *
@@ -34,12 +34,12 @@ import org.fjnn.util.SMA;
 public class ProgressTracker {
     private final List<Double> lossHistory = new ArrayList<>();
     
-    private final SMA lossMA;
-    private final SMA epochTimeMA;
-    private final SMA forwardTimeMA;
-    private final SMA backwardTimeMA;
-    private final SMA updateTimeMA;
-    private final SMA lossTimeMA;
+    private final sma lossMA;
+    private final sma epochTimeMA;
+    private final sma forwardTimeMA;
+    private final sma backwardTimeMA;
+    private final sma updateTimeMA;
+    private final sma lossTimeMA;
     
     private final long startTimeMs = System.currentTimeMillis();
     private double bestLoss = Double.POSITIVE_INFINITY;
@@ -54,25 +54,23 @@ public class ProgressTracker {
     private float lastLossTime = 0;
     
     public final double stagnationThreshold;
-    public final int maxStagnationEpochs;
     
     public ProgressTracker() {
-        this(1e-6, 100, 10);
+        this(1e-6);
     }
     
-    public ProgressTracker(double stagnationThreshold, int maxStagnationEpochs) {
-        this(stagnationThreshold, maxStagnationEpochs, 10);
+    public ProgressTracker(double stagnationThreshold) {
+        this(stagnationThreshold, 10);
     }
     
-    public ProgressTracker(double stagnationThreshold, int maxStagnationEpochs, int smoothingWindow) {
+    public ProgressTracker(double stagnationThreshold, int smoothingWindow) {
         this.stagnationThreshold = stagnationThreshold;
-        this.maxStagnationEpochs = maxStagnationEpochs;
-        this.lossMA = new SMA(smoothingWindow);
-        this.epochTimeMA = new SMA(smoothingWindow);
-        this.forwardTimeMA = new SMA(smoothingWindow);
-        this.backwardTimeMA = new SMA(smoothingWindow);
-        this.updateTimeMA = new SMA(smoothingWindow);
-        this.lossTimeMA = new SMA(smoothingWindow);
+        this.lossMA = new sma(smoothingWindow);
+        this.epochTimeMA = new sma(smoothingWindow);
+        this.forwardTimeMA = new sma(smoothingWindow);
+        this.backwardTimeMA = new sma(smoothingWindow);
+        this.updateTimeMA = new sma(smoothingWindow);
+        this.lossTimeMA = new sma(smoothingWindow);
     }
     
     public void recordMetrics(double loss, float epochTimeMs, float forwardTimeMs, float backwardTimeMs, float updateTimeMs, float lossTimeMs) {
@@ -127,10 +125,6 @@ public class ProgressTracker {
     
     public double getAverageLoss() {
         return lossMA.getNet();
-    }
-    
-    public boolean isStagnating() {
-        return stagnationCount >= maxStagnationEpochs;
     }
     
     public int getStagnationCount() {
@@ -215,8 +209,7 @@ public class ProgressTracker {
 
         sb.append(String.format("Elapsed: %ds", getElapsedTimeMs() / 1000));
 
-        if (isStagnating())
-            sb.append(String.format(" | STAGNANT (%d/%d)", getStagnationCount(), maxStagnationEpochs));
+        sb.append(String.format(" | STAGNANTION %d", stagnationCount));
 
         return sb.toString();
     }

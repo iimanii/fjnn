@@ -24,7 +24,7 @@
 package org.fjnn.genetic;
 
 import java.util.List;
-import org.fjnn.util.Rng;
+import org.fjnn.util.rng;
 
 /**
  *
@@ -102,9 +102,9 @@ public class GeneticParameter {
     }
     
     public void mutate(GeneticIndividual individual, double mutationRate) {
-        if (Rng.nextDouble() < mutationRate) {
+        if (rng.nextDouble() < mutationRate) {
             float current = individual.genes[index];
-            float direction = Rng.nextBoolean() ? 1f : -1f;
+            float direction = rng.nextBoolean() ? 1f : -1f;
             float strength = useAdaptiveMutation ? adaptiveMutationStrength : fixedMutationStrength;
             float newValue = current + direction * strength;
             individual.genes[index] = Math.max(min, Math.min(max, newValue));
@@ -112,6 +112,6 @@ public class GeneticParameter {
     }
     
     public float initialize() {
-        return Rng.nextFloat(min, max);
+        return rng.nextFloat(min, max);
     }
 }

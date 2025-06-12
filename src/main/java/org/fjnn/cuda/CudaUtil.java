@@ -221,6 +221,12 @@ public class CudaUtil {
         return array;
     }
     
+    public static float[] fromGPUFloat(CUdeviceptr src) {
+        long size = CudaUtil.length(src) / FLOAT_SIZE;
+        
+        return fromGPUFloat(src, (int)size);
+    }
+    
     public static float[] fromGPUFloat(CUdeviceptr src, int size) {
         float[] array = new float[size];
         JCudaDriver.cuMemcpyDtoH(Pointer.to(array), src, size * FLOAT_SIZE);

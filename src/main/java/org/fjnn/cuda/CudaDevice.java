@@ -44,7 +44,7 @@ import jcuda.jcurand.curandGenerator;
 import jcuda.jcurand.curandRngType;
 import jcuda.runtime.JCuda;
 import jcuda.runtime.cudaDeviceProp;
-import org.fjnn.util.Rng;
+import org.fjnn.util.rng;
 
 /**
  *
@@ -88,7 +88,7 @@ public class CudaDevice {
         
         curandGenerator = new curandGenerator();
         JCurand.curandCreateGenerator(curandGenerator, curandRngType.CURAND_RNG_PSEUDO_DEFAULT);
-        JCurand.curandSetPseudoRandomGeneratorSeed(curandGenerator, Rng.nextLong(Long.MAX_VALUE));
+        JCurand.curandSetPseudoRandomGeneratorSeed(curandGenerator, rng.nextLong(Long.MAX_VALUE));
     
         long[] free = new long[1];
         long[] total = new long[1];

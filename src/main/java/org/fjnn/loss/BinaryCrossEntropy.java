@@ -119,4 +119,9 @@ public class BinaryCrossEntropy extends Loss {
         float beta = (Float)serialized.get("beta");
         return new BinaryCrossEntropy(alpha, beta);
     }
+
+    @Override
+    public String name() {
+        return String.format("BCE_%.1f_%.1f", alpha, beta);
+    }
 }

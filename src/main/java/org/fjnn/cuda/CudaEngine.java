@@ -35,7 +35,7 @@ import jcuda.jcublas.cublasHandle;
 import jcuda.jcurand.curandGenerator;
 import jcuda.runtime.JCuda;
 import jcuda.runtime.cudaDeviceProp;
-import org.fjnn.util.Rng;
+import org.fjnn.util.rng;
 
 /**
  *

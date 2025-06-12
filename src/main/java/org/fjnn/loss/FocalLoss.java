@@ -110,4 +110,9 @@ public class FocalLoss extends Loss {
         float gamma = (Float)serialized.get("gamma");
         return new FocalLoss(gamma);
     }
+
+    @Override
+    public String name() {
+        return "Focal";
+    }
 }

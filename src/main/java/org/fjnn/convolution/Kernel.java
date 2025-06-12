@@ -40,7 +40,7 @@ import org.fjnn.convolution.output.unit.ConvolutionUnitForwardOutput;
 import org.fjnn.convolution.output.unit.ConvolutionUnitForwardOutputGPU;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
-import org.fjnn.util.Rng;
+import org.fjnn.util.rng;
 
 /**
  * Represents a single 1D convolutional kernel.
@@ -423,11 +423,11 @@ public class Kernel implements ConvolutionUnit {
     public void initGaussian(float mean, float sd) {
         // Initialize weights with Gaussian distribution
         for (int i = 0; i < width; i++) {
-            weights[i] = (float) Rng.gaussian(mean, sd);
+            weights[i] = (float) rng.gaussian(mean, sd);
         }
 
         // Initialize bias
-        bias = (float) Rng.gaussian(mean, sd);
+        bias = (float) rng.gaussian(mean, sd);
 
         gpuReady = false;
     }
@@ -436,7 +436,7 @@ public class Kernel implements ConvolutionUnit {
     public void initUniform(float min, float max) {
         // Initialize weights with uniform distribution
         for (int i = 0; i < weights.length; i++) {
-            weights[i] = (float) (Rng.nextFloat()* (max - min) + min);
+            weights[i] = (float) (rng.nextFloat()* (max - min) + min);
         }
 
         // Initialize bias to zero (common practice for uniform init)

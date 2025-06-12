@@ -23,7 +23,7 @@
  */
 package org.fjnn.genetic;
 
-import org.fjnn.util.Rng;
+import org.fjnn.util.rng;
 
 /**
  *
@@ -72,7 +72,7 @@ public class GeneticNetworkConfig {
     };
     
     public static mutation getRandomMutation() {
-        float r = Rng.nextFloat();
+        float r = rng.nextFloat();
         
         for(mutation m : mutation.values())
             if(m.comm > r)

@@ -43,7 +43,7 @@ import jcuda.runtime.cudaStream_t;
 import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
-import org.fjnn.util.Rng;
+import org.fjnn.util.rng;
 import org.fjnn.util.intrinsic;
 import org.fjnn.util.util;
 
@@ -584,10 +584,10 @@ public class Connection {
         int len = neurons * links;
         
         for(int i=0; i < len; i++)
-            weights[i] = Rng.nextFloat(min, max);
+            weights[i] = rng.nextFloat(min, max);
         
         for(int i=0; i < links; i++)
-            biases[i] = Rng.nextFloat(min, max);
+            biases[i] = rng.nextFloat(min, max);
         
         nativeReady = false;
         gpuReady = false;
@@ -597,10 +597,10 @@ public class Connection {
         int len = neurons * links;
         
         for(int i=0; i < len; i++)
-            weights[i] = (float) Rng.gaussian(mean, sd);
+            weights[i] = (float) rng.gaussian(mean, sd);
         
         for(int i=0; i < links; i++)
-            biases[i] = (float) Rng.gaussian(mean, sd);
+            biases[i] = (float) rng.gaussian(mean, sd);
         
         nativeReady = false;
         gpuReady = false;        
@@ -677,10 +677,10 @@ public class Connection {
         float[] wb = b.weights;
 
         for(int j=0; j < wa.length; j++) {
-            float w = Rng.nextBoolean() ? wa[j] : wb[j];
+            float w = rng.nextBoolean() ? wa[j] : wb[j];
 
-            if(Rng.nextDouble() < mutation)
-                w = w + Rng.nextFloat(min, max);
+            if(rng.nextDouble() < mutation)
+                w = w + rng.nextFloat(min, max);
 
             weights[j] = w;
         }
@@ -689,10 +689,10 @@ public class Connection {
         float[] bb = b.biases;
 
         for(int j=0; j < ba.length; j++) {
-            float w = Rng.nextBoolean() ? ba[j] : bb[j];
+            float w = rng.nextBoolean() ? ba[j] : bb[j];
 
-            if(Rng.nextDouble() < mutation)
-                w = w + Rng.nextFloat(min, max);
+            if(rng.nextDouble() < mutation)
+                w = w + rng.nextFloat(min, max);
 
             biases[j] = w;
         }

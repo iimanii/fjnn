@@ -98,6 +98,11 @@ public class WeightedMeanSquareError extends Loss {
         Map result = super.serialize();
         result.put("weights", weights);  // Store the weights array
         return result;
-    }    
+    }
+    
+    @Override
+    public String name() {
+        return "WMSE";
+    }
 }
 

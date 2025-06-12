@@ -41,7 +41,7 @@ import org.fjnn.normalizer.outputs.DropoutBackpropagateOutput;
 import org.fjnn.normalizer.outputs.DropoutBackpropagateOutputGPU;
 import org.fjnn.normalizer.outputs.DropoutForwardOutput;
 import org.fjnn.normalizer.outputs.DropoutForwardOutputGPU;
-import org.fjnn.util.Rng;
+import org.fjnn.util.rng;
 
 /**
  *
@@ -68,7 +68,7 @@ public class Dropout extends ModelComponent {
            
         // Generate single mask for all batches
         for(int n = 0; n < neurons; n++) {
-            output.mask[n] = Rng.nextFloat() > rate ? 1.0f : 0.0f;
+            output.mask[n] = rng.nextFloat() > rate ? 1.0f : 0.0f;
         }
     
         for(int b = 0; b < batchSize; b++) {
