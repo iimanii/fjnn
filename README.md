@@ -105,7 +105,6 @@ System.out.println("Available GPUs: " + deviceCount);
 for (int i = 0; i < deviceCount; i++) {
     System.out.println("GPU " + i + ":");
     System.out.println("  Multiprocessors: " + CudaEngine.getMultiProcessorCount(i));
-    System.out.println("  Clock Rate: " + CudaEngine.getDeviceProperties(i).clockRate / 1e3f + " MHz");
     System.out.println("  Free Memory: " + CudaEngine.getFreeMemory(i) / 1e9f + " GB");
 }
 
