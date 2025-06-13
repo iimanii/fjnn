@@ -258,7 +258,7 @@ public class GeneticNetwork extends Network<GeneticNetwork> {
         for(GeneticConnection c : connectionMap.all()) {
             connectionStubs.add(new GeneticConnectionStub(c.from.id, c.to.id, c.weight, c.disabled));
         }
-        return new GeneticStub(getInputSize(), getOutputSize(), 
+        return new GeneticStub(getInputDim(), getOutputDim(), 
                                innovations, connectionStubs, properties, 
                                Activation.toName(outputActivation), Activation.toName(hiddenActivation));
     }

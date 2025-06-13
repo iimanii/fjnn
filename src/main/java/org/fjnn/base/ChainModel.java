@@ -70,15 +70,15 @@ public class ChainModel {
 
     // Add a component to the chain
     public void addComponent(ModelComponent component) {
-        if (component.getInputSize() != outputDim) {
-            addInputDimAdapter(component.getInputSize());
+        if (component.getInputDim() != outputDim) {
+            addInputDimAdapter(component.getInputDim());
         } else if (component instanceof InputDimAdapter) {
             InputDimAdapter adapter = (InputDimAdapter) component;
-            adjustSplit(outputDim, adapter.getOutputSize());
+            adjustSplit(outputDim, adapter.getOutputDim());
         }
         
         components.add(component);
-        outputDim = component.getOutputSize();   // Update the current output size
+        outputDim = component.getOutputDim();   // Update the current output size
     }
     
     public void addInputDimAdapter(int targetInputDim) {

@@ -271,12 +271,12 @@ public class AttentionWeights extends ModelComponent {
     }
 
     @Override
-    public int getInputSize() {
+    public int getInputDim() {
         return inputDim;
     }
 
     @Override
-    public int getOutputSize() {
+    public int getOutputDim() {
         return sequenceLen * vectorDim;
     }
 

@@ -65,8 +65,8 @@ public class CudaModule {
     
     private static final String CUDA_DIRECTORY = "cuda";
     
-    private static final String PTX_FILE_EXTENTION = ".ptx";
-    private static final String CUBIN_FILE_EXTENTION = ".cubin";
+    private static final String PTX_FILE_EXTENSION = ".ptx";
+    private static final String CUBIN_FILE_EXTENSION = ".cubin";
     
     public static boolean VERBOSE = true;
     
@@ -123,7 +123,7 @@ public class CudaModule {
         ensureSourceExists(cudaDir, name);
         
         String cuPath = cudaDir + "/" + name + ".cu";
-        String ptxPath = cudaDir + "/" + name + PTX_FILE_EXTENTION;
+        String ptxPath = cudaDir + "/" + name + PTX_FILE_EXTENSION;
         File ptx = new File(ptxPath);
         
         if(ptx.exists() && ptx.lastModified() > new File(cuPath).lastModified() && !forceCompile) {
@@ -155,7 +155,7 @@ public class CudaModule {
         ensureSourceExists(cudaDir, name);
         
         String cuPath = cudaDir + "/" + name + ".cu";
-        String cubinPath = cudaDir + "/" + name + CUBIN_FILE_EXTENTION;
+        String cubinPath = cudaDir + "/" + name + CUBIN_FILE_EXTENSION;
         File cubin = new File(cubinPath);
 
         if(cubin.exists() && cubin.lastModified() > new File(cuPath).lastModified() && !forceCompile) {
@@ -297,7 +297,7 @@ public class CudaModule {
             dir.mkdir();
         
         for(File f : dir.listFiles()) {
-            if(f.getName().endsWith(PTX_FILE_EXTENTION)) {
+            if(f.getName().endsWith(PTX_FILE_EXTENSION)) {
                 System.out.println("Deleting: " + f.getName());
                 f.delete();
             }

@@ -165,12 +165,12 @@ public class PositionalEncoderAdapter extends ModelComponent {
     }
 
     @Override
-    public int getInputSize() {
+    public int getInputDim() {
         return totalFeatures;
     }
 
     @Override
-    public int getOutputSize() {
+    public int getOutputDim() {
         return totalFeatures;
     }
 

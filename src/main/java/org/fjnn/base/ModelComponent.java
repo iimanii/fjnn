@@ -53,8 +53,8 @@ public abstract class ModelComponent {
     }
     
     public FeedForwardOutput feedForward(float[] input, int inputSize, int batchSize) {
-        if(inputSize != getInputSize())
-            throw new RuntimeException("Invalid batch size " + batchSize + " != " + getInputSize());
+        if(inputSize != getInputDim())
+            throw new RuntimeException("Invalid batch size " + batchSize + " != " + getInputDim());
         
         return feedForward(input, batchSize);
     }
@@ -63,16 +63,16 @@ public abstract class ModelComponent {
     public final FeedForwardOutputGPU feedForwardGPU(CUdeviceptr input, int inputSize, int batchSize, CUstream stream) {
         checkGPUContext();
         
-        if(inputSize != getInputSize())
-            throw new RuntimeException("Invalid batch size " + inputSize + " != " + getInputSize());
+        if(inputSize != getInputDim())
+            throw new RuntimeException("Invalid batch size " + inputSize + " != " + getInputDim());
         
         return feedForwardGPU(input, batchSize, stream);
     }
     public abstract FeedForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchSize, CUstream stream);
     
     public BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss, int deltaLossSize, int deltaLossCount) {
-        if(output.outputDim != deltaLossSize || getOutputSize() != deltaLossSize)
-            throw new RuntimeException("Invalid batch size " + deltaLossSize + " != " + getInputSize());
+        if(output.outputDim != deltaLossSize || getOutputDim() != deltaLossSize)
+            throw new RuntimeException("Invalid batch size " + deltaLossSize + " != " + getInputDim());
         
         if(output.batchSize != deltaLossCount)
             throw new RuntimeException("Invalid batch count " + deltaLossCount + " != " + output.batchSize);
@@ -82,8 +82,8 @@ public abstract class ModelComponent {
     protected abstract BackpropagateOutput backpropagate(FeedForwardOutput output, float[] deltaLoss);
     
     public BackpropagateOutputGPU backpropagateGPU(FeedForwardOutputGPU output, CUdeviceptr deltaLoss, int deltaLossDim, int batchSize, CUstream stream) {
-        if(output.outputDim != deltaLossDim || getOutputSize() != deltaLossDim)
-            throw new RuntimeException("Invalid batch size " + deltaLossDim + " != " + getInputSize());
+        if(output.outputDim != deltaLossDim || getOutputDim() != deltaLossDim)
+            throw new RuntimeException("Invalid batch size " + deltaLossDim + " != " + getInputDim());
         
         if(output.batchSize != batchSize)
             throw new RuntimeException("Invalid batch count " + batchSize + " != " + output.batchSize);
@@ -158,8 +158,8 @@ public abstract class ModelComponent {
             throw new RuntimeException("Invalid cuda context for device: " + deviceId + " must call CudaEngine.prepareThread(...)");
     }
     
-    public abstract int getInputSize();
-    public abstract int getOutputSize();
+    public abstract int getInputDim();
+    public abstract int getOutputDim();
     
     public abstract ModelComponent copy();
     

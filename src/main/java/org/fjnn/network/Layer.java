@@ -160,46 +160,46 @@ public class Layer {
         }
     }
     
-    protected void feedForward(float[] input, int count, float[][] result) {
+    protected void feedForward(float[] input, int batchSize, float[][] result) {
         if (normalizer != null)
-            normalizer.compute(input, count);
+            normalizer.compute(input, batchSize);
 
         if(activation != null)
-            activation.compute(input, input, neurons, count);
+            activation.compute(input, input, neurons, batchSize);
         
         if(dropout.rate != 0)
-            dropout.feedForward(input, count);
+            dropout.feedForward(input, batchSize);
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             int toLayer = e.getKey();
             Connection c = e.getValue();
             
             if(result[toLayer] == null)
-                result[toLayer] = new float[c.links * count];
+                result[toLayer] = new float[c.links * batchSize];
                 
-            c.feedForward(input, count, result[toLayer]);
+            c.feedForward(input, batchSize, result[toLayer]);
         }
     }
     
     protected void feedForward(NeuralNetworkForwardOutput activations, boolean disableDropout) {
-        int count = activations.batchSize;
+        int batchSize = activations.batchSize;
         
         float[] processedInput = activations.layerInputs[this.index];
         
         if (normalizer != null) {
-            FeedForwardOutput normOutput = normalizer.feedForward(processedInput, count);
+            FeedForwardOutput normOutput = normalizer.feedForward(processedInput, batchSize);
             activations.normalizerOutputs[this.index] = normOutput;
             processedInput = normOutput.output();
         }
         
         if (activation != null) {
-            ActivationForwardOutput activationOutput = activation.feedForward(processedInput, neurons, count);
+            ActivationForwardOutput activationOutput = activation.feedForward(processedInput, neurons, batchSize);
             activations.activationOutputs[this.index] = activationOutput;
             processedInput = activationOutput.output();
         }
         
         if (dropout.rate != 0 && !disableDropout) {
-            DropoutForwardOutput dropoutOutput = dropout.feedForward(processedInput, count);
+            DropoutForwardOutput dropoutOutput = dropout.feedForward(processedInput, batchSize);
             activations.dropoutOutputs[this.index] = dropoutOutput;
             processedInput = dropoutOutput.output();
         }
@@ -212,10 +212,10 @@ public class Layer {
 
             // Initialize space for the next layer's pre-activations if it hasn't been set yet
             if (activations.layerInputs[toLayer] == null)
-                activations.layerInputs[toLayer] = new float[connection.links * count];
+                activations.layerInputs[toLayer] = new float[connection.links * batchSize];
 
             // Perform feedForward to the next layer's pre-activations
-            connection.feedForward(processedInput, count, activations.layerInputs[toLayer]);
+            connection.feedForward(processedInput, batchSize, activations.layerInputs[toLayer]);
         }
     }
 
@@ -485,12 +485,12 @@ public class Layer {
 //        return total;
 //    }
     
-    protected void computeGPU(CUdeviceptr input, int count, CUdeviceptr[] result, CUstream stream, cublasHandle handle) {
+    protected void computeGPU(CUdeviceptr input, int batchSize, CUdeviceptr[] result, CUstream stream, cublasHandle handle) {
         if(normalizer != null)
-            normalizer.computeGPU(input, count, stream);
+            normalizer.computeGPU(input, batchSize, stream);
         
         if(activation != null)
-            activation.computeGPU(input, input, neurons, count, stream);
+            activation.computeGPU(input, input, neurons, batchSize, stream);
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             int toLayer = e.getKey();
@@ -498,15 +498,15 @@ public class Layer {
             
             if(result[toLayer] == null) {
                if(stream == null) {
-                    result[toLayer] = CudaUtil.createFloat(c.links * count);
-                    JCudaDriver.cuMemsetD32(result[toLayer], 0, c.links * count);                   
+                    result[toLayer] = CudaUtil.createFloat(c.links * batchSize);
+                    JCudaDriver.cuMemsetD32(result[toLayer], 0, c.links * batchSize);                   
                } else {
-                    result[toLayer] = CudaUtil.createFloatAsync(c.links * count, stream);
-                    JCudaDriver.cuMemsetD32Async(result[toLayer], 0, c.links * count, stream);
+                    result[toLayer] = CudaUtil.createFloatAsync(c.links * batchSize, stream);
+                    JCudaDriver.cuMemsetD32Async(result[toLayer], 0, c.links * batchSize, stream);
                }
             }
             
-            c.feedForwardGPU(input, count, result[toLayer], stream, handle);
+            c.feedForwardGPU(input, batchSize, result[toLayer], stream, handle);
         }
     }
     
@@ -865,18 +865,18 @@ public class Layer {
 //        bias = Arrays.copyOf(bias, links);
     }
     
-    protected void feedForward(FloatBuffer input, int count, FloatBuffer[] result) {
+    protected void feedForward(FloatBuffer input, int batchSize, FloatBuffer[] result) {
         if(activation != null)
-            activation.compute(input, input, neurons, count);
+            activation.compute(input, input, neurons, batchSize);
         
         for(Entry<Integer, Connection> e : connections.entrySet()) {
             int layer = e.getKey();
             Connection c = e.getValue();
             
             if(result[layer] == null)
-                result[layer] = ByteBuffer.allocateDirect(c.links * count * Float.BYTES).order(ByteOrder.nativeOrder()).asFloatBuffer();
+                result[layer] = ByteBuffer.allocateDirect(c.links * batchSize * Float.BYTES).order(ByteOrder.nativeOrder()).asFloatBuffer();
             
-            c.feedForward(input, count, result[layer]);
+            c.feedForward(input, batchSize, result[layer]);
         }
     }
 }

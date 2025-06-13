@@ -105,12 +105,12 @@ public class InputDimAdapter extends ModelComponent {
     }
 
     @Override
-    public int getInputSize() {
+    public int getInputDim() {
         return inputDim;
     }
 
     @Override
-    public int getOutputSize() {
+    public int getOutputDim() {
         return targetDim;
     }
 
@@ -155,8 +155,8 @@ public class InputDimAdapter extends ModelComponent {
 
        // Store component type and main properties
        obj.put("type", "BatchSizeAdapter"); 
-       obj.put("inputDim", getInputSize());
-       obj.put("targetDim", getOutputSize());
+       obj.put("inputDim", getInputDim());
+       obj.put("targetDim", getOutputDim());
 
        return obj;
     }

@@ -90,8 +90,8 @@ public class LayerNormalizer extends Normalizer {
     }
     
     @Override
-    public void compute(float[] input, int count) {
-        for(int i = 0; i < count; i++) {
+    public void compute(float[] input, int batchSize) {
+        for(int i = 0; i < batchSize; i++) {
             float mean = 0;
             for(int j = 0; j < neurons; j++) {
                 mean += input[i * neurons + j];
@@ -114,11 +114,11 @@ public class LayerNormalizer extends Normalizer {
     }
 
     @Override
-    public void computeGPU(CUdeviceptr ptr, long count, CUstream stream) {
+    public void computeGPU(CUdeviceptr ptr, long batchSize, CUstream stream) {
         // For in-place computation, we'll use same pointer for input and output
         // We need temporary storage for means and variances
-        CUdeviceptr normalized = CudaUtil.createFloatAsync(neurons * count, stream);
-        CUdeviceptr variances = CudaUtil.createFloatAsync(count, stream);
+        CUdeviceptr normalized = CudaUtil.createFloatAsync(neurons * batchSize, stream);
+        CUdeviceptr variances = CudaUtil.createFloatAsync(batchSize, stream);
 
         // Call normalizer function
         CudaFunctions.normalization.LayerNormalizer(
@@ -129,7 +129,7 @@ public class LayerNormalizer extends Normalizer {
             gammaGPU,
             betaGPU,
             neurons, 
-            count, 
+            batchSize, 
             stream
         );
 
@@ -139,11 +139,11 @@ public class LayerNormalizer extends Normalizer {
     }
 
     @Override
-    public FeedForwardOutput feedForward(float[] input, int count) {
-        LayerNormalizerForwardOutput output = new LayerNormalizerForwardOutput(input, neurons, count);
+    public FeedForwardOutput feedForward(float[] input, int batchSize) {
+        LayerNormalizerForwardOutput output = new LayerNormalizerForwardOutput(input, neurons, batchSize);
 
         // For each example in batch
-        for(int i = 0; i < count; i++) {
+        for(int i = 0; i < batchSize; i++) {
             int from = i * neurons;
             int to = from + neurons;
             
@@ -177,8 +177,8 @@ public class LayerNormalizer extends Normalizer {
     }
     
     @Override
-    public FeedForwardOutputGPU feedForwardGPU(CUdeviceptr ptr, int count, CUstream stream) {
-        LayerNormalizerForwardOutputGPU output = new LayerNormalizerForwardOutputGPU(ptr, neurons, count, stream);
+    public FeedForwardOutputGPU feedForwardGPU(CUdeviceptr ptr, int batchSize, CUstream stream) {
+        LayerNormalizerForwardOutputGPU output = new LayerNormalizerForwardOutputGPU(ptr, neurons, batchSize, stream);
 
         CudaFunctions.normalization.LayerNormalizer(output.preNormalization, 
                                                     output.normalized, 
@@ -186,7 +186,7 @@ public class LayerNormalizer extends Normalizer {
                                                     output.stds,
                                                     gammaGPU,
                                                     betaGPU,
-                                                    neurons, count, stream);
+                                                    neurons, batchSize, stream);
 
         return output;
     }
@@ -370,12 +370,12 @@ public class LayerNormalizer extends Normalizer {
     }
 
     @Override
-    public int getInputSize() {
+    public int getInputDim() {
         return neurons;
     }
 
     @Override
-    public int getOutputSize() {
+    public int getOutputDim() {
         return neurons;
     }
 

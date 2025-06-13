@@ -273,7 +273,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
        
     @Override
     public NeuralNetworkForwardOutput feedForward(float[] input, int batchSize) {
-        NeuralNetworkForwardOutput activations = new NeuralNetworkForwardOutput(getOutputSize(), batchSize, getLayerCount());
+        NeuralNetworkForwardOutput activations = new NeuralNetworkForwardOutput(getOutputDim(), batchSize, getLayerCount());
         activations.layerInputs[0] = input;
         
         for (int i = 0; i < layers.length; i++)
@@ -354,7 +354,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         
         NeuralNetworkForwardOutput output = (NeuralNetworkForwardOutput)feedforward;
         
-        NeuralNetworkBackpropagateOutput result = new NeuralNetworkBackpropagateOutput(getInputSize(), output.batchSize, getLayerCount());
+        NeuralNetworkBackpropagateOutput result = new NeuralNetworkBackpropagateOutput(getInputDim(), output.batchSize, getLayerCount());
         result.preActivationDeltas[last] = outputPreActivationDelta;
 
         // Step 4: Backpropagate through all hidden layers, except output layer
@@ -441,7 +441,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     public NeuralNetworkForwardOutputGPU feedForwardGPU(CUdeviceptr input, int batchSize, CUstream stream) {
         cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
         
-        NeuralNetworkForwardOutputGPU activations = new NeuralNetworkForwardOutputGPU(getOutputSize(), batchSize, getLayerCount());
+        NeuralNetworkForwardOutputGPU activations = new NeuralNetworkForwardOutputGPU(getOutputDim(), batchSize, getLayerCount());
         activations.layerInputs[0] = input;
 
         for(int i=0; i < layers.length; i++) {
@@ -516,7 +516,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         cublasHandle handle = CudaEngine.getCublasHandle(deviceId);
         
         // Create output structure with proper size
-        NeuralNetworkBackpropagateOutputGPU result = new NeuralNetworkBackpropagateOutputGPU(getInputSize(), feedforward.batchSize, getLayerCount());
+        NeuralNetworkBackpropagateOutputGPU result = new NeuralNetworkBackpropagateOutputGPU(getInputDim(), feedforward.batchSize, getLayerCount());
         result.preActivationDeltas[last] = outputPreActivationDelta;
         
         // Step 4: Backpropagate through layers, excluding output layer

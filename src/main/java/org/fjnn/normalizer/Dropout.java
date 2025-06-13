@@ -164,12 +164,12 @@ public class Dropout extends ModelComponent {
     }
 
     @Override
-    public int getInputSize() {
+    public int getInputDim() {
         return neurons;
     }
 
     @Override
-    public int getOutputSize() {
+    public int getOutputDim() {
         return neurons;
     }
 

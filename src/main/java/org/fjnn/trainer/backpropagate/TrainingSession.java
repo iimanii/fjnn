@@ -308,7 +308,7 @@ public class TrainingSession {
             // Loss computation on GPU
             timingManager.recordLossStart(i, stream);
             batchLossGPU[i] = CudaUtil.createFloatAsync(1, stream);
-            long outputSize = network.getOutputSize() * dataset.batchSize;
+            long outputSize = network.getOutputDim() * dataset.batchSize;
             config.lossFunction.computeGPU(output.output(), target, batchLossGPU[i], outputSize, stream);
             timingManager.recordLossEnd(i, stream);
 
@@ -422,7 +422,7 @@ public class TrainingSession {
         
         // Compute loss on GPU
         CUdeviceptr lossGPU = CudaUtil.createFloatAsync(1, stream);
-        long outputSize = network.getOutputSize() * dataset.batchSize;
+        long outputSize = network.getOutputDim() * dataset.batchSize;
         config.lossFunction.computeGPU(forwardOutput.output(), target, lossGPU, outputSize, stream);
         
         float[] result = CudaUtil.fromGPUFloatAsync(forwardOutput.output(), (int)outputSize, stream);
@@ -486,7 +486,7 @@ public class TrainingSession {
             
             // Compute loss on GPU
             CUdeviceptr lossGPU = CudaUtil.createFloatAsync(1, stream);
-            long outputSize = network.getOutputSize() * dataset.batchSize;
+            long outputSize = network.getOutputDim() * dataset.batchSize;
             config.lossFunction.computeGPU(output.output(), target, lossGPU, outputSize, stream);
 
             // Copy only the loss value
@@ -660,14 +660,14 @@ public class TrainingSession {
         if (config == null)
             throw new IllegalArgumentException("Training configuration cannot be null");
         
-        if (network.getInputSize() != dataset.inputDim)
+        if (network.getInputDim() != dataset.inputDim)
             throw new IllegalArgumentException(String.format(
                "Network input size (%d) does not match dataset input dimension (%d)",
-                network.getInputSize(), dataset.inputDim));
+                network.getInputDim(), dataset.inputDim));
         
-        if (network.getOutputSize() != dataset.targetDim)
+        if (network.getOutputDim() != dataset.targetDim)
             throw new IllegalArgumentException(String.format(
                 "Network output size (%d) does not match dataset target dimension (%d)",
-                network.getOutputSize(), dataset.targetDim));
+                network.getOutputDim(), dataset.targetDim));
     }
 }

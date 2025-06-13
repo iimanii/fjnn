@@ -123,12 +123,12 @@ public class MultiHeadAttention extends ModelComponent {
     }
 
     @Override
-    public int getInputSize() {
+    public int getInputDim() {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
     @Override
-    public int getOutputSize() {
+    public int getOutputDim() {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 

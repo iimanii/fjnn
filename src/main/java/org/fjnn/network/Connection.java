@@ -137,8 +137,8 @@ public class Connection {
         return new Connection(neurons, links, wc, bc);
     }
     
-    void feedForward(float[] input, int count, float[] result) {
-        for(int c=0; c < count; c++) {
+    void feedForward(float[] input, int batchSize, float[] result) {
+        for(int c=0; c < batchSize; c++) {
             int x = c * neurons;
             int y = c * links;
             
@@ -156,12 +156,6 @@ public class Connection {
         }
     }
     
-    void feedForward(FloatBuffer input, int count, FloatBuffer result) {
-        if(count == 1)
-            intrinsic.sgemv(input, result, weightsCPU, biasCPU, neurons, links);
-        else
-            intrinsic.sgemm(input, count, result, weightsCPU, biasCPU, neurons, links);
-    }
     
     void feedForwardGPU(CUdeviceptr input, int batchSize, CUdeviceptr output, CUstream stream, cublasHandle handle) {
         Pointer alpha = Pointer.to(new float[]{1.0f});
@@ -195,10 +189,10 @@ public class Connection {
         CudaFunctions.vector.addStride(output, biasesGPU, links, batchSize, stream);
     }
     
-    ConnectionGradient backpropagate(float[] currentActivationDeltas, float[] nextPreActivationDeltas, float[] currentPostActivations, int count) {
+    ConnectionGradient backpropagate(float[] currentActivationDeltas, float[] nextPreActivationDeltas, float[] currentPostActivations, int batchSize) {
         ConnectionGradient gradient = new ConnectionGradient(neurons, links);
                 
-        for(int c=0; c < count; c++) {
+        for(int c=0; c < batchSize; c++) {
             int x = c * neurons;
             int y = c * links;
             
@@ -224,12 +218,12 @@ public class Connection {
                 gradient.biasGradients[j] += nextPreActivationDeltas[y + j];
         }
         
-        if(count > 1) {
+        if(batchSize > 1) {
             for (int i = 0; i < gradient.weightGradients.length; i++)
-                gradient.weightGradients[i] /= count;
+                gradient.weightGradients[i] /= batchSize;
 
             for (int i = 0; i < gradient.biasGradients.length; i++)
-                gradient.biasGradients[i] /= count;
+                gradient.biasGradients[i] /= batchSize;
         }
 
         return gradient;
@@ -238,23 +232,23 @@ public class Connection {
     ConnectionGradientGPU backpropagateGPU(CUdeviceptr currentActivationDeltas, 
                                            CUdeviceptr nextPreActivationDeltas, 
                                            CUdeviceptr postActivation, 
-                                           int count,
+                                           int batchSize,
                                            boolean accumulateDeltas,
                                            CUstream stream, 
                                            cublasHandle handle) {        
         ConnectionGradientGPU gradient = new ConnectionGradientGPU(neurons, links, stream);
         
-        float scale = 1.0f / count;
+        float scale = 1.0f / batchSize;
         Pointer pAlpha = Pointer.to(new float[]{1.0f});
         Pointer pBeta = Pointer.to(new float[]{0.0f});
 
         // cuBLAS uses column-major format. Make sure the dimensions match accordingly
         int m = links;         // Output size (links in current layer, which is nextPreActivationDeltas size)
         int n = neurons;       // Batch size
-        int k = count;         // Batch size 
+        int k = batchSize;         // Batch size 
 
-        CUdeviceptr a = nextPreActivationDeltas;    // delta^{(l+1)}, size [links x count]
-        CUdeviceptr b = postActivation;             // a^{(l)},       size [neurons x count]
+        CUdeviceptr a = nextPreActivationDeltas;    // delta^{(l+1)}, size [links x batchSize]
+        CUdeviceptr b = postActivation;             // a^{(l)},       size [neurons x batchSize]
         CUdeviceptr c = gradient.weightGradients;   // grad_W^{(l)},  size [links x neurons]
 
         synchronized(handle) {
@@ -274,7 +268,7 @@ public class Connection {
                 if(accumulateDeltas)
                     pBeta = Pointer.to(new float[]{1.0f});
                 
-                CUdeviceptr d = currentActivationDeltas;  // activation delta, size [neurons x count]
+                CUdeviceptr d = currentActivationDeltas;  // activation delta, size [neurons x batchSize]
                 JCublas2.cublasSgemm(handle, cublasOperation.CUBLAS_OP_T, cublasOperation.CUBLAS_OP_N, 
                                      n, k, m, 
                                      pAlpha, weightsGPU, m, a, m, 
@@ -283,11 +277,11 @@ public class Connection {
 
             // Step 3: Compute bias gradients
             // biasGradients = sum(delta[l+1], across batch)
-            CudaFunctions.vector.reduceSum(gradient.biasGradients, nextPreActivationDeltas, links, count, stream);
+            CudaFunctions.vector.reduceSum(gradient.biasGradients, nextPreActivationDeltas, links, batchSize, stream);
 
-            // Step 4: If count > 1, average the gradients
-            if (count > 1) {
-                Pointer alpha = Pointer.to(new float[]{1.0f / count});
+            // Step 4: If batchSize > 1, average the gradients
+            if (batchSize > 1) {
+                Pointer alpha = Pointer.to(new float[]{1.0f / batchSize});
 //                JCublas2.cublasSscal(handle, neurons * links, alpha, gradient.weightGradients, 1);
                 JCublas2.cublasSscal(handle, links, alpha, gradient.biasGradients, 1);
             }
@@ -820,5 +814,12 @@ public class Connection {
         
         this.nativeReady = false;
         this.gpuReady = false;
+    }
+    
+    void feedForward(FloatBuffer input, int batchSize, FloatBuffer result) {
+        if(batchSize == 1)
+            intrinsic.sgemv(input, result, weightsCPU, biasCPU, neurons, links);
+        else
+            intrinsic.sgemm(input, batchSize, result, weightsCPU, biasCPU, neurons, links);
     }
 }
