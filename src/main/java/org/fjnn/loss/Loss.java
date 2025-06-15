@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
+import org.fjnn.activation.Activation;
 
 /**
  *
@@ -68,4 +69,17 @@ public abstract class Loss {
     }
     
     abstract public String name();
+    
+    /* whether or not we can fuse computation with an activation function */
+    public boolean canFuseWith(Activation activation) {
+        return false;
+    }
+    
+    public void fusedGradient(float[] postActivation, float[] expected, float[] result, Activation activation, int outputDim, int batchSize) {
+        throw new UnsupportedOperationException(getClass().getSimpleName() + " cannot fuse with " + activation.getClass().getSimpleName());
+    }
+    
+    public void fusedGradientGPU(CUdeviceptr postActivation, CUdeviceptr expected, CUdeviceptr result, Activation activation, int outputDim, int batchSize, CUstream stream) {
+        throw new UnsupportedOperationException(getClass().getSimpleName() + " GPU fusion not implemented with " + activation.getClass().getSimpleName());
+    }
 }

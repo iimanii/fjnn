@@ -27,6 +27,8 @@ import java.util.HashMap;
 import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
+import org.fjnn.activation.Activation;
+import org.fjnn.activation.Sigmoid;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
 
@@ -123,5 +125,30 @@ public class BinaryCrossEntropy extends Loss {
     @Override
     public String name() {
         return String.format("BCE_%.1f_%.1f", alpha, beta);
+    }
+    
+    @Override
+    public boolean canFuseWith(Activation activation) {
+        return activation instanceof Sigmoid;
+    }
+    
+    @Override
+    public void fusedGradient(float[] postActivation, float[] expected, float[] result, Activation activation, int outputDim, int batchSize) {
+        if (activation instanceof Sigmoid) {
+            Sigmoid sigmoid = (Sigmoid) activation;
+            sigmoid.gradientCrossEntropy(postActivation, expected, result, alpha, beta, outputDim, batchSize);
+        } else
+            throw new IllegalArgumentException("Can only fuse with Sigmoid");
+
+    }
+    
+    @Override
+    public void fusedGradientGPU(CUdeviceptr postActivation, CUdeviceptr expected, CUdeviceptr result, Activation activation, int outputDim, int batchSize, CUstream stream) {
+        if (activation instanceof Sigmoid) {
+            Sigmoid sigmoid = (Sigmoid) activation;
+            sigmoid.gradientGPUCrossEntropy(postActivation, expected, result, alpha, beta, outputDim, batchSize, stream);
+        } else {
+            throw new IllegalArgumentException("Can only fuse with Sigmoid");
+        }
     }
 }

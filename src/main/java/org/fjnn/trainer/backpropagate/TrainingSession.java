@@ -512,6 +512,7 @@ public class TrainingSession {
         STOP_LOSS_EXPLOSION("Loss explosion detected"),
         STOP_STAGNATION("No improvement for extended period"),
         STOP_CONVERGED("Loss has converged"),
+        STOP_NO_IMPROVEMENT("No improvement detected"),
         STOP_MINIMAL_IMPROVEMENT("Minimal improvement detected"),
         STOP_OSCILLATION("Unstable training - loss oscillating"),
         STOP_DEAD_NETWORK("Network not learning - weights not updating");
@@ -545,25 +546,34 @@ public class TrainingSession {
             return TrainingStatus.CONTINUE;
         }
         
+        // 4. Detect no improvement and dead networks
         if (history.size() >= 20) {
-            double currentLoss = progress.getCurrentLoss();
-            double loss20EpochsAgo = history.get(history.size() - 20);
+            int windowSize = 5;
+            
+            boolean changeDetected = false;
+            
+            for (int i = history.size() - windowSize; i < history.size(); i++) {
+                if(history.get(i).compareTo(history.get(i-1)) != 0) {
+                    changeDetected = true;
+                    break;
+                }
+            }
+            
             double initialLoss = history.get(0);
-
-            double recentChange = Math.abs(currentLoss - loss20EpochsAgo);
-            double recentRelativeChange = recentChange / Math.abs(loss20EpochsAgo);
+            double currentLoss = progress.getCurrentLoss();
 
             // No change whatsoever in 20 epochs = dead network
-            if (recentRelativeChange < 1e-8) {
+            if (!changeDetected) {
                 double improvementFromInitial = (initialLoss - currentLoss) / Math.abs(initialLoss);
             
-            // Dead network: Less than 5% improvement after 20+ epochs
-            if (improvementFromInitial < 0.05)
-                return TrainingStatus.STOP_DEAD_NETWORK;
-            else
-                return TrainingStatus.STOP_CONVERGED;
+                // Dead network: Less than 5% improvement after 20+ epochs
+                if (improvementFromInitial < 0.05)
+                    return TrainingStatus.STOP_DEAD_NETWORK;
+                else
+                    return TrainingStatus.STOP_NO_IMPROVEMENT;
             }
-        }     
+        }
+        
 //        // 5. Early stopping - no improvement for extended periods
 //        if (progress.isStagnating()) {
 //            return TrainingStatus.STOP_STAGNATION;
@@ -592,7 +602,7 @@ public class TrainingSession {
 //            }
 //        }
 
-//        // 7. Minimal improvement detection
+        // 7. Minimal improvement detection
 //        if (history.size() >= 50) {
 //            double recentSum = 0;
 //            double olderSum = 0;
@@ -607,23 +617,23 @@ public class TrainingSession {
 //            }
 //
 //            double relativeImprovement = Math.abs(recentSum - olderSum) / Math.abs(olderSum);
-//            if (relativeImprovement < 0.00001) {
+//            if (relativeImprovement == 0) {
 //                return TrainingStatus.STOP_MINIMAL_IMPROVEMENT;
 //            }
 //        }
 
-        // 8. Loss oscillation detection
-        if (history.size() > 20) {
-            int oscillationCount = 0;
-            for (int i = history.size() - 9; i < history.size(); i++) {
-                if ((history.get(i) > history.get(i-1)) != (history.get(i-1) > history.get(i-2))) {
-                    oscillationCount++;
-                }
-            }
-            if (oscillationCount >= 20) {
-                return TrainingStatus.STOP_OSCILLATION;
-            }
-        }
+//        // 8. Loss oscillation detection
+//        if (history.size() > 20) {
+//            int oscillationCount = 0;
+//            for (int i = history.size() - 9; i < history.size(); i++) {
+//                if ((history.get(i) > history.get(i-1)) != (history.get(i-1) > history.get(i-2))) {
+//                    oscillationCount++;
+//                }
+//            }
+//            if (oscillationCount >= 20) {
+//                return TrainingStatus.STOP_OSCILLATION;
+//            }
+//        }
 
         return TrainingStatus.CONTINUE;
     }

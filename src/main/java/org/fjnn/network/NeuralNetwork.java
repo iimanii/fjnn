@@ -296,12 +296,13 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
     public NeuralNetworkBackpropagateOutput backpropagate(NeuralNetworkForwardOutput output, float[] truth, Loss lossFunction) {
         float[] outputPreActivationDelta = new float[outputSize * output.batchSize];
         
-        /* handle special case */
-        if(lossFunction instanceof BinaryCrossEntropy && layers[last].activation instanceof Sigmoid) {
-            BinaryCrossEntropy bceLoss = (BinaryCrossEntropy)lossFunction;
-            Sigmoid sigmoid = (Sigmoid) layers[last].activation;
-            
-            sigmoid.gradientCrossEntropy(output.activationOutputs[last].postActivation, truth, outputPreActivationDelta, bceLoss.alpha, bceLoss.beta, outputSize, output.batchSize);
+        if (lossFunction.canFuseWith(layers[last].activation)) {
+            lossFunction.fusedGradient(output.activationOutputs[last].postActivation, 
+                                       truth, 
+                                       outputPreActivationDelta,
+                                       layers[last].activation, 
+                                       outputSize, 
+                                       output.batchSize);
             
             // If normalizer exists, apply its gradient
             BackpropagateOutput normOutput = null;
@@ -456,15 +457,18 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
         
         // Step 1: Get result and calculate delta loss on GPU
         long totalOutputSize = outputSize * output.batchSize;
-        CUdeviceptr outputPtr = output.output();
         CUdeviceptr deltaLoss = CudaUtil.createFloatAsync(totalOutputSize, stream);
         
         /* handle special case */
-        if(lossFunction instanceof BinaryCrossEntropy && layers[last].activation instanceof Sigmoid) {
-            BinaryCrossEntropy bceLoss = (BinaryCrossEntropy)lossFunction;
-            Sigmoid sigmoid = (Sigmoid) layers[last].activation;
-            
-            sigmoid.gradientGPUCrossEntropy(output.activationOutputs[last].postActivation, truth, deltaLoss, bceLoss.alpha, bceLoss.beta, outputSize, output.batchSize, stream);
+        if (lossFunction.canFuseWith(layers[last].activation)) {
+            lossFunction.fusedGradientGPU(output.activationOutputs[last].postActivation,
+                truth,
+                deltaLoss,
+                layers[last].activation,
+                outputSize,
+                output.batchSize,
+                stream
+            );
             
             // If normalizer exists, apply its gradient
             BackpropagateOutputGPU normOutput = null;
@@ -479,6 +483,7 @@ public class NeuralNetwork extends Network<NeuralNetwork> {
 
             return result;
         } else {
+            CUdeviceptr outputPtr = output.output();
             lossFunction.derivativeGPU(outputPtr, truth, deltaLoss, totalOutputSize, stream);
         
             return backpropagateGPU(output, deltaLoss, stream);
