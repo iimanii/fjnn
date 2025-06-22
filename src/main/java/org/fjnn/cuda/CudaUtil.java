@@ -241,7 +241,6 @@ public class CudaUtil {
         return array;
     }
     
-        
     /* streams */
     public static CUstream createStream() {
         CUstream stream = new CUstream();
@@ -251,6 +250,10 @@ public class CudaUtil {
     
     public static void freeStream(CUstream stream) {
         JCudaDriver.cuStreamDestroy(stream);
+    }
+    
+    public static void synchronizeStream(CUstream stream) {
+        JCudaDriver.cuStreamSynchronize(stream);
     }
     
     /* float buffers */

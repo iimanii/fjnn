@@ -1084,7 +1084,7 @@ public class CudaFunctions {
             ActivationGradient("SigmoidGradient", preActivation, postActivation, gradient, size, stream);
         }
         
-        public static void SigmoidCrossEntropyGradient(CUdeviceptr postActivation, 
+        public static void SigmoidBinaryCrossEntropyGradient(CUdeviceptr postActivation, 
                                                        CUdeviceptr truth, 
                                                        CUdeviceptr gradient, 
                                                        float alpha, float beta,
@@ -1092,7 +1092,7 @@ public class CudaFunctions {
                                                        CUstream stream) {
             int device = CudaEngine.getThreadDeviceId();
 
-            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "SigmoidCrossEntropyGradient", device);
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "SigmoidBinaryCrossEntropyGradient", device);
 
             Pointer kernelParameters = Pointer.to(
                 Pointer.to(postActivation),
@@ -1158,6 +1158,32 @@ public class CudaFunctions {
                 0, stream,                  // Shared memory size and stream
                 kernelParameters, null      // Kernel- and extra parameters
             );
+        }
+        
+        public static void SoftMaxCrossEntropyGradient(CUdeviceptr postActivation, CUdeviceptr truth, CUdeviceptr gradient, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_ACTIVATION, "SoftMaxCrossEntropyGradient", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(postActivation),
+                Pointer.to(truth),
+                Pointer.to(gradient),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+                (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,          // Block dimension
+                0, stream,                 // Shared memory size and stream
+                kernelParameters, null     // Kernel- and extra parameters
+            );          
         }
 
         public static void SwishGradient(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr gradient, long size, CUstream stream) {
@@ -1620,6 +1646,58 @@ public class CudaFunctions {
                 blockSizeX, 1, 1,      // Block dimension
                 0, stream,             // Shared memory size and stream
                 kernelParameters, null // Kernel- and extra parameters
+            );
+        }
+        
+        public static void CrossEntropy(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "CrossEntropy", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(output),
+                Pointer.to(expected),
+                Pointer.to(result),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+                (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,          // Block dimension
+                0, stream,                 // Shared memory size and stream
+                kernelParameters, null     // Kernel- and extra parameters
+            );
+        }
+        
+        public static void CrossEntropyDerivative(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
+            int device = CudaEngine.getThreadDeviceId();
+
+            CUfunction function = CudaEngine.getKernel(CudaModule.MODULE_LOSS, "CrossEntropyDerivative", device);
+
+            Pointer kernelParameters = Pointer.to(
+                Pointer.to(output),
+                Pointer.to(expected),
+                Pointer.to(result),
+                Pointer.to(new long[]{size})
+            );
+
+            int blockSizeX = (int) Math.min(CudaUtil.PREFERRED_BLOCK_SIZE, size);
+            long gridSizeX = (size - 1) / blockSizeX + 1;
+
+            if(gridSizeX > Integer.MAX_VALUE)
+                throw new RuntimeException();
+
+            JCudaDriver.cuLaunchKernel(function,
+                (int)gridSizeX, 1, 1,      // Grid dimension
+                blockSizeX, 1, 1,          // Block dimension
+                0, stream,                 // Shared memory size and stream
+                kernelParameters, null     // Kernel- and extra parameters
             );
         }
     }

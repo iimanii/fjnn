@@ -21,40 +21,59 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.fjnn.activation.output;
+package junit.unit.activation;
 
-import jcuda.driver.CUdeviceptr;
-import jcuda.driver.CUstream;
-import org.fjnn.base.output.FeedForwardOutputGPU;
-import org.fjnn.cuda.CudaUtil;
+import org.fjnn.cuda.CudaEngine;
+import org.junit.*;
 
 /**
  *
  * @author ahmed
  */
-public class ActivationForwardOutputGPU extends FeedForwardOutputGPU {
-    public final CUdeviceptr preActivation;   // before activation
-    public final CUdeviceptr postActivation;  // after activation
-    
-    public ActivationForwardOutputGPU(CUdeviceptr preActivation, int outputDim, int batchSize, CUstream stream) {
-        super(outputDim, batchSize);
-        
-        this.preActivation = preActivation;
-        this.postActivation = CudaUtil.createFloatAsync(outputDim * batchSize, stream);
-    }
-    
-    @Override
-    public CUdeviceptr output() {
-        return postActivation;
-    }
+public abstract class ActivationTest {
 
-    @Override
-    public void free() {
-        CudaUtil.free(postActivation);
-    }
+    protected static final float EPSILON = 1e-5f;
+    protected static final float RELAXED_EPSILON = 1e-3f;
 
-    @Override
-    public void freeAsync(CUstream stream) {
-        CudaUtil.freeAsync(postActivation, stream);
+    @BeforeClass
+    public static void setupCuda() {
+        CudaEngine.init();
     }
+    
+    @Before
+    public void prepareCudaThread() {
+        CudaEngine.prepareThread(0);
+    }
+    
+    @After
+    public void finalizeCudaThread() {
+        CudaEngine.finalizeThread();
+    }
+    
+        @Test
+    public abstract void testCompute();
+    
+    @Test
+    public abstract void testDerivative();
+    
+    @Test
+    public abstract void testGradient();
+    
+    @Test
+    public abstract void testEdgeCases();
+    
+    @Test
+    public abstract void testSerialization();
+    
+    @Test
+    public abstract void testComputeGPU();
+    
+    @Test
+    public abstract void testDerivativeGPU();
+    
+    @Test
+    public abstract void testGradientGPU();
+    
+    @Test
+    public abstract void testEdgeCasesGPU();
 }

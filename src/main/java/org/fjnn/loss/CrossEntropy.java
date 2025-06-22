@@ -28,46 +28,33 @@ import java.util.Map;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.activation.Activation;
-import org.fjnn.activation.Sigmoid;
+import org.fjnn.activation.SoftMax;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
 
 /**
- *
+ * Cross Entropy Loss for multi-class classification
+ * L = -sum(t_i * log(y_i)) where t is one-hot encoded target and y is softmax output
+ * 
+ * For fused softmax-cross-entropy:
+ * dL/dz_i = y_i - t_i (where z is pre-softmax activation)
+ * 
  * @author ahmed
- * 
- * L = -[t * log(y) + (1-t) * log(1-y)]
- * 
- * dL/dy = -t/y + (1-t)/(1-y)
- *       = (-t+y)/(y(1-y))
  */
-public class BinaryCrossEntropy extends Loss {
+public class CrossEntropy extends Loss {
     final static float eps = 1e-7f;
 
-    public final float alpha;
-    public final float beta;
-
-    public BinaryCrossEntropy() {
-        this(1.0f, 1.0f);
-    }
-    
-    public BinaryCrossEntropy(float alpha, float beta) {
-        this.alpha = alpha;
-        this.beta = beta;
-    }
-    
-    
     @Override
     public float compute(float[] output, float[] expected) {
         if (output.length != expected.length)
-            throw new RuntimeException();
+            throw new RuntimeException("Output and expected arrays must have the same length");
         
         float loss = 0;
         for (int i = 0; i < output.length; i++) {
             float clipped = Math.max(eps, Math.min(1-eps, output[i])); 
-            float weight = (expected[i] == 1.0f) ? alpha : beta;
-
-            loss += weight * (-expected[i] * Math.log(clipped) - (1 - expected[i]) * Math.log(1 - clipped));
+            if (expected[i] > 0) {  // Only compute for non-zero targets
+                loss -= expected[i] * Math.log(clipped);
+            }
         }
         
         return loss / output.length;
@@ -79,7 +66,7 @@ public class BinaryCrossEntropy extends Loss {
         CUdeviceptr tempBuffer = CudaUtil.createFloatAsync(size, stream);
         
         // Compute per-element cross entropy loss
-        CudaFunctions.loss.BinaryCrossEntropy(output, expected, tempBuffer, alpha, beta, size, stream);
+        CudaFunctions.loss.CrossEntropy(output, expected, tempBuffer, size, stream);
         
         // Reduce sum and average
         CudaFunctions.vector.reduceSum(result, tempBuffer, 1, (int)size, stream);
@@ -95,60 +82,44 @@ public class BinaryCrossEntropy extends Loss {
         
         for (int i = 0; i < output.length; i++) {
             float clipped = Math.max(eps, Math.min(1-eps, output[i]));
-            
-            float weight = (expected[i] == 1.0f) ? alpha : beta;
-            derivatives[i] = weight * (clipped - expected[i]) / (clipped * (1 - clipped));
+            // Derivative of cross entropy w.r.t output: -t_i / y_i
+            derivatives[i] = -expected[i] / clipped;
         }
         return derivatives;
     }
 
     @Override
     public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
-        CudaFunctions.loss.BinaryCrossEntropyDerivative(output, expected, result, alpha, beta, size, stream);
+        CudaFunctions.loss.CrossEntropyDerivative(output, expected, result, size, stream);
     }
     
-    @Override
-    public Map serialize() {
-        Map result = new HashMap();
-        result.put("type", "BinaryCrossEntropy");
-        result.put("alpha", alpha);
-        result.put("beta", beta);
-        return result;
-    }
-    
-    public static BinaryCrossEntropy deserialize(Map serialized) {
-        float alpha = (Float)serialized.get("alpha");
-        float beta = (Float)serialized.get("beta");
-        return new BinaryCrossEntropy(alpha, beta);
-    }
-
     @Override
     public String name() {
-        return String.format("BCE_%.1f_%.1f", alpha, beta);
+        return "CrossEntropy";
     }
     
     @Override
     public boolean canFuseWith(Activation activation) {
-        return activation instanceof Sigmoid;
+        return activation instanceof SoftMax;
     }
     
     @Override
     public void fusedGradient(float[] postActivation, float[] expected, float[] result, Activation activation, int outputDim, int batchSize) {
-        if (activation instanceof Sigmoid) {
-            Sigmoid sigmoid = (Sigmoid) activation;
-            sigmoid.gradientBinaryCrossEntropy(postActivation, expected, result, alpha, beta, outputDim, batchSize);
-        } else
-            throw new IllegalArgumentException("Can only fuse with Sigmoid");
-
+        if (activation instanceof SoftMax) {
+            SoftMax softmax = (SoftMax) activation;
+            softmax.gradientCrossEntropy(postActivation, expected, result, outputDim, batchSize);
+        } else {
+            throw new IllegalArgumentException("Can only fuse with SoftMax");
+        }
     }
     
     @Override
     public void fusedGradientGPU(CUdeviceptr postActivation, CUdeviceptr expected, CUdeviceptr result, Activation activation, int outputDim, int batchSize, CUstream stream) {
-        if (activation instanceof Sigmoid) {
-            Sigmoid sigmoid = (Sigmoid) activation;
-            sigmoid.gradientBinaryCrossEntropyGPU(postActivation, expected, result, alpha, beta, outputDim, batchSize, stream);
+        if (activation instanceof SoftMax) {
+            SoftMax softmax = (SoftMax) activation;
+            softmax.gradientGPUCrossEntropy(postActivation, expected, result, outputDim, batchSize, stream);
         } else {
-            throw new IllegalArgumentException("Can only fuse with Sigmoid");
+            throw new IllegalArgumentException("Can only fuse with SoftMax");
         }
     }
 }

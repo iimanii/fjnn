@@ -164,7 +164,7 @@ __global__ void SigmoidGradient(float* preActivation, float* postActivation, flo
 }
 
 extern "C"
-__global__ void SigmoidCrossEntropyGradient(float* postActivation, float* truth, float* result, float alpha, float beta, long size) {
+__global__ void SigmoidBinaryCrossEntropyGradient(float* postActivation, float* truth, float* result, float alpha, float beta, long size) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     
     if(i < size) {
@@ -302,6 +302,19 @@ SOFTMAX_KERNELS(64)
 SOFTMAX_KERNELS(128)
 SOFTMAX_KERNELS(256)
 SOFTMAX_KERNELS(512)
+
+/**
+ * Fused SoftMax Cross Entropy Gradient
+ * For cross entropy loss with softmax activation, gradient simplifies to: y_i - t_i
+ */
+extern "C"
+__global__ void SoftMaxCrossEntropyGradient(float* postActivation, float* truth, float* result, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(i < size) {
+        result[i] = postActivation[i] - truth[i];
+    }
+}
 
 /**
  * Step

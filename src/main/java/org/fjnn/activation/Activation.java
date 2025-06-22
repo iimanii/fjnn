@@ -90,6 +90,8 @@ public abstract class Activation implements Serializable {
         String type = (String)serialized.get("type");
         
         switch(type) {
+            case "GeLU":
+                return new GeLU();
             case "ReLU":
                 return new ReLU();
             case "LeakyReLU":
@@ -153,7 +155,7 @@ public abstract class Activation implements Serializable {
         return null;
     }
     
-    static float FLOAT_MAX_VALUE = 1.0e20f;
+    static float FLOAT_MAX_VALUE = 1.0e30f;
     
     protected static float SafeInv(float a) {
         if(a == 0)

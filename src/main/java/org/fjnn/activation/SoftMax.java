@@ -53,7 +53,7 @@ public class SoftMax extends Activation {
 
             double sum = 0;
             for(int i=from; i < to; i++) {
-                output[i] = (float) Math.exp(input[i] - max);
+                output[i] = SafeExp(input[i] - max);
                 sum += output[i];
             }
             
@@ -79,23 +79,7 @@ public class SoftMax extends Activation {
      */
     @Override
     public void derivative(float[] preActivation, float[] postActivation, float[] output, int inputDim, int batchSize) {
-        throw new UnsupportedOperationException("Not supported, use gradient");
-
-//        for(int c = 0; c < batchSize; c++) {
-//            int from = c * inputDim;
-//            int to = from + inputDim;
-//            
-//            for(int i = from; i < to; i++) {
-//                float sum = 0.0f;
-//                for(int j = from; j < to; j++) {
-//                    // If i==j, use Si*(1-Si), else use -Si*Sj
-//                    float term = (i == j) ? postActivation[i] * (1.0f - postActivation[i]) :
-//                                           -postActivation[i] * postActivation[j];
-//                    sum += term;
-//                }
-//                output[i] = sum;
-//            }
-//        }
+        throw new UnsupportedOperationException("SoftMax derivative requires full Jacobian matrix, not element-wise. Use gradient() method for backpropagation");
     }
 
     /*
@@ -131,7 +115,7 @@ public class SoftMax extends Activation {
     
     @Override
     public void derivativeGPU(CUdeviceptr preActivation, CUdeviceptr postActivation, CUdeviceptr output, int inputDim, int batchSize, CUstream stream) {
-        throw new UnsupportedOperationException("Not supported, use gradient");
+        throw new UnsupportedOperationException("SoftMax derivative requires full Jacobian matrix, not element-wise. Use gradient() method for backpropagation");
     }
     
     @Override
@@ -139,6 +123,24 @@ public class SoftMax extends Activation {
         CudaFunctions.activationGradient.SoftMaxGradient(preActivation, postActivation, gradient, inputDim, batchSize, stream);
     }
     
+        /**
+     * Compute gradient for fused softmax-cross-entropy
+     * For cross entropy loss with softmax activation, the gradient simplifies to: y_i - t_i
+     * where y_i is the softmax output and t_i is the target (one-hot encoded)
+     */
+    public void gradientCrossEntropy(float[] postActivation, float[] truth, float[] result, int outputDim, int batchSize) {
+        int size = outputDim * batchSize;
+        for (int i = 0; i < size; i++) {
+            result[i] = postActivation[i] - truth[i];
+        }
+    }
+    
+    /**
+     * GPU version of fused softmax-cross-entropy gradient
+     */
+    public void gradientGPUCrossEntropy(CUdeviceptr postActivation, CUdeviceptr truth, CUdeviceptr result, int outputDim, int batchSize, CUstream stream) {
+        CudaFunctions.activationGradient.SoftMaxCrossEntropyGradient(postActivation, truth, result, outputDim * batchSize, stream);
+    }
     
     @Override
     public void compute(FloatBuffer input, FloatBuffer output, int inputDim, int batchSize) {

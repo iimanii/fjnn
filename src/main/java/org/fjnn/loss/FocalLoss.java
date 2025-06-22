@@ -33,7 +33,6 @@ import org.fjnn.cuda.CudaUtil;
  *
  * @author ahmed
  * 
- * Incomplete class .. needs testing
  */
 public class FocalLoss extends Loss {
     public final float gamma;           // focusing parameter

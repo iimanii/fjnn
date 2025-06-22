@@ -28,19 +28,30 @@ import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
+import org.fjnn.trainer.backpropagate.Dataset;
 
 /**
  *
  * @author ahmed
  */
 public class WeightedMeanSquareError extends Loss {
-
     float[] weights;
     CUdeviceptr weightsGPU;
+    final WeightingStrategy strategy;
+    
+    Dataset set;
+    
+    public enum WeightingStrategy {
+        INVERSE_FREQUENCY,    // 1 / frequency
+        INVERSE_SQRT,         // 1 / sqrt(frequency)  
+        BOUNDARY_FOCUS,       // Custom for Mandelbrot boundary
+        CUSTOM                // User-provided weights
+    }
 
     public WeightedMeanSquareError(float[] weights, CUdeviceptr weightsGPU) {
         this.weights = weights;
         this.weightsGPU = weightsGPU;
+        this.strategy = WeightingStrategy.CUSTOM;
     }
     
     // Compute the Mean Squared Error

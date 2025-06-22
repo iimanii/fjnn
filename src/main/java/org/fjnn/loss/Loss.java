@@ -37,6 +37,8 @@ public abstract class Loss {
     
     public static Loss MeanSquareError = new MeanSquareError();
     
+    public static Loss CrossEntropy = new CrossEntropy();
+
     abstract public float compute(float[] output, float[] expected);
     
     abstract public void computeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream);
@@ -59,6 +61,8 @@ public abstract class Loss {
                 return new MeanSquareError();
             case "BinaryCrossEntropy":
                 return BinaryCrossEntropy.deserialize(serialized);
+            case "CrossEntropy":
+                return new CrossEntropy();
             case "WeightedMeanSquareError":
                 throw new RuntimeException("WeightedMeanSquareError deserialization not implemented");
             case "FocalLoss":

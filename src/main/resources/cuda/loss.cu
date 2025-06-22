@@ -143,3 +143,37 @@ __global__ void FocalLossDerivative(float* output, float* expected, float* resul
         result[i] = bce_derivative * focal_term;
     }
 }
+
+/**
+ * Cross Entropy compute for multi-class classification
+ */
+extern "C"
+__global__ void CrossEntropy(float* output, float* expected, float* result, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(i < size) {
+        float clipped = fmaxf(1e-7f, fminf(1.0f - 1e-7f, output[i]));
+        
+        // Only compute loss for non-zero targets
+        if(expected[i] > 0.0f) {
+            result[i] = -expected[i] * logf(clipped);
+        } else {
+            result[i] = 0.0f;
+        }
+    }
+}
+
+/**
+ * Cross Entropy derivative
+ */
+extern "C"
+__global__ void CrossEntropyDerivative(float* output, float* expected, float* result, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(i < size) {
+        float clipped = fmaxf(1e-7f, fminf(1.0f - 1e-7f, output[i]));
+        
+        // Derivative: -t_i / y_i
+        result[i] = -expected[i] / clipped;
+    }
+}
