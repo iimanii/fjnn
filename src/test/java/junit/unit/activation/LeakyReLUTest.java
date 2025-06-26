@@ -35,7 +35,7 @@ import java.util.Map;
  * 
  * @author ahmed
  */
-public class LeakyReLUTest extends ActivationTest {
+public class LeakyReLUTest extends ActivationBaseTest {
     
     @Override
     public void testCompute() {

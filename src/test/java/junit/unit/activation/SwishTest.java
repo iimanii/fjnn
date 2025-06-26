@@ -36,7 +36,7 @@ import java.util.Map;
  * 
  * @author ahmed
  */
-public class SwishTest extends ActivationTest {
+public class SwishTest extends ActivationBaseTest {
     
     @Override
     public void testCompute() {

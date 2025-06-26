@@ -37,7 +37,7 @@ import org.junit.Test;
  * 
  * @author ahmed
  */
-public class SigmoidTest extends ActivationTest {
+public class SigmoidTest extends ActivationBaseTest {
     
     @Override
     public void testCompute() {

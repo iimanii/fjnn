@@ -62,14 +62,12 @@ public class WeightedMeanSquareErrorTest extends LossTest {
             0.9f, 1.8f, 1.1f, 2.0f, 1.3f
         };
         
-        CUdeviceptr weightsGPU = CudaUtil.toGPU(weights);
-        WeightedMeanSquareError wmse = new WeightedMeanSquareError(weights, weightsGPU);
+        WeightedMeanSquareError wmse = new WeightedMeanSquareError();
+        wmse.setWeights(weights);
         
         float expectedLoss = 0.087f;
         float loss = wmse.compute(predictions, targets);
         assertEquals(expectedLoss, loss, EPSILON);
-        
-        CudaUtil.free(weightsGPU);
     }
     
     @Override
@@ -95,8 +93,8 @@ public class WeightedMeanSquareErrorTest extends LossTest {
             0.9f, 1.8f, 1.1f, 2.0f, 1.3f
         };
         
-        CUdeviceptr weightsGPU = CudaUtil.toGPU(weights);
-        WeightedMeanSquareError wmse = new WeightedMeanSquareError(weights, weightsGPU);
+        WeightedMeanSquareError wmse = new WeightedMeanSquareError();
+        wmse.setWeights(weights);
         
         float[] expected = {
             -0.06f, -0.02f, 0.045f, 0.01f, -0.09f,
@@ -107,8 +105,6 @@ public class WeightedMeanSquareErrorTest extends LossTest {
         
         float[] derivatives = wmse.derivative(predictions, targets);
         assertArrayEquals(expected, derivatives, EPSILON);
-        
-        CudaUtil.free(weightsGPU);
     }
     
     @Override
@@ -132,8 +128,8 @@ public class WeightedMeanSquareErrorTest extends LossTest {
             weights[i] = 2.0f;
         }
         
-        CUdeviceptr weightsGPU = CudaUtil.toGPU(weights);
-        WeightedMeanSquareError wmse = new WeightedMeanSquareError(weights, weightsGPU);
+        WeightedMeanSquareError wmse = new WeightedMeanSquareError();
+        wmse.setWeights(weights);
         
         float loss = wmse.compute(predictions, targets);
         float expectedLoss = 0.5f;
@@ -143,14 +139,11 @@ public class WeightedMeanSquareErrorTest extends LossTest {
         float[] smallTarget = {1.5f, 2.5f};
         float[] smallWeights = {3.0f, 1.0f};
         
-        CUdeviceptr smallWeightsGPU = CudaUtil.toGPU(smallWeights);
-        WeightedMeanSquareError smallWmse = new WeightedMeanSquareError(smallWeights, smallWeightsGPU);
+        WeightedMeanSquareError smallWmse = new WeightedMeanSquareError();
+        smallWmse.setWeights(smallWeights);
         
         float smallLoss = smallWmse.compute(smallPred, smallTarget);
         assertEquals(0.5f, smallLoss, EPSILON);
-        
-        CudaUtil.free(weightsGPU);
-        CudaUtil.free(smallWeightsGPU);
     }
     
     @Override
@@ -159,8 +152,8 @@ public class WeightedMeanSquareErrorTest extends LossTest {
         float[] targets = {2.0f, 3.0f, 4.0f, 5.0f};
         float[] zeroWeights = {0.0f, 1.0f, 0.0f, 2.0f};
         
-        CUdeviceptr zeroWeightsGPU = CudaUtil.toGPU(zeroWeights);
-        WeightedMeanSquareError wmse = new WeightedMeanSquareError(zeroWeights, zeroWeightsGPU);
+        WeightedMeanSquareError wmse = new WeightedMeanSquareError();
+        wmse.setWeights(zeroWeights);
         
         float loss = wmse.compute(predictions, targets);
         assertEquals(0.75f, loss, EPSILON);
@@ -169,8 +162,8 @@ public class WeightedMeanSquareErrorTest extends LossTest {
         float[] largeTargets = {0.0f, 0.0f, 0.0f, 0.0f};
         float[] largeWeights = {0.001f, 0.001f, 1.0f, 0.002f};
         
-        CUdeviceptr largeWeightsGPU = CudaUtil.toGPU(largeWeights);
-        WeightedMeanSquareError largeWmse = new WeightedMeanSquareError(largeWeights, largeWeightsGPU);
+        WeightedMeanSquareError largeWmse = new WeightedMeanSquareError();
+        largeWmse.setWeights(largeWeights);
         
         float largeLoss = largeWmse.compute(largeDiffs, largeTargets);
         
@@ -184,27 +177,20 @@ public class WeightedMeanSquareErrorTest extends LossTest {
         float[] identical = {1.0f, 2.0f, 3.0f, 4.0f};
         float[] anyWeights = {1.5f, 2.0f, 0.5f, 3.0f};
         
-        CUdeviceptr anyWeightsGPU = CudaUtil.toGPU(anyWeights);
-        WeightedMeanSquareError identicalWmse = new WeightedMeanSquareError(anyWeights, anyWeightsGPU);
+        WeightedMeanSquareError identicalWmse = new WeightedMeanSquareError();
+        identicalWmse.setWeights(anyWeights);
         
         float zeroLoss = identicalWmse.compute(identical, identical);
         assertEquals(0.0f, zeroLoss, EPSILON);
-        
-        CudaUtil.free(zeroWeightsGPU);
-        CudaUtil.free(largeWeightsGPU);
-        CudaUtil.free(anyWeightsGPU);
     }
     
     @Override
     public void testSerialization() {
-        float[] weights = {1.0f, 2.0f, 3.0f, 4.0f};
-        CUdeviceptr weightsGPU = CudaUtil.toGPU(weights);
-        WeightedMeanSquareError wmse = new WeightedMeanSquareError(weights, weightsGPU);
+        WeightedMeanSquareError wmse = new WeightedMeanSquareError();
         
         Map<String, Object> serialized = wmse.serialize();
         assertNotNull(serialized);
         assertEquals("WeightedMeanSquareError", serialized.get("type"));
-        assertArrayEquals(weights, (float[])serialized.get("weights"), EPSILON);
         
         try {
             Loss.deserialize(serialized);
@@ -212,11 +198,10 @@ public class WeightedMeanSquareErrorTest extends LossTest {
         } catch (RuntimeException e) {
             assertEquals("WeightedMeanSquareError deserialization not implemented", e.getMessage());
         }
-        
-        CudaUtil.free(weightsGPU);
     }
     
     @Override
+    @Test
     public void testComputeGPU() {
         float[] predictions = {
             0.5f, -1.2f, 2.3f, -0.8f, 1.5f,
@@ -240,7 +225,9 @@ public class WeightedMeanSquareErrorTest extends LossTest {
         };
         
         CUdeviceptr weightsGPU = CudaUtil.toGPU(weights);
-        WeightedMeanSquareError wmse = new WeightedMeanSquareError(weights, weightsGPU);
+        WeightedMeanSquareError wmse = new WeightedMeanSquareError();
+        wmse.setWeights(weights);
+        wmse.setWeightsGPU(weightsGPU);
         
         float cpuLoss = wmse.compute(predictions, targets);
         
@@ -283,9 +270,11 @@ public class WeightedMeanSquareErrorTest extends LossTest {
             1.5f, 2.0f, 1.0f, 0.6f, 2.2f,
             0.9f, 1.8f, 1.1f, 2.0f, 1.3f
         };
-        
+
         CUdeviceptr weightsGPU = CudaUtil.toGPU(weights);
-        WeightedMeanSquareError wmse = new WeightedMeanSquareError(weights, weightsGPU);
+        WeightedMeanSquareError wmse = new WeightedMeanSquareError();
+        wmse.setWeights(weights);
+        wmse.setWeightsGPU(weightsGPU);
         
         float[] cpuDerivatives = wmse.derivative(predictions, targets);
         
@@ -326,9 +315,11 @@ public class WeightedMeanSquareErrorTest extends LossTest {
         for (int i = 0; i < 16; i++) {
             weights[i] = 2.0f;
         }
-        
+
         CUdeviceptr weightsGPU = CudaUtil.toGPU(weights);
-        WeightedMeanSquareError wmse = new WeightedMeanSquareError(weights, weightsGPU);
+        WeightedMeanSquareError wmse = new WeightedMeanSquareError();
+        wmse.setWeights(weights);
+        wmse.setWeightsGPU(weightsGPU);
         
         float cpuLoss = wmse.compute(predictions, targets);
         
@@ -369,9 +360,11 @@ public class WeightedMeanSquareErrorTest extends LossTest {
         weights[7] = 1.0f;
         weights[10] = 1.0f;
         weights[11] = 1.0f;
-        
+
         CUdeviceptr weightsGPU = CudaUtil.toGPU(weights);
-        WeightedMeanSquareError wmse = new WeightedMeanSquareError(weights, weightsGPU);
+        WeightedMeanSquareError wmse = new WeightedMeanSquareError();
+        wmse.setWeights(weights);
+        wmse.setWeightsGPU(weightsGPU);
         
         float cpuLoss = wmse.compute(extremeValues, targets);
         

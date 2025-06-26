@@ -37,7 +37,7 @@ import org.junit.Test;
  * 
  * @author ahmed
  */
-public class SoftMaxTest extends ActivationTest {
+public class SoftMaxTest extends ActivationBaseTest {
     
     @Override
     public void testCompute() {
@@ -372,7 +372,7 @@ public class SoftMaxTest extends ActivationTest {
         CUdeviceptr gpuSoftmax = CudaUtil.toGPU(softmaxOutput);
         CUdeviceptr gpuTargets = CudaUtil.toGPU(targets);
         CUdeviceptr gpuGradient = CudaUtil.toGPU(new float[20]);
-        softmax.gradientGPUCrossEntropy(gpuSoftmax, gpuTargets, gpuGradient, 5, 4, null);
+        softmax.gradientCrossEntropyGPU(gpuSoftmax, gpuTargets, gpuGradient, 5, 4, null);
         float[] gpuResult = CudaUtil.fromGPUFloat(gpuGradient, 20);
         
         assertArrayEquals(cpuGradient, gpuResult, RELAXED_EPSILON);
@@ -449,7 +449,7 @@ public class SoftMaxTest extends ActivationTest {
         
         // Method 2: Fused GPU operation
         CUdeviceptr gpuFusedGradient = CudaUtil.toGPU(new float[20]);
-        softmax.gradientGPUCrossEntropy(gpuSoftmax, gpuTargets, gpuFusedGradient, 5, 4, null);
+        softmax.gradientCrossEntropyGPU(gpuSoftmax, gpuTargets, gpuFusedGradient, 5, 4, null);
         
         // Compare results
         float[] separateResult = CudaUtil.fromGPUFloat(gpuCEDerivative, 20);

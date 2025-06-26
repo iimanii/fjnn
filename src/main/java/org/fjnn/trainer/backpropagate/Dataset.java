@@ -47,7 +47,8 @@ import org.fjnn.cuda.CudaUtil;
 public class Dataset {
     private final float[] input;
     private final float[] targets;
-    
+    private final float[] targetWeights;    /* per-sample weights */
+
     public final int inputDim;
     public final int targetDim;
     public final int batchSize;             /* input samples per batch */
@@ -57,10 +58,12 @@ public class Dataset {
     // Batched data
     private float[][] inputBatches;
     private float[][] targetBatches;
-    
+    private float[][] targetWeightBatches;      /* batched weights */
+
     // GPU data
     private CUdeviceptr[] inputBatchesGPU;
     private CUdeviceptr[] targetBatchesGPU;
+    private CUdeviceptr[] targetWeightBatchesGPU;   /* GPU weight batches */
     private int gpuDevice = -1;
     
     // State flags
@@ -68,6 +71,10 @@ public class Dataset {
     private boolean gpuReady = false;
     
     public Dataset(float[] data, float[] targets, int inputDim, int targetDim, int batchSize) {
+        this(data, targets, null, inputDim, targetDim, batchSize);
+    }
+    
+    public Dataset(float[] data, float[] targets, float[] targetWeights, int inputDim, int targetDim, int batchSize) {
         if (data == null || targets == null)
             throw new IllegalArgumentException("Data and targets cannot be null");
         
@@ -84,12 +91,14 @@ public class Dataset {
         int targetSamples = targets.length / targetDim;
         
         if (dataSamples != targetSamples)
-            throw new IllegalArgumentException("Number of data samples (" + dataSamples + 
-                ") must equal number of target samples (" + targetSamples + ")");
+            throw new IllegalArgumentException("Number of data samples (" + dataSamples + ") must equal number of target samples (" + targetSamples + ")");
         
         if (dataSamples % batchSize != 0)
-            throw new IllegalArgumentException("Sample count (" + dataSamples + 
-                ") must be divisible by batch size (" + batchSize + ")");
+            throw new IllegalArgumentException("Sample count (" + dataSamples + ") must be divisible by batch size (" + batchSize + ")");
+        
+        // Validate weights if provided
+        if (targetWeights != null && targetWeights.length != targets.length)
+            throw new IllegalArgumentException("Weights length (" + targetWeights.length + ") must equal number of targets (" + targets.length + ")");
         
         this.input = Arrays.copyOf(data, data.length);
         this.targets = Arrays.copyOf(targets, targets.length);
@@ -98,22 +107,28 @@ public class Dataset {
         this.batchSize = batchSize;
         this.inputCount = dataSamples;
         this.batchCount = inputCount / batchSize;
+        this.targetWeights = targetWeights;
     }
     
     public void prepareBatches() {
         inputBatches = new float[batchCount][];
         targetBatches = new float[batchCount][];
-        
+        targetWeightBatches = targetWeights != null ? new float[batchCount][] : null;
+
+
         for (int b = 0; b < batchCount; b++) {
             int start = b * batchSize;
             
             inputBatches[b] = new float[batchSize * inputDim];
             targetBatches[b] = new float[batchSize * targetDim];
+            targetWeightBatches[b] = new float[batchSize * targetDim];
+
+            System.arraycopy(input, start * inputDim, inputBatches[b], 0, batchSize * inputDim);
+            System.arraycopy(targets, start * targetDim, targetBatches[b], 0, batchSize * targetDim);
             
-            for (int s = 0; s < batchSize; s++) {
-                int sampleIdx = start + s;
-                System.arraycopy(input, sampleIdx * inputDim, inputBatches[b], s * inputDim, inputDim);
-                System.arraycopy(targets, sampleIdx * targetDim, targetBatches[b], s * targetDim, targetDim);
+            if (targetWeights != null) {
+                targetWeightBatches[b] = new float[batchSize * targetDim];
+                System.arraycopy(targetWeights, start * targetDim, targetWeightBatches[b], 0, batchSize * targetDim);
             }
         }
         
@@ -130,22 +145,26 @@ public class Dataset {
             
             inputBatchesGPU = new CUdeviceptr[batchCount];
             targetBatchesGPU = new CUdeviceptr[batchCount];
+            targetWeightBatchesGPU = targetWeights != null ? new CUdeviceptr[batchCount] : null;
+                
+            // Create temporary batch arrays
+            float[] inputBatch = new float[batchSize * inputDim];
+            float[] targetBatch = new float[batchSize * targetDim];
+            float[] targetWeightBatch = new float[batchSize * targetDim];
             
             for (int b = 0; b < batchCount; b++) {
                 int start = b * batchSize;
                 
-                // Create temporary batch arrays
-                float[] inputBatch = new float[batchSize * inputDim];
-                float[] targetBatch = new float[batchSize * targetDim];
-                
-                for (int s = 0; s < batchSize; s++) {
-                    int sampleIdx = start + s;
-                    System.arraycopy(input, sampleIdx * inputDim, inputBatch, s * inputDim, inputDim);
-                    System.arraycopy(targets, sampleIdx * targetDim, targetBatch, s * targetDim, targetDim);
-                }
+                System.arraycopy(input, start * inputDim, inputBatch, 0, batchSize * inputDim);
+                System.arraycopy(targets, start * targetDim, targetBatch, 0, batchSize * targetDim);
                 
                 inputBatchesGPU[b] = CudaUtil.toGPU(inputBatch);
                 targetBatchesGPU[b] = CudaUtil.toGPU(targetBatch);
+                
+                if(targetWeights != null) {
+                    System.arraycopy(targetWeights, start * targetDim, targetWeightBatch, 0, batchSize * targetDim);  
+                    targetWeightBatchesGPU[b] = CudaUtil.toGPU(targetWeightBatch);                  
+                }
             }
             
             CudaEngine.finalizeThread();
@@ -177,6 +196,7 @@ public class Dataset {
         // Parallel shuffle using ThreadPoolExecutor
         float[] shuffledData = new float[input.length];
         float[] shuffledTargets = new float[targets.length];
+        float[] shuffledWeights = targetWeights != null ? new float[targetWeights.length] : null;
         
         int numThreads = Math.min(Runtime.getRuntime().availableProcessors(), inputCount);
         int samplesPerThread = inputCount / numThreads;
@@ -194,6 +214,9 @@ public class Dataset {
                     int originalIdx = indices.get(i);
                     System.arraycopy(input, originalIdx * inputDim, shuffledData, i * inputDim, inputDim);
                     System.arraycopy(targets, originalIdx * targetDim, shuffledTargets, i * targetDim, targetDim);
+                    if (targetWeights != null) {
+                        System.arraycopy(targetWeights, originalIdx * targetDim, shuffledWeights, i * targetDim, targetDim);
+                    }
                 }
             });
         }
@@ -210,6 +233,10 @@ public class Dataset {
         // Replace original arrays
         System.arraycopy(shuffledData, 0, input, 0, input.length);
         System.arraycopy(shuffledTargets, 0, targets, 0, targets.length);
+
+        if (targetWeights != null) {
+            System.arraycopy(shuffledWeights, 0, targetWeights, 0, targetWeights.length);
+        }
         
         // Restore previous state
         if (wasCpuReady)
@@ -249,6 +276,16 @@ public class Dataset {
         return targetBatches[batchIndex];
     }
     
+    public float[] getTargetWeight(int batchIndex) {
+        if (!cpuReady) 
+            throw new IllegalStateException("CPU batches not prepared");
+        
+        if (targetWeights == null) 
+            throw new IllegalStateException("No target weights provided");
+        
+        return targetWeightBatches[batchIndex];
+    }
+    
     public CUdeviceptr getTargetGPU(int batchIndex) {
         if (!gpuReady)
             throw new IllegalStateException("Must call prepareBatchesGPU() first");
@@ -259,17 +296,30 @@ public class Dataset {
         return targetBatchesGPU[batchIndex];
     }
     
+    public CUdeviceptr getTargetWeightBatchGPU(int batchIndex) {
+        if (!gpuReady) 
+            throw new IllegalStateException("GPU batches not prepared");
+        
+        if (targetWeights == null) 
+            throw new IllegalStateException("No target weights provided");
+        
+        return targetWeightBatchesGPU[batchIndex];
+    }
+    
     public void freeGPU() {
         if (gpuReady) {
             CudaEngine.prepareThread(gpuDevice);
             for (int b = 0; b < batchCount; b++) {
                 CudaUtil.free(inputBatchesGPU[b]);
                 CudaUtil.free(targetBatchesGPU[b]);
+                if (targetWeightBatchesGPU != null)
+                    CudaUtil.free(targetWeightBatchesGPU[b]);
             }
             CudaEngine.finalizeThread();
             
             inputBatchesGPU = null;
             targetBatchesGPU = null;
+            targetWeightBatchesGPU = null;
             gpuReady = false;
             gpuDevice = -1;
         }

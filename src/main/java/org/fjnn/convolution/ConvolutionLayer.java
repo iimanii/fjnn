@@ -47,7 +47,6 @@ import org.fjnn.convolution.output.unit.ConvolutionUnitBackpropagateOutput;
 import org.fjnn.convolution.output.unit.ConvolutionUnitBackpropagateOutputGPU;
 import org.fjnn.convolution.output.unit.ConvolutionUnitForwardOutput;
 import org.fjnn.convolution.output.unit.ConvolutionUnitForwardOutputGPU;
-import org.fjnn.cuda.CudaEngine;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
 
@@ -111,7 +110,7 @@ public class ConvolutionLayer {
             for (int i = 0; i < units.length; i++)
                 unitOutputs[i] = futures[i].get();
         } catch (ExecutionException | InterruptedException ex) {
-            throw new RuntimeException("Error in parallel forward pass", ex);
+            throw new RuntimeException("Error in parallel backward pass: " + ex.toString(), ex);
         }
         
         return new ConvolutionLayerForwardOutput(unitOutputs, input, batchSize);
@@ -134,9 +133,15 @@ public class ConvolutionLayer {
         Future<ConvolutionUnitBackpropagateOutput>[] futures = new Future[units.length];
         
         for (int i = 0; i < units.length; i++) {
+            int expectedSize = forwardOutput.unitOutputs[i].outputSize * forwardOutput.batchSize;
+            int actualSize = unitDeltaLoss[i].length;
+            if (actualSize != expectedSize)
+                throw new IllegalArgumentException("Unit " + i + " deltaLoss size mismatch. Expected: " + expectedSize + ", but got: " + actualSize);
+            
             final int unitIndex = i;
             futures[i] = CPU_EXECUTOR.submit(() -> 
-                units[unitIndex].backpropagate(forwardOutput.unitOutputs[unitIndex], unitDeltaLoss[unitIndex]));
+                units[unitIndex].backpropagate(forwardOutput.unitOutputs[unitIndex], unitDeltaLoss[unitIndex])
+            );
         }
         
         // Collect results and aggregate input gradients
@@ -153,7 +158,8 @@ public class ConvolutionLayer {
                 }
             }
         } catch (ExecutionException | InterruptedException ex) {
-            throw new RuntimeException("Error in parallel backward pass", ex);
+            ex.printStackTrace();
+            throw new RuntimeException("Error in parallel backward pass: " + ex.toString(), ex);
         }
         
         return new ConvolutionLayerBackpropagateOutput(aggregatedInputGradients, unitBackprops, inputSize, forwardOutput.batchSize);
@@ -170,6 +176,11 @@ public class ConvolutionLayer {
         ConvolutionUnitBackpropagateOutputGPU[] unitBackprops = new ConvolutionUnitBackpropagateOutputGPU[units.length];
 
         for (int i = 0; i < units.length; i++) {
+            int expectedSize = forwardOutput.unitOutputs[i].outputSize * forwardOutput.batchSize;
+            long actualSize = CudaUtil.length(unitDeltaLoss[i]) / CudaUtil.FLOAT_SIZE;
+            if (actualSize != expectedSize)
+                throw new IllegalArgumentException("Unit " + i + " GPU deltaLoss size mismatch. Expected: " + expectedSize + ", but got: " + actualSize);
+
             unitBackprops[i] = units[i].backpropagateGPU(forwardOutput.unitOutputs[i], unitDeltaLoss[i], stream, handle);
         }
 

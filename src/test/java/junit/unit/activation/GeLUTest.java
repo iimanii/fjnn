@@ -35,7 +35,7 @@ import java.util.Map;
  * 
  * @author ahmed
  */
-public class GeLUTest extends ActivationTest {
+public class GeLUTest extends ActivationBaseTest {
     
     @Override
     public void testCompute() {

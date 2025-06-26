@@ -23,7 +23,6 @@
  */
 package org.fjnn.trainer.backpropagate;
 
-import java.util.HashSet;
 import org.fjnn.network.NeuralNetwork;
 import org.fjnn.network.outputs.NeuralNetworkForwardOutput;
 import org.fjnn.network.outputs.NeuralNetworkForwardOutputGPU;

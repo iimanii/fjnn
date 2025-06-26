@@ -30,7 +30,7 @@ import org.junit.*;
  *
  * @author ahmed
  */
-public abstract class ActivationTest {
+public abstract class ActivationBaseTest {
 
     protected static final float EPSILON = 1e-5f;
     protected static final float RELAXED_EPSILON = 1e-3f;

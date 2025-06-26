@@ -35,7 +35,7 @@ import java.util.Map;
  * 
  * @author ahmed
  */
-public class LinearTest extends ActivationTest {
+public class LinearTest extends ActivationBaseTest {
     
     @Override
     public void testCompute() {

@@ -35,7 +35,7 @@ import java.util.Map;
  * 
  * @author ahmed
  */
-public class TanhTest extends ActivationTest {
+public class TanhTest extends ActivationBaseTest {
     
     @Override
     public void testCompute() {

@@ -35,7 +35,7 @@ import java.util.Map;
  * 
  * @author ahmed
  */
-public class SinTest extends ActivationTest {
+public class SinTest extends ActivationBaseTest {
     
     @Override
     public void testCompute() {

@@ -28,35 +28,19 @@ import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUstream;
 import org.fjnn.cuda.CudaFunctions;
 import org.fjnn.cuda.CudaUtil;
-import org.fjnn.trainer.backpropagate.Dataset;
 
 /**
  *
  * @author ahmed
  */
 public class WeightedMeanSquareError extends Loss {
-    float[] weights;
-    CUdeviceptr weightsGPU;
-    final WeightingStrategy strategy;
-    
-    Dataset set;
-    
-    public enum WeightingStrategy {
-        INVERSE_FREQUENCY,    // 1 / frequency
-        INVERSE_SQRT,         // 1 / sqrt(frequency)  
-        BOUNDARY_FOCUS,       // Custom for Mandelbrot boundary
-        CUSTOM                // User-provided weights
-    }
-
-    public WeightedMeanSquareError(float[] weights, CUdeviceptr weightsGPU) {
-        this.weights = weights;
-        this.weightsGPU = weightsGPU;
-        this.strategy = WeightingStrategy.CUSTOM;
-    }
     
     // Compute the Mean Squared Error
     @Override
     public float compute(float[] output, float[] expected) {
+        if(weights == null)
+            throw new IllegalStateException(name() + " requires weights but none were set. Call setWeights() first.");
+
         if(output.length != expected.length || output.length != weights.length)
             throw new RuntimeException();
         
@@ -70,6 +54,9 @@ public class WeightedMeanSquareError extends Loss {
 
     @Override
     public void computeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
+        if(weightsGPU == null)
+            throw new IllegalStateException(name() + " requires weights but none were set. Call setWeights() first.");
+        
         // Create temporary buffer for per-element results
         CUdeviceptr tempBuffer = CudaUtil.createFloatAsync(size, stream);
         
@@ -87,9 +74,13 @@ public class WeightedMeanSquareError extends Loss {
     // Compute the derivative of MSE with respect to the predicted values
     @Override
     public float[] derivative(float[] output, float[] expected) {
+        if(weights == null)
+            throw new IllegalStateException(name() + " requires weights but none were set. Call setWeights() first.");
+        
         if(output.length != expected.length || output.length != weights.length)
             throw new RuntimeException();
         
+                
         float[] derivatives = new float[output.length];        
         float multiplier = 2.0f / output.length;
 
@@ -101,19 +92,26 @@ public class WeightedMeanSquareError extends Loss {
     
     @Override
     public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream) {
+       if(weightsGPU == null)
+            throw new IllegalStateException(name() + " requires weights but none were set. Call setWeights() first.");
+        
         CudaFunctions.loss.WeightedMeanSquareErrorDerivative(output, expected, weightsGPU, result, size, stream);
     }
     
     @Override
     public Map serialize() {
         Map result = super.serialize();
-        result.put("weights", weights);  // Store the weights array
         return result;
     }
     
     @Override
     public String name() {
         return "WMSE";
+    }
+    
+    @Override
+    public boolean requireWeights() {
+        return true;
     }
 }
 

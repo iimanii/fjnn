@@ -117,7 +117,7 @@ public class CrossEntropy extends Loss {
     public void fusedGradientGPU(CUdeviceptr postActivation, CUdeviceptr expected, CUdeviceptr result, Activation activation, int outputDim, int batchSize, CUstream stream) {
         if (activation instanceof SoftMax) {
             SoftMax softmax = (SoftMax) activation;
-            softmax.gradientGPUCrossEntropy(postActivation, expected, result, outputDim, batchSize, stream);
+            softmax.gradientCrossEntropyGPU(postActivation, expected, result, outputDim, batchSize, stream);
         } else {
             throw new IllegalArgumentException("Can only fuse with SoftMax");
         }

@@ -35,7 +35,7 @@ import java.util.Map;
  * 
  * @author ahmed
  */
-public class StepTest extends ActivationTest {
+public class StepTest extends ActivationBaseTest {
     
     @Override
     public void testCompute() {

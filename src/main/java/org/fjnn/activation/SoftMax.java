@@ -138,7 +138,7 @@ public class SoftMax extends Activation {
     /**
      * GPU version of fused softmax-cross-entropy gradient
      */
-    public void gradientGPUCrossEntropy(CUdeviceptr postActivation, CUdeviceptr truth, CUdeviceptr result, int outputDim, int batchSize, CUstream stream) {
+    public void gradientCrossEntropyGPU(CUdeviceptr postActivation, CUdeviceptr truth, CUdeviceptr result, int outputDim, int batchSize, CUstream stream) {
         CudaFunctions.activationGradient.SoftMaxCrossEntropyGradient(postActivation, truth, result, outputDim * batchSize, stream);
     }
     

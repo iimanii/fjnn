@@ -34,6 +34,8 @@ import org.fjnn.activation.Activation;
  * @author ahmed
  */
 public abstract class Loss {
+    float[] weights;
+    CUdeviceptr weightsGPU;
     
     public static Loss MeanSquareError = new MeanSquareError();
     
@@ -46,6 +48,32 @@ public abstract class Loss {
     abstract public float[] derivative(float[] output, float[] expected);
    
     abstract public void derivativeGPU(CUdeviceptr output, CUdeviceptr expected, CUdeviceptr result, long size, CUstream stream);
+    
+    public void setWeights(float[] weights) {
+        this.weights = weights;
+    }
+    
+    public void setWeightsGPU(CUdeviceptr weightsGPU) {
+        this.weightsGPU = weightsGPU;
+    }
+    
+    public boolean requireWeights() {
+        return false;
+    }
+    
+    /* whether or not we can fuse computation with an activation function */
+    public boolean canFuseWith(Activation activation) {
+        return false;
+    }
+    
+    public void fusedGradient(float[] postActivation, float[] expected, float[] result, Activation activation, int outputDim, int batchSize) {
+        throw new UnsupportedOperationException(getClass().getSimpleName() + " cannot fuse with " + activation.getClass().getSimpleName());
+    }
+    
+    public void fusedGradientGPU(CUdeviceptr postActivation, CUdeviceptr expected, CUdeviceptr result, Activation activation, int outputDim, int batchSize, CUstream stream) {
+        throw new UnsupportedOperationException(getClass().getSimpleName() + " GPU fusion not implemented with " + activation.getClass().getSimpleName());
+    }
+    
     
     public Map serialize() {
         HashMap result = new HashMap();
@@ -73,17 +101,4 @@ public abstract class Loss {
     }
     
     abstract public String name();
-    
-    /* whether or not we can fuse computation with an activation function */
-    public boolean canFuseWith(Activation activation) {
-        return false;
-    }
-    
-    public void fusedGradient(float[] postActivation, float[] expected, float[] result, Activation activation, int outputDim, int batchSize) {
-        throw new UnsupportedOperationException(getClass().getSimpleName() + " cannot fuse with " + activation.getClass().getSimpleName());
-    }
-    
-    public void fusedGradientGPU(CUdeviceptr postActivation, CUdeviceptr expected, CUdeviceptr result, Activation activation, int outputDim, int batchSize, CUstream stream) {
-        throw new UnsupportedOperationException(getClass().getSimpleName() + " GPU fusion not implemented with " + activation.getClass().getSimpleName());
-    }
 }
