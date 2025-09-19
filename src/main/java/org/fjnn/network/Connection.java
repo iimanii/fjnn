@@ -715,7 +715,7 @@ public class Connection {
         }
         
         /* mutate weights and biases in one kernel launch */
-        CudaFunctions.CrossoverMutate(a.weightsGPU, b.weightsGPU, weightsGPU, weightsLength, min, max, mutation, 
+        CudaFunctions.other.CrossoverMutate(a.weightsGPU, b.weightsGPU, weightsGPU, weightsLength, min, max, mutation, 
                                       rngCrossover, rngMutate, rngPool, CudaUtil.PREFERRED_BLOCK_SIZE, stream);
         
         
@@ -758,7 +758,7 @@ public class Connection {
     
     void clipWeightsGPU(float min, float max, CUstream stream) {
         long weightsLength = neurons * links + links;
-        CudaFunctions.ClipWeights(weightsGPU, weightsLength, min, max, stream);
+        CudaFunctions.other.ClipWeights(weightsGPU, weightsLength, min, max, stream);
     }
     
     HashMap serialize() {

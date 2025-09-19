@@ -354,7 +354,7 @@ public class Layer {
 
         // Layer inputs for NEXT layers - allocated by THIS layer in feedForwardGPU()
         for(Connection c : connections.values()) {
-            memory += c.links * batchSize * CudaUtil.FLOAT_SIZE;
+            memory += c.links * (batchSize * CudaUtil.FLOAT_SIZE);
         }
 
         // Component allocations (each component allocates its own memory)

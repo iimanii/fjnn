@@ -200,7 +200,8 @@ public abstract class Network <T extends Network> extends ModelComponent {
         
         try {
             lock.tryAcquire(memoryKB, 10, TimeUnit.SECONDS);
-        } catch (InterruptedException ex) {
+        } catch (Exception ex) {
+            System.out.println("Failed to lock: " + memoryKB + "KB");
             throw new RuntimeException(ex);
         }
     }

@@ -177,3 +177,33 @@ __global__ void CrossEntropyDerivative(float* output, float* expected, float* re
         result[i] = -expected[i] / clipped;
     }
 }
+
+/**
+ * Bird Loss compute: L(x) = α * ln(βx² + 1)
+ * Maintains high loss values until very close to target
+ */
+extern "C"
+__global__ void BirdLoss(float* output, float* expected, float* result, float alpha, float beta, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    if(i < size) {
+        float diff = output[i] - expected[i];
+        result[i] = alpha * logf(beta * diff * diff + 1.0f);
+    }
+}
+
+/**
+ * Falcon Bird derivative: dL/dx = 2αβx / (βx² + 1)
+ * Provides strong gradients near zero, decreasing for larger errors
+ */
+extern "C"
+__global__ void BirdLossDerivative(float* output, float* expected, float* result, float alpha, float beta, long size) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    
+    float multiplier = 1.0f / size;  // Include averaging in gradient
+    
+    if(i < size) {
+        float diff = output[i] - expected[i];
+        result[i] = multiplier * 2.0f * alpha * beta * diff / (beta * diff * diff + 1.0f);
+    }
+}

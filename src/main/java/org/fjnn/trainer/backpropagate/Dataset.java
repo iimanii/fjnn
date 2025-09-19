@@ -276,7 +276,7 @@ public class Dataset {
         return targetBatches[batchIndex];
     }
     
-    public float[] getTargetWeight(int batchIndex) {
+    public float[] getTargetWeights(int batchIndex) {
         if (!cpuReady) 
             throw new IllegalStateException("CPU batches not prepared");
         
@@ -296,7 +296,7 @@ public class Dataset {
         return targetBatchesGPU[batchIndex];
     }
     
-    public CUdeviceptr getTargetWeightBatchGPU(int batchIndex) {
+    public CUdeviceptr getTargetWeightsGPU(int batchIndex) {
         if (!gpuReady) 
             throw new IllegalStateException("GPU batches not prepared");
         
@@ -331,5 +331,9 @@ public class Dataset {
     
     public boolean gpuReady() { 
         return gpuReady; 
+    }
+    
+    public boolean hasTargetWeights() {
+        return targetWeights != null;
     }
 }

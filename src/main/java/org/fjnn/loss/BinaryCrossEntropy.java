@@ -117,8 +117,8 @@ public class BinaryCrossEntropy extends Loss {
     }
     
     public static BinaryCrossEntropy deserialize(Map serialized) {
-        float alpha = (Float)serialized.get("alpha");
-        float beta = (Float)serialized.get("beta");
+        float alpha = ((Number)serialized.get("alpha")).floatValue();
+        float beta = ((Number)serialized.get("beta")).floatValue();
         return new BinaryCrossEntropy(alpha, beta);
     }
 

@@ -95,6 +95,8 @@ public abstract class Loss {
                 throw new RuntimeException("WeightedMeanSquareError deserialization not implemented");
             case "FocalLoss":
                 return FocalLoss.deserialize(serialized);
+            case "BirdLoss":
+                return BirdLoss.deserialize(serialized);
             default:
                 throw new RuntimeException("Unknown loss type: " + type);
         }

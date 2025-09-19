@@ -150,6 +150,8 @@ public abstract class Activation implements Serializable {
                 return new Linear();
             case "swish":
                 return new Swish();
+            case "gelu":
+                return new GeLU();
         }
         
         return null;

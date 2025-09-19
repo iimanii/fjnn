@@ -35,6 +35,7 @@ import jcuda.driver.CUstream;
 import jcuda.driver.JCudaDriver;
 import java.util.List;
 import jcuda.driver.CUevent;
+import org.fjnn.loss.Loss;
 import org.fjnn.trainer.backpropagate.outputs.TrainingSessionOutput;
 import org.fjnn.trainer.backpropagate.outputs.TrainingSessionOutputGPU;
 
@@ -49,6 +50,7 @@ public class TrainingSession {
     private final ProgressTracker progress;
     
     private int epoch = 0;
+    private Loss lossFunction;
     
     public TrainingSession(NeuralNetwork network, Dataset dataset, TrainingConfig config) {
         validateConstructorParameters(network, dataset, config);
@@ -57,6 +59,7 @@ public class TrainingSession {
         this.dataset = dataset;
         this.config = config;
         this.progress = new ProgressTracker();
+        this.lossFunction = config.lossFunction;
         
         // Auto-setup GPU if configured
         if (config.useGPU) {
@@ -100,6 +103,9 @@ public class TrainingSession {
             float[] input = dataset.getInput(i);
             float[] target = dataset.getTarget(i);
             
+            if (lossFunction.requireWeights())
+                lossFunction.setWeights(dataset.getTargetWeights(i));
+            
             // Forward pass
             long t1 = System.nanoTime();
             NeuralNetworkForwardOutput output = network.feedForward(input, dataset.batchSize);
@@ -107,7 +113,7 @@ public class TrainingSession {
             
             // Backward pass
             long t2 = System.nanoTime();
-            NeuralNetworkBackpropagateOutput gradients = network.backpropagate(output, target, config.lossFunction);
+            NeuralNetworkBackpropagateOutput gradients = network.backpropagate(output, target, lossFunction);
             backwardTime += System.nanoTime() - t2;
             
             // Weight update
@@ -117,7 +123,7 @@ public class TrainingSession {
             
             // Loss calculation
             long t4 = System.nanoTime();
-            totalLoss += config.lossFunction.compute(output.output(), target);
+            totalLoss += lossFunction.compute(output.output(), target);
             lossTime += System.nanoTime() - t4;
         }
         
@@ -289,6 +295,9 @@ public class TrainingSession {
             CUdeviceptr input = dataset.getInputGPU(i);
             CUdeviceptr target = dataset.getTargetGPU(i);
 
+            if (lossFunction.requireWeights())
+                lossFunction.setWeightsGPU(dataset.getTargetWeightsGPU(i));
+            
             // Forward pass - just record events, no sync
             timingManager.recordForwardStart(i, stream);
             NeuralNetworkForwardOutputGPU output = network.feedForwardGPU(input, dataset.batchSize, stream);
@@ -296,7 +305,7 @@ public class TrainingSession {
 
             // Backward pass - just record events, no sync
             timingManager.recordBackwardStart(i, stream);
-            NeuralNetworkBackpropagateOutputGPU gradients = network.backpropagateGPU(output, target, config.lossFunction, stream);
+            NeuralNetworkBackpropagateOutputGPU gradients = network.backpropagateGPU(output, target, lossFunction, stream);
             timingManager.recordBackwardEnd(i, stream);
         
             // Weight update - just record events, no sync
@@ -308,7 +317,7 @@ public class TrainingSession {
             timingManager.recordLossStart(i, stream);
             batchLossGPU[i] = CudaUtil.createFloatAsync(1, stream);
             long outputSize = network.getOutputDim() * dataset.batchSize;
-            config.lossFunction.computeGPU(output.output(), target, batchLossGPU[i], outputSize, stream);
+            lossFunction.computeGPU(output.output(), target, batchLossGPU[i], outputSize, stream);
             timingManager.recordLossEnd(i, stream);
 
             // Free GPU memory for this batch
@@ -382,13 +391,13 @@ public class TrainingSession {
         float[] result = forwardOutput.output();
         
         // Backward pass
-        NeuralNetworkBackpropagateOutput backwardOutput = network.backpropagate(forwardOutput, target, config.lossFunction);
+        NeuralNetworkBackpropagateOutput backwardOutput = network.backpropagate(forwardOutput, target, lossFunction);
         
         // dont apply gradients
         // network.applyGradients(backwardOutput, config.learningRate, config.weightDecay);
         
         // Calculate loss for this batch
-        double loss = config.lossFunction.compute(result, target);
+        double loss = lossFunction.compute(result, target);
         
         return new TrainingSessionOutput(forwardOutput, backwardOutput, result, loss);
     }
@@ -414,7 +423,7 @@ public class TrainingSession {
         NeuralNetworkForwardOutputGPU forwardOutput = network.feedForwardGPU(input, dataset.batchSize, stream);
         
         // Backward pass
-        NeuralNetworkBackpropagateOutputGPU backwardOutput = network.backpropagateGPU(forwardOutput, target, config.lossFunction, stream);
+        NeuralNetworkBackpropagateOutputGPU backwardOutput = network.backpropagateGPU(forwardOutput, target, lossFunction, stream);
         
         // dont apply gradients
         // network.applyGradientsGPU(backwardOutput, config.learningRate, config.weightDecay, stream);
@@ -422,7 +431,7 @@ public class TrainingSession {
         // Compute loss on GPU
         CUdeviceptr lossGPU = CudaUtil.createFloatAsync(1, stream);
         long outputSize = network.getOutputDim() * dataset.batchSize;
-        config.lossFunction.computeGPU(forwardOutput.output(), target, lossGPU, outputSize, stream);
+        lossFunction.computeGPU(forwardOutput.output(), target, lossGPU, outputSize, stream);
         
         float[] result = CudaUtil.fromGPUFloatAsync(forwardOutput.output(), (int)outputSize, stream);
         float[] lossArray = CudaUtil.fromGPUFloatAsync(lossGPU, 1, stream);
@@ -459,7 +468,7 @@ public class TrainingSession {
             NeuralNetworkForwardOutput output = network.feedForward(input, dataset.batchSize);
 
             // Calculate loss
-            totalLoss += config.lossFunction.compute(output.output(), target);
+            totalLoss += lossFunction.compute(output.output(), target);
         }
 
         return totalLoss / dataset.batchCount;
@@ -486,7 +495,7 @@ public class TrainingSession {
             // Compute loss on GPU
             CUdeviceptr lossGPU = CudaUtil.createFloatAsync(1, stream);
             long outputSize = network.getOutputDim() * dataset.batchSize;
-            config.lossFunction.computeGPU(output.output(), target, lossGPU, outputSize, stream);
+            lossFunction.computeGPU(output.output(), target, lossGPU, outputSize, stream);
 
             // Copy only the loss value
             float[] lossArray = CudaUtil.fromGPUFloatAsync(lossGPU, 1, stream);
@@ -678,5 +687,12 @@ public class TrainingSession {
             throw new IllegalArgumentException(String.format(
                 "Network output size (%d) does not match dataset target dimension (%d)",
                 network.getOutputDim(), dataset.targetDim));
+        
+        if (config.lossFunction.requireWeights() && !dataset.hasTargetWeights()) {
+            throw new IllegalArgumentException(
+                "Loss function '" + config.lossFunction.name() + "' requires target weights, " +
+                "but dataset has no target weights set. Use Dataset constructor with targetWeights parameter."
+            );
+        }
     }
 }
